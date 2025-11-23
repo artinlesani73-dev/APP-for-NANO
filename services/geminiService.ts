@@ -31,11 +31,13 @@ export const GeminiService = {
     referenceImageBase64?: string
   ): Promise<string> => {
     
-    // Ensure we have a key for the high-end models
-    // @ts-ignore
-    const hasKey = await window.aistudio.hasSelectedApiKey();
-    if (!hasKey) {
-        throw new Error("API Key not selected. Please connect to Google AI Studio.");
+    // Only enforce key selection for the Pro Image Preview which requires billing
+    if (config.model === 'gemini-3-pro-image-preview') {
+        // @ts-ignore
+        const hasKey = await window.aistudio.hasSelectedApiKey();
+        if (!hasKey) {
+            throw new Error("API Key not selected. Please connect to Google AI Studio to use the Pro model.");
+        }
     }
 
     // Always create a new instance to pick up the latest selected key
@@ -79,9 +81,11 @@ export const GeminiService = {
         imageConfig.imageSize = config.image_size;
     }
 
-    // Using gemini-3-pro-image-preview for high quality as per spec
+    // Use selected model, default to flash image if none specified
+    const modelName = config.model || 'gemini-2.5-flash-image';
+
     const response = await ai.models.generateContent({
-      model: config.model || 'gemini-3-pro-image-preview',
+      model: modelName,
       contents: { parts },
       config: {
         // Nano Banana / Imagen configs

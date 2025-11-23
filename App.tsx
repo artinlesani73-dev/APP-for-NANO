@@ -7,7 +7,7 @@ import { ResultPanel } from './components/ResultPanel';
 import { StorageService } from './services/storageService';
 import { GeminiService } from './services/geminiService';
 import { Chat, Generation, GenerationConfig, ImageRecord } from './types';
-import { Zap, History, Database, Key } from 'lucide-react';
+import { Zap, History, Database, Key, ExternalLink } from 'lucide-react';
 
 const DEFAULT_CONFIG: GenerationConfig = {
   temperature: 0.7,
@@ -15,7 +15,7 @@ const DEFAULT_CONFIG: GenerationConfig = {
   aspect_ratio: '1:1',
   image_size: '1K',
   safety_filter: 'medium',
-  model: 'gemini-3-pro-image-preview'
+  model: 'gemini-2.5-flash-image'
 };
 
 export default function App() {
@@ -141,10 +141,13 @@ export default function App() {
   const handleGenerate = async () => {
     if (!currentChatId || !prompt) return;
 
-    // 1. Ensure API Key
-    if (!apiKeyConnected) {
+    // 1. Ensure API Key ONLY if model requires it (Pro models)
+    if (config.model === 'gemini-3-pro-image-preview' && !apiKeyConnected) {
         await handleConnectApiKey();
-        if (!(await GeminiService.checkApiKey())) return;
+        // Check again after flow
+        const isConnected = await GeminiService.checkApiKey();
+        if (!isConnected) return;
+        setApiKeyConnected(true);
     }
 
     setIsGenerating(true);
@@ -192,7 +195,20 @@ export default function App() {
 
     } catch (error: any) {
         console.error("Generation failed:", error);
-        StorageService.failGeneration(gen.generation_id, error.message || "Unknown error");
+        
+        const errorMessage = error.message || error.toString();
+        
+        // Handle specific "Requested entity was not found" error to reset API key flow
+        if (errorMessage.includes("Requested entity was not found")) {
+            setApiKeyConnected(false);
+            alert("The selected API Key is no longer valid or the project was not found. Please select a valid key.");
+            // If they were trying to use Pro, prompt them.
+            if (config.model === 'gemini-3-pro-image-preview') {
+                 await handleConnectApiKey();
+            }
+        }
+
+        StorageService.failGeneration(gen.generation_id, errorMessage);
         setCurrentGeneration(StorageService.getGeneration(gen.generation_id)); // reload with error state
     } finally {
         setIsGenerating(false);
@@ -223,13 +239,30 @@ export default function App() {
             </div>
             
             <div className="flex items-center gap-4">
+                {config.model === 'gemini-3-pro-image-preview' && (
+                    <a 
+                      href="https://ai.google.dev/gemini-api/docs/billing" 
+                      target="_blank" 
+                      rel="noreferrer" 
+                      className="hidden md:flex items-center gap-1 text-[10px] text-zinc-500 hover:text-blue-400 transition-colors"
+                    >
+                      <ExternalLink size={10} />
+                      Billing Requirements (Pro Model)
+                    </a>
+                )}
+
                 {!apiKeyConnected && (
                     <button 
                         onClick={handleConnectApiKey}
-                        className="flex items-center gap-2 text-xs text-yellow-500 hover:text-yellow-400 bg-yellow-950/30 px-3 py-1.5 rounded border border-yellow-900 transition-colors"
+                        className={`flex items-center gap-2 text-xs px-3 py-1.5 rounded border transition-colors ${
+                            config.model === 'gemini-3-pro-image-preview'
+                                ? 'text-yellow-500 hover:text-yellow-400 bg-yellow-950/30 border-yellow-900'
+                                : 'text-zinc-400 hover:text-zinc-300 bg-zinc-800/50 border-zinc-700'
+                        }`}
+                        title={config.model === 'gemini-3-pro-image-preview' ? "Required for Pro Model" : "Optional for Flash Model"}
                     >
                         <Key size={12} />
-                        Connect Google AI Studio
+                        {config.model === 'gemini-3-pro-image-preview' ? "Connect Google AI Studio (Required)" : "Connect Google AI Studio"}
                     </button>
                 )}
                 {apiKeyConnected && (
