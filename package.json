@@ -42,7 +42,9 @@
       "package.json"
     ],
     "win": {
-      "target": "nsis"
+      "target": "nsis",
+      "signingHashAlgorithms": [],
+      "sign": null
     },
     "mac": {
       "target": "dmg"

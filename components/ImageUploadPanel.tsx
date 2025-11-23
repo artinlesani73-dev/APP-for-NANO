@@ -56,9 +56,11 @@ export const ImageUploadPanel: React.FC<ImageUploadPanelProps> = ({
                     <X size={18} />
                 </button>
             </div>
-            <div className="absolute bottom-2 right-2 bg-black/80 text-zinc-300 text-[10px] px-1.5 py-0.5 rounded backdrop-blur-sm">
-                {image.metadata.mime_type.split('/')[1].toUpperCase()}
-            </div>
+            {image.metadata?.mime_type && (
+              <div className="absolute bottom-2 right-2 bg-black/80 text-zinc-300 text-[10px] px-1.5 py-0.5 rounded backdrop-blur-sm">
+                  {image.metadata.mime_type.split('/')[1].toUpperCase()}
+              </div>
+            )}
           </div>
         ) : (
           <div 

@@ -1,5 +1,5 @@
-import React, { useRef } from 'react';
-import { X, Moon, Sun, Download, Upload, Monitor, Folder } from 'lucide-react';
+import React, { useRef, useState, useEffect } from 'react';
+import { X, Moon, Sun, Download, Upload, Monitor, Folder, Key } from 'lucide-react';
 import { StorageService } from '../services/storageService';
 
 interface SettingsModalProps {
@@ -7,16 +7,39 @@ interface SettingsModalProps {
   onClose: () => void;
   theme: 'dark' | 'light';
   toggleTheme: () => void;
+  onApiKeyUpdate?: () => void;
 }
 
-export const SettingsModal: React.FC<SettingsModalProps> = ({ 
-  isOpen, 
-  onClose, 
-  theme, 
-  toggleTheme 
+export const SettingsModal: React.FC<SettingsModalProps> = ({
+  isOpen,
+  onClose,
+  theme,
+  toggleTheme,
+  onApiKeyUpdate
 }) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const isElectron = StorageService.isElectron();
+  const [apiKey, setApiKey] = useState('');
+  const [showApiKey, setShowApiKey] = useState(false);
+
+  useEffect(() => {
+    if (isOpen && isElectron) {
+      const savedKey = localStorage.getItem('gemini_api_key') || '';
+      setApiKey(savedKey);
+    }
+  }, [isOpen, isElectron]);
+
+  const handleSaveApiKey = () => {
+    if (apiKey.trim()) {
+      localStorage.setItem('gemini_api_key', apiKey.trim());
+      alert('API key saved successfully!');
+      onApiKeyUpdate?.();
+    } else {
+      localStorage.removeItem('gemini_api_key');
+      alert('API key removed.');
+      onApiKeyUpdate?.();
+    }
+  };
 
   if (!isOpen) return null;
 
@@ -69,6 +92,56 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
         {/* Content */}
         <div className="p-6 space-y-6">
           
+          {/* API Key Configuration (Electron Only) */}
+          {isElectron && (
+            <section className="space-y-3">
+              <h3 className={`text-sm font-medium ${theme === 'dark' ? 'text-zinc-400' : 'text-zinc-500'} uppercase tracking-wider`}>Google AI API Key</h3>
+              <div className={`p-4 rounded-lg border space-y-3 ${theme === 'dark' ? 'bg-zinc-950 border-zinc-800' : 'bg-zinc-50 border-zinc-200'}`}>
+                <div className="flex items-start gap-3">
+                  <Key size={18} className="mt-0.5 text-blue-500" />
+                  <div className="flex-1">
+                    <h4 className="text-sm font-medium">Gemini API Key</h4>
+                    <p className={`text-xs mt-1 ${theme === 'dark' ? 'text-zinc-500' : 'text-zinc-600'}`}>
+                      Get your API key from <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noreferrer" className="text-blue-500 hover:underline">Google AI Studio</a>
+                    </p>
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <div className="flex gap-2">
+                    <input
+                      type={showApiKey ? "text" : "password"}
+                      value={apiKey}
+                      onChange={(e) => setApiKey(e.target.value)}
+                      placeholder="AIza..."
+                      className={`flex-1 px-3 py-2 rounded-md text-sm font-mono border ${
+                        theme === 'dark'
+                          ? 'bg-zinc-900 border-zinc-700 focus:border-blue-500'
+                          : 'bg-white border-zinc-300 focus:border-blue-500'
+                      } outline-none transition-colors`}
+                    />
+                    <button
+                      onClick={() => setShowApiKey(!showApiKey)}
+                      className={`px-3 py-2 rounded-md text-xs font-medium transition-colors border ${
+                        theme === 'dark'
+                          ? 'bg-zinc-800 border-zinc-700 hover:bg-zinc-700'
+                          : 'bg-white border-zinc-300 hover:bg-zinc-100'
+                      }`}
+                    >
+                      {showApiKey ? 'Hide' : 'Show'}
+                    </button>
+                  </div>
+                  <button
+                    onClick={handleSaveApiKey}
+                    className="w-full px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white text-sm font-medium rounded-md transition-colors"
+                  >
+                    Save API Key
+                  </button>
+                </div>
+              </div>
+            </section>
+          )}
+
           {/* Appearance */}
           <section className="space-y-3">
             <h3 className={`text-sm font-medium ${theme === 'dark' ? 'text-zinc-400' : 'text-zinc-500'} uppercase tracking-wider`}>Appearance</h3>
