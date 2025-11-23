@@ -77,4 +77,42 @@ export const ParametersPanel: React.FC<ParametersPanelProps> = ({ config, setCon
         <label className="text-xs font-medium text-zinc-400">Aspect Ratio</label>
         <div className="grid grid-cols-3 gap-2">
           {['1:1', '16:9', '9:16', '3:4', '4:3'].map((ratio) => (
-            <
+            <button
+              key={ratio}
+              onClick={() => handleChange('aspect_ratio', ratio)}
+              className={`text-xs py-1.5 rounded border transition-colors ${
+                config.aspect_ratio === ratio
+                  ? 'bg-blue-600 border-blue-600 text-white'
+                  : 'bg-zinc-950 border-zinc-800 text-zinc-400 hover:border-zinc-700'
+              }`}
+            >
+              {ratio}
+            </button>
+          ))}
+        </div>
+      </div>
+      
+      {/* Image Size (Only for Pro Model) */}
+      {config.model === 'gemini-3-pro-image-preview' && (
+          <div className="space-y-3 animate-in fade-in slide-in-from-top-2">
+            <label className="text-xs font-medium text-zinc-400">Image Size</label>
+            <div className="grid grid-cols-3 gap-2">
+              {['1K', '2K', '4K'].map((size) => (
+                <button
+                  key={size}
+                  onClick={() => handleChange('image_size', size)}
+                  className={`text-xs py-1.5 rounded border transition-colors ${
+                    config.image_size === size
+                      ? 'bg-indigo-600 border-indigo-600 text-white'
+                      : 'bg-zinc-950 border-zinc-800 text-zinc-400 hover:border-zinc-700'
+                  }`}
+                >
+                  {size}
+                </button>
+              ))}
+            </div>
+          </div>
+      )}
+    </div>
+  );
+};
