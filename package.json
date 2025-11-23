@@ -42,7 +42,8 @@
       "package.json"
     ],
     "win": {
-      "target": "nsis"
+      "target": "nsis",
+      "sign": false
     },
     "mac": {
       "target": "dmg"
