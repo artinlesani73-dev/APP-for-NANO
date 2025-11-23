@@ -14,13 +14,14 @@ function createWindow() {
     autoHideMenuBar: true,
     titleBarStyle: 'hidden',
     titleBarOverlay: {
-        color: '#18181b', // Matches zinc-900 (adjust dynamically if needed via IPC but keeping simple for now)
+        color: '#18181b', 
         symbolColor: '#e4e4e7',
         height: 40
     }
   });
 
-  win.loadFile('index.html');
+  // Load from the 'dist' directory created by Vite build
+  win.loadFile(path.join(__dirname, 'dist', 'index.html'));
 }
 
 // Ensure data directory exists
@@ -33,7 +34,7 @@ const getDataPath = () => {
     return appDir;
 };
 
-// IPC Handlers for synchronous file operations (keeping simple for this demo architecture)
+// IPC Handlers for synchronous file operations
 ipcMain.on('save-sync', (event, filename, content) => {
     try {
         const filePath = path.join(getDataPath(), `${filename}.json`);

@@ -253,7 +253,7 @@ export default function App() {
       />
 
       {/* MAIN WORKSPACE */}
-      <div className="flex-1 flex flex-col min-w-0 bg-zinc-50/50 dark:bg-black">
+      <div className="flex-1 flex flex-col min-w-0 bg-white dark:bg-black">
         
         {/* Top Bar */}
         <header className="h-14 border-b bg-white dark:bg-zinc-900/50 border-zinc-200 dark:border-zinc-800 backdrop-blur flex items-center justify-between px-6 transition-colors duration-200 sticky top-0 z-10">
