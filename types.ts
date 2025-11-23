@@ -1,3 +1,42 @@
+// Session represents a single conversation/session with all its generations
+export interface Session {
+  session_id: string;
+  title: string;
+  created_at: string;
+  updated_at: string;
+  generations: SessionGeneration[];
+}
+
+// Generation data embedded in session (not separated)
+export interface SessionGeneration {
+  generation_id: string;
+  timestamp: string;
+  status: 'pending' | 'completed' | 'failed';
+
+  // Inputs
+  prompt: string;
+  control_image?: {
+    id: string;
+    filename: string;
+  } | null;
+  reference_image?: {
+    id: string;
+    filename: string;
+  } | null;
+
+  // Parameters
+  parameters: GenerationConfig;
+
+  // Outputs
+  output_image?: {
+    id: string;
+    filename: string;
+  };
+  generation_time_ms?: number;
+  error?: string;
+}
+
+// Legacy Chat interface (for backwards compatibility)
 export interface Chat {
   chat_id: string;
   created_at: string;

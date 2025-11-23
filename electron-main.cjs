@@ -31,6 +31,16 @@ const getDataPath = () => {
     if (!fs.existsSync(appDir)) {
         fs.mkdirSync(appDir, { recursive: true });
     }
+
+    // Create image subdirectories
+    const imageDirs = ['outputs', 'controls', 'references', 'sessions'];
+    imageDirs.forEach(dir => {
+        const dirPath = path.join(appDir, dir);
+        if (!fs.existsSync(dirPath)) {
+            fs.mkdirSync(dirPath, { recursive: true });
+        }
+    });
+
     return appDir;
 };
 
@@ -87,6 +97,131 @@ ipcMain.on('list-files-sync', (event, prefix) => {
         event.returnValue = results;
     } catch (e) {
         event.returnValue = [];
+    }
+});
+
+// Save image file to specific folder
+ipcMain.on('save-image-sync', (event, folder, filename, base64Data) => {
+    try {
+        const dataPath = getDataPath();
+        const imagePath = path.join(dataPath, folder, filename);
+
+        // Remove base64 header if present
+        const base64 = base64Data.replace(/^data:image\/\w+;base64,/, '');
+        const buffer = Buffer.from(base64, 'base64');
+
+        fs.writeFileSync(imagePath, buffer);
+        event.returnValue = { success: true, path: imagePath };
+    } catch (e) {
+        console.error("Save image failed", e);
+        event.returnValue = { success: false, error: e.message };
+    }
+});
+
+// Load image file from folder
+ipcMain.on('load-image-sync', (event, folder, filename) => {
+    try {
+        const dataPath = getDataPath();
+        const imagePath = path.join(dataPath, folder, filename);
+
+        if (fs.existsSync(imagePath)) {
+            const buffer = fs.readFileSync(imagePath);
+            const base64 = buffer.toString('base64');
+            const ext = path.extname(filename).slice(1);
+            event.returnValue = `data:image/${ext};base64,${base64}`;
+        } else {
+            event.returnValue = null;
+        }
+    } catch (e) {
+        console.error("Load image failed", e);
+        event.returnValue = null;
+    }
+});
+
+// Export/download a single image
+ipcMain.on('export-image-sync', (event, folder, filename, savePath) => {
+    try {
+        const dataPath = getDataPath();
+        const sourcePath = path.join(dataPath, folder, filename);
+
+        if (fs.existsSync(sourcePath)) {
+            fs.copyFileSync(sourcePath, savePath);
+            event.returnValue = { success: true };
+        } else {
+            event.returnValue = { success: false, error: 'File not found' };
+        }
+    } catch (e) {
+        console.error("Export image failed", e);
+        event.returnValue = { success: false, error: e.message };
+    }
+});
+
+// List all sessions
+ipcMain.on('list-sessions-sync', (event) => {
+    try {
+        const dataPath = getDataPath();
+        const sessionsDir = path.join(dataPath, 'sessions');
+        const files = fs.readdirSync(sessionsDir);
+        const sessions = [];
+
+        files.forEach(file => {
+            if (file.endsWith('.json')) {
+                const content = fs.readFileSync(path.join(sessionsDir, file), 'utf-8');
+                sessions.push(JSON.parse(content));
+            }
+        });
+
+        event.returnValue = sessions;
+    } catch (e) {
+        console.error("List sessions failed", e);
+        event.returnValue = [];
+    }
+});
+
+// Save session file
+ipcMain.on('save-session-sync', (event, sessionId, sessionData) => {
+    try {
+        const dataPath = getDataPath();
+        const sessionPath = path.join(dataPath, 'sessions', `${sessionId}.json`);
+        fs.writeFileSync(sessionPath, JSON.stringify(sessionData, null, 2), 'utf-8');
+        event.returnValue = { success: true };
+    } catch (e) {
+        console.error("Save session failed", e);
+        event.returnValue = { success: false, error: e.message };
+    }
+});
+
+// Load session file
+ipcMain.on('load-session-sync', (event, sessionId) => {
+    try {
+        const dataPath = getDataPath();
+        const sessionPath = path.join(dataPath, 'sessions', `${sessionId}.json`);
+
+        if (fs.existsSync(sessionPath)) {
+            const content = fs.readFileSync(sessionPath, 'utf-8');
+            event.returnValue = JSON.parse(content);
+        } else {
+            event.returnValue = null;
+        }
+    } catch (e) {
+        console.error("Load session failed", e);
+        event.returnValue = null;
+    }
+});
+
+// Delete session file
+ipcMain.on('delete-session-sync', (event, sessionId) => {
+    try {
+        const dataPath = getDataPath();
+        const sessionPath = path.join(dataPath, 'sessions', `${sessionId}.json`);
+
+        if (fs.existsSync(sessionPath)) {
+            fs.unlinkSync(sessionPath);
+        }
+        event.returnValue = { success: true };
+    } catch (e) {
+        console.error("Delete session failed", e);
+        event.returnValue = { success: false, error: e.message };
     }
 });
 
