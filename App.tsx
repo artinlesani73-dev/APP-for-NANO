@@ -447,12 +447,12 @@ export default function App() {
                                 <span className="text-zinc-700 dark:text-zinc-400">{currentGeneration.generation_id.slice(0,8)}...</span>
                             </div>
                             <div className="flex justify-between">
-                                <span>Prompt Hash:</span>
-                                <span className="text-zinc-700 dark:text-zinc-400">{currentGeneration.inputs.prompt_hash.slice(0,8)}...</span>
+                                <span>Status:</span>
+                                <span className="text-zinc-700 dark:text-zinc-400">{currentGeneration.status}</span>
                             </div>
                             <div className="flex justify-between">
                                 <span>Time:</span>
-                                <span className="text-zinc-700 dark:text-zinc-400">{currentGeneration.outputs?.generation_time_ms}ms</span>
+                                <span className="text-zinc-700 dark:text-zinc-400">{currentGeneration.generation_time_ms || 0}ms</span>
                             </div>
                         </div>
                     )}
