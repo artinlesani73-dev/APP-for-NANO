@@ -2,14 +2,14 @@
   "name": "image-provenance-studio",
   "version": "1.0.0",
   "description": "Professional Image Generation Tool",
-  "main": "electron-main.js",
+  "main": "electron-main.cjs",
   "author": "Your Name",
   "license": "MIT",
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "vite build",
-    "dist": "vite build && electron-builder"
+    "build": "tsc && vite build",
+    "dist": "tsc && vite build && electron-builder"
   },
   "dependencies": {
     "@google/genai": "^1.30.0",
@@ -26,6 +26,7 @@
     "electron-builder": "^24.12.0",
     "postcss": "^8.4.35",
     "tailwindcss": "^3.4.1",
+    "typescript": "^5.2.2",
     "vite": "^5.1.4"
   },
   "build": {
@@ -36,8 +37,8 @@
     },
     "files": [
       "dist/**/*",
-      "electron-main.js",
-      "preload.js",
+      "electron-main.cjs",
+      "preload.cjs",
       "package.json"
     ],
     "win": {

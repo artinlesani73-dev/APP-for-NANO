@@ -1,5 +1,5 @@
 import React, { useRef } from 'react';
-import { Upload, X, Image as ImageIcon } from 'lucide-react';
+import { X, Image as ImageIcon } from 'lucide-react';
 import { ImageRecord } from '../types';
 
 interface ImageUploadPanelProps {
@@ -63,18 +63,19 @@ export const ImageUploadPanel: React.FC<ImageUploadPanelProps> = ({
         ) : (
           <div 
             onClick={() => fileInputRef.current?.click()}
-            className="cursor-pointer flex flex-col items-center justify-center text-zinc-500 dark:text-zinc-500 w-full h-full"
+            className="cursor-pointer flex flex-col items-center justify-center text-zinc-500 dark:text-zinc-500 w-full h-full p-4 text-center"
           >
             <ImageIcon size={24} className="mb-2 opacity-40" />
-            <span className="text-xs font-medium text-zinc-600 dark:text-zinc-400">Click to upload</span>
-            <span className="text-[10px] opacity-60 mt-1 max-w-[120px] text-center">{description}</span>
+            <span className="text-xs font-medium text-zinc-600 dark:text-zinc-400 block">Click to upload</span>
+            <span className="text-[10px] opacity-60 mt-1 block max-w-[120px] leading-tight">{description}</span>
           </div>
         )}
         
         <input
           ref={fileInputRef}
           type="file"
-          className="hidden"
+          className="hidden" 
+          style={{ display: 'none' }} /* Inline style backup if Tailwind fails to load */
           accept={accept}
           onChange={handleFileChange}
         />
