@@ -6,8 +6,20 @@ const stripBase64Header = (dataUrl: string) => {
   return dataUrl.split(',')[1];
 };
 
+const isElectron = () => {
+  // @ts-ignore
+  return window.electron !== undefined;
+};
+
 export const GeminiService = {
   checkApiKey: async () => {
+    // In Electron, check localStorage for API key
+    if (isElectron()) {
+      const apiKey = localStorage.getItem('gemini_api_key');
+      return !!apiKey && apiKey.trim().length > 0;
+    }
+
+    // In AI Studio environment, use the aistudio API
     // @ts-ignore - aistudio is injected by the environment
     if (window.aistudio && window.aistudio.hasSelectedApiKey) {
         // @ts-ignore
@@ -17,6 +29,13 @@ export const GeminiService = {
   },
 
   requestApiKey: async () => {
+      // In Electron, user should go to Settings to enter API key
+      if (isElectron()) {
+        alert('Please go to Settings (gear icon) to enter your Google AI API key.\n\nGet your key from: https://aistudio.google.com/app/apikey');
+        return;
+      }
+
+      // In AI Studio environment, use the aistudio API
       // @ts-ignore
       if (window.aistudio && window.aistudio.openSelectKey) {
           // @ts-ignore
@@ -30,19 +49,32 @@ export const GeminiService = {
     controlImageBase64?: string,
     referenceImageBase64?: string
   ): Promise<string> => {
-    
-    // Only enforce key selection for the Pro Image Preview which requires billing
-    if (config.model === 'gemini-3-pro-image-preview') {
+
+    // Get API key based on environment
+    let apiKey: string | undefined;
+
+    if (isElectron()) {
+      // In Electron, get from localStorage
+      const storedKey = localStorage.getItem('gemini_api_key');
+      if (!storedKey || !storedKey.trim()) {
+        throw new Error("API Key not configured. Please go to Settings to enter your Google AI API key.");
+      }
+      apiKey = storedKey.trim();
+    } else {
+      // In AI Studio environment, check if key is selected
+      if (config.model === 'gemini-3-pro-image-preview') {
         // @ts-ignore
-        const hasKey = await window.aistudio.hasSelectedApiKey();
+        const hasKey = await window.aistudio?.hasSelectedApiKey();
         if (!hasKey) {
-            throw new Error("API Key not selected. Please connect to Google AI Studio to use the Pro model.");
+          throw new Error("API Key not selected. Please connect to Google AI Studio to use the Pro model.");
         }
+      }
+      // @ts-ignore - In AI Studio, the SDK picks up the key from process.env
+      apiKey = process.env.API_KEY;
     }
 
-    // Always create a new instance to pick up the latest selected key
-    // @ts-ignore
-    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+    // Create AI instance with the API key
+    const ai = new GoogleGenAI({ apiKey });
     
     const parts: Part[] = [];
     

@@ -164,6 +164,11 @@ export default function App() {
       }
   };
 
+  const handleApiKeyUpdate = async () => {
+      const isConnected = await GeminiService.checkApiKey();
+      setApiKeyConnected(isConnected);
+  };
+
   const handleGenerate = async () => {
     if (!currentChatId || !prompt) return;
 
@@ -385,11 +390,12 @@ export default function App() {
         </div>
       </div>
 
-      <SettingsModal 
+      <SettingsModal
         isOpen={isSettingsOpen}
         onClose={() => setIsSettingsOpen(false)}
         theme={theme}
         toggleTheme={toggleTheme}
+        onApiKeyUpdate={handleApiKeyUpdate}
       />
     </div>
   );
