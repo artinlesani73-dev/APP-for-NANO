@@ -44,6 +44,46 @@ const loadAll = <T>(prefix: string): T[] => {
 };
 
 export const StorageService = {
+  // --- EXPORT / IMPORT ---
+  exportData: (): string => {
+    const dump: Record<string, any> = {};
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      if (key && key.startsWith('app_')) {
+        dump[key] = localStorage.getItem(key);
+      }
+    }
+    return JSON.stringify(dump, null, 2);
+  },
+
+  importData: (jsonString: string): boolean => {
+    try {
+      const data = JSON.parse(jsonString);
+      if (typeof data !== 'object') return false;
+
+      // Clear current app data (keep others if any)
+      const keysToRemove: string[] = [];
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        if (key && key.startsWith('app_')) {
+          keysToRemove.push(key);
+        }
+      }
+      keysToRemove.forEach(k => localStorage.removeItem(k));
+
+      // Import new
+      Object.keys(data).forEach(key => {
+        if (key.startsWith('app_')) {
+          localStorage.setItem(key, data[key]);
+        }
+      });
+      return true;
+    } catch (e) {
+      console.error("Import failed", e);
+      return false;
+    }
+  },
+
   // --- CHATS ---
   createChat: (title: string = "New Session"): Chat => {
     const chat: Chat = {
