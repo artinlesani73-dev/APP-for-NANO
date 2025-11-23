@@ -20,7 +20,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onOpenSettings
 }) => {
   return (
-    <div className="w-64 flex-shrink-0 bg-zinc-50 dark:bg-zinc-900 border-r border-zinc-200 dark:border-zinc-800 flex flex-col h-full transition-colors duration-200">
+    <div className="w-64 flex-shrink-0 bg-white dark:bg-zinc-900 border-r border-zinc-200 dark:border-zinc-800 flex flex-col h-full transition-colors duration-200">
       {/* Header */}
       <div className="p-4 border-b border-zinc-200 dark:border-zinc-800">
         <button
@@ -39,7 +39,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
           <input 
             type="text" 
             placeholder="Search history..." 
-            className="w-full bg-white dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-md py-2 pl-9 pr-3 text-sm text-zinc-800 dark:text-zinc-300 focus:outline-none focus:border-blue-500/50 shadow-sm"
+            className="w-full bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-md py-2 pl-9 pr-3 text-sm text-zinc-800 dark:text-zinc-300 focus:outline-none focus:border-blue-500 focus:bg-white dark:focus:bg-zinc-900 transition-all shadow-sm"
           />
         </div>
       </div>
@@ -54,14 +54,14 @@ export const Sidebar: React.FC<SidebarProps> = ({
         {chats.map((chat) => (
           <div
             key={chat.chat_id}
-            className={`group relative flex items-center gap-3 p-3 rounded-md cursor-pointer transition-colors ${
+            className={`group relative flex items-center gap-3 p-3 rounded-md cursor-pointer transition-all border ${
               currentChatId === chat.chat_id
-                ? 'bg-zinc-200 dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 font-medium'
-                : 'text-zinc-600 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800/50 hover:text-zinc-900 dark:hover:text-zinc-200'
+                ? 'bg-blue-50 dark:bg-zinc-800 border-blue-100 dark:border-zinc-700 text-blue-900 dark:text-zinc-100 font-medium'
+                : 'bg-transparent border-transparent text-zinc-600 dark:text-zinc-400 hover:bg-zinc-50 dark:hover:bg-zinc-800/50 hover:text-zinc-900 dark:hover:text-zinc-200'
             }`}
             onClick={() => onSelectChat(chat.chat_id)}
           >
-            <MessageSquare size={16} className="flex-shrink-0" />
+            <MessageSquare size={16} className={`flex-shrink-0 ${currentChatId === chat.chat_id ? 'text-blue-500 dark:text-zinc-100' : 'opacity-70'}`} />
             <div className="flex-1 min-w-0">
               <div className="text-sm truncate">{chat.title || "Untitled Project"}</div>
               <div className="text-xs text-zinc-400 dark:text-zinc-500 truncate">
@@ -74,7 +74,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 e.stopPropagation();
                 onDeleteChat(chat.chat_id);
               }}
-              className="opacity-0 group-hover:opacity-100 p-1 text-zinc-400 hover:text-red-500 transition-all"
+              className="opacity-0 group-hover:opacity-100 p-1.5 rounded hover:bg-red-50 dark:hover:bg-red-900/20 text-zinc-400 hover:text-red-500 transition-all"
             >
               <Trash2 size={14} />
             </button>
@@ -83,13 +83,13 @@ export const Sidebar: React.FC<SidebarProps> = ({
       </div>
       
       {/* Settings / Footer */}
-      <div className="p-4 border-t border-zinc-200 dark:border-zinc-800">
+      <div className="p-4 border-t border-zinc-200 dark:border-zinc-800 bg-zinc-50/50 dark:bg-zinc-900/50">
         <button 
           onClick={onOpenSettings}
           className="flex items-center gap-3 w-full text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-200 transition-colors p-2 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-md"
         >
           <Settings size={16} />
-          <span className="text-sm">Settings</span>
+          <span className="text-sm font-medium">Settings</span>
         </button>
       </div>
     </div>

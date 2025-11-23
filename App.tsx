@@ -56,14 +56,22 @@ export default function App() {
     // Check API Key Status
     GeminiService.checkApiKey().then(setApiKeyConnected);
 
-    // Apply initial theme
-    document.documentElement.classList.add('dark');
+    // Initial Theme Setup
+    const storedTheme = localStorage.getItem('app_theme') as 'dark' | 'light' | null;
+    if (storedTheme) {
+        setTheme(storedTheme);
+        if (storedTheme === 'dark') document.documentElement.classList.add('dark');
+        else document.documentElement.classList.remove('dark');
+    } else {
+        document.documentElement.classList.add('dark'); // Default
+    }
   }, []);
 
   // --- HANDLERS ---
   const toggleTheme = () => {
     const newTheme = theme === 'dark' ? 'light' : 'dark';
     setTheme(newTheme);
+    localStorage.setItem('app_theme', newTheme);
     if (newTheme === 'dark') {
       document.documentElement.classList.add('dark');
     } else {
@@ -216,25 +224,23 @@ export default function App() {
         
         const errorMessage = error.message || error.toString();
         
-        // Handle specific "Requested entity was not found" error to reset API key flow
         if (errorMessage.includes("Requested entity was not found")) {
             setApiKeyConnected(false);
             alert("The selected API Key is no longer valid or the project was not found. Please select a valid key.");
-            // If they were trying to use Pro, prompt them.
             if (config.model === 'gemini-3-pro-image-preview') {
                  await handleConnectApiKey();
             }
         }
 
         StorageService.failGeneration(gen.generation_id, errorMessage);
-        setCurrentGeneration(StorageService.getGeneration(gen.generation_id)); // reload with error state
+        setCurrentGeneration(StorageService.getGeneration(gen.generation_id)); 
     } finally {
         setIsGenerating(false);
     }
   };
 
   return (
-    <div className={`flex h-screen w-screen overflow-hidden font-sans selection:bg-blue-500/30 transition-colors duration-200 ${theme === 'dark' ? 'bg-black text-zinc-100' : 'bg-zinc-50 text-zinc-900'}`}>
+    <div className={`flex h-screen w-screen overflow-hidden font-sans selection:bg-blue-500/30 transition-colors duration-200 ${theme === 'dark' ? 'bg-black text-zinc-100' : 'bg-white text-zinc-900'}`}>
       
       {/* SIDEBAR */}
       <Sidebar 
@@ -247,14 +253,16 @@ export default function App() {
       />
 
       {/* MAIN WORKSPACE */}
-      <div className="flex-1 flex flex-col min-w-0">
+      <div className="flex-1 flex flex-col min-w-0 bg-zinc-50/50 dark:bg-black">
         
         {/* Top Bar */}
-        <header className="h-14 border-b bg-white/50 dark:bg-zinc-900/50 border-zinc-200 dark:border-zinc-800 backdrop-blur flex items-center justify-between px-6 transition-colors duration-200">
+        <header className="h-14 border-b bg-white dark:bg-zinc-900/50 border-zinc-200 dark:border-zinc-800 backdrop-blur flex items-center justify-between px-6 transition-colors duration-200 sticky top-0 z-10">
             <div className="flex items-center gap-2 text-zinc-600 dark:text-zinc-400">
                 <Database size={16} />
                 <span className="text-sm font-medium tracking-wide">PROVENANCE STUDIO</span>
-                <span className="text-xs bg-zinc-200 dark:bg-zinc-800 px-2 py-0.5 rounded text-zinc-600 dark:text-zinc-500">LOCAL</span>
+                <span className="text-xs bg-zinc-200 dark:bg-zinc-800 px-2 py-0.5 rounded text-zinc-600 dark:text-zinc-500 border border-zinc-300 dark:border-zinc-700">
+                  {StorageService.isElectron() ? "DESKTOP" : "WEB PREVIEW"}
+                </span>
             </div>
             
             <div className="flex items-center gap-4">
@@ -273,10 +281,10 @@ export default function App() {
                 {!apiKeyConnected && (
                     <button 
                         onClick={handleConnectApiKey}
-                        className={`flex items-center gap-2 text-xs px-3 py-1.5 rounded border transition-colors ${
+                        className={`flex items-center gap-2 text-xs px-3 py-1.5 rounded border transition-colors font-medium ${
                             config.model === 'gemini-3-pro-image-preview'
-                                ? 'text-yellow-600 dark:text-yellow-500 bg-yellow-50 dark:bg-yellow-950/30 border-yellow-200 dark:border-yellow-900'
-                                : 'text-zinc-600 dark:text-zinc-400 bg-zinc-100 dark:bg-zinc-800/50 border-zinc-200 dark:border-zinc-700'
+                                ? 'text-yellow-700 dark:text-yellow-500 bg-yellow-50 dark:bg-yellow-950/30 border-yellow-300 dark:border-yellow-900'
+                                : 'text-zinc-700 dark:text-zinc-400 bg-white dark:bg-zinc-800/50 border-zinc-300 dark:border-zinc-700 shadow-sm'
                         }`}
                         title={config.model === 'gemini-3-pro-image-preview' ? "Required for Pro Model" : "Optional for Flash Model"}
                     >
@@ -285,7 +293,7 @@ export default function App() {
                     </button>
                 )}
                 {apiKeyConnected && (
-                     <div className="flex items-center gap-2 text-xs text-green-600 dark:text-green-500 bg-green-50 dark:bg-green-950/30 px-3 py-1.5 rounded border border-green-200 dark:border-green-900">
+                     <div className="flex items-center gap-2 text-xs text-green-700 dark:text-green-500 bg-green-50 dark:bg-green-950/30 px-3 py-1.5 rounded border border-green-300 dark:border-green-900 font-medium">
                          <div className="w-1.5 h-1.5 rounded-full bg-green-500"></div>
                          API Connected
                      </div>
@@ -294,7 +302,7 @@ export default function App() {
         </header>
 
         {/* Content Grid */}
-        <div className="flex-1 overflow-y-auto p-6">
+        <div className="flex-1 overflow-y-auto p-6 bg-zinc-50 dark:bg-black/50">
             <div className="max-w-6xl mx-auto grid grid-cols-12 gap-6">
                 
                 {/* Left Column: Inputs (8/12) */}
@@ -356,7 +364,7 @@ export default function App() {
 
                     {/* Meta Info */}
                     {currentGeneration && (
-                        <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-lg p-4 text-xs space-y-2 text-zinc-500 font-mono transition-colors">
+                        <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-lg p-4 text-xs space-y-2 text-zinc-500 font-mono transition-colors shadow-sm">
                             <div className="flex justify-between">
                                 <span>ID:</span>
                                 <span className="text-zinc-700 dark:text-zinc-400">{currentGeneration.generation_id.slice(0,8)}...</span>

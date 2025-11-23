@@ -31,14 +31,14 @@ export const ImageUploadPanel: React.FC<ImageUploadPanelProps> = ({
   return (
     <div className="flex flex-col gap-2">
       <div className="flex justify-between items-baseline">
-        <label className="text-sm font-medium text-zinc-300">{title}</label>
+        <label className="text-sm font-medium text-zinc-700 dark:text-zinc-300">{title}</label>
       </div>
       
       <div 
-        className={`relative border-2 border-dashed rounded-lg transition-all h-40 flex flex-col items-center justify-center
+        className={`relative border-2 border-dashed rounded-lg transition-all h-40 flex flex-col items-center justify-center overflow-hidden
         ${image 
-            ? 'border-blue-500/50 bg-zinc-900' 
-            : 'border-zinc-800 hover:border-zinc-700 hover:bg-zinc-800/50 bg-zinc-900/50'
+            ? 'border-blue-500/50 bg-zinc-50 dark:bg-zinc-900' 
+            : 'border-zinc-300 dark:border-zinc-800 hover:border-zinc-400 dark:hover:border-zinc-700 bg-zinc-50 dark:bg-zinc-900/50 hover:bg-zinc-100 dark:hover:bg-zinc-800/50'
         }`}
       >
         {image ? (
@@ -51,22 +51,22 @@ export const ImageUploadPanel: React.FC<ImageUploadPanelProps> = ({
             <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center rounded">
                 <button 
                     onClick={onRemove}
-                    className="bg-red-500/20 text-red-400 p-2 rounded-full hover:bg-red-500/40 transition-colors"
+                    className="bg-white/10 backdrop-blur text-white p-2 rounded-full hover:bg-red-500/80 transition-colors"
                 >
                     <X size={18} />
                 </button>
             </div>
-            <div className="absolute bottom-2 right-2 bg-black/80 text-zinc-400 text-[10px] px-1.5 py-0.5 rounded">
+            <div className="absolute bottom-2 right-2 bg-black/80 text-zinc-300 text-[10px] px-1.5 py-0.5 rounded backdrop-blur-sm">
                 {image.metadata.mime_type.split('/')[1].toUpperCase()}
             </div>
           </div>
         ) : (
           <div 
             onClick={() => fileInputRef.current?.click()}
-            className="cursor-pointer flex flex-col items-center justify-center text-zinc-500 hover:text-zinc-400 w-full h-full"
+            className="cursor-pointer flex flex-col items-center justify-center text-zinc-500 dark:text-zinc-500 w-full h-full"
           >
-            <ImageIcon size={24} className="mb-2 opacity-50" />
-            <span className="text-xs font-medium">Click to upload</span>
+            <ImageIcon size={24} className="mb-2 opacity-40" />
+            <span className="text-xs font-medium text-zinc-600 dark:text-zinc-400">Click to upload</span>
             <span className="text-[10px] opacity-60 mt-1 max-w-[120px] text-center">{description}</span>
           </div>
         )}
