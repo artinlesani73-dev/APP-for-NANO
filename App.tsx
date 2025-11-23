@@ -4,11 +4,12 @@ import { PromptPanel } from './components/PromptPanel';
 import { ImageUploadPanel } from './components/ImageUploadPanel';
 import { ParametersPanel } from './components/ParametersPanel';
 import { ResultPanel } from './components/ResultPanel';
+import { HistoryPanel } from './components/HistoryPanel';
 import { SettingsModal } from './components/SettingsModal';
-import { StorageService } from './services/storageService';
+import { StorageService } from './services/newStorageService';
 import { GeminiService } from './services/geminiService';
-import { Chat, Generation, GenerationConfig, ImageRecord } from './types';
-import { Zap, Database, Key, ExternalLink } from 'lucide-react';
+import { Session, SessionGeneration, GenerationConfig } from './types';
+import { Zap, Database, Key, ExternalLink, History } from 'lucide-react';
 
 const DEFAULT_CONFIG: GenerationConfig = {
   temperature: 0.7,
@@ -21,38 +22,42 @@ const DEFAULT_CONFIG: GenerationConfig = {
 
 export default function App() {
   // --- STATE ---
-  const [chats, setChats] = useState<Chat[]>([]);
-  const [currentChatId, setCurrentChatId] = useState<string | null>(null);
-  
+  const [sessions, setSessions] = useState<Session[]>([]);
+  const [currentSessionId, setCurrentSessionId] = useState<string | null>(null);
+
   // Active Generation Inputs
   const [prompt, setPrompt] = useState<string>('');
-  const [controlImage, setControlImage] = useState<ImageRecord | null>(null);
-  const [referenceImage, setReferenceImage] = useState<ImageRecord | null>(null);
+  const [controlImageData, setControlImageData] = useState<string | null>(null);
+  const [referenceImageData, setReferenceImageData] = useState<string | null>(null);
   const [config, setConfig] = useState<GenerationConfig>(DEFAULT_CONFIG);
-  
+
   // Output State
   const [isGenerating, setIsGenerating] = useState(false);
-  const [currentGeneration, setCurrentGeneration] = useState<Generation | null>(null);
-  const [outputImage, setOutputImage] = useState<ImageRecord | null>(null);
+  const [currentGeneration, setCurrentGeneration] = useState<SessionGeneration | null>(null);
+  const [outputImageData, setOutputImageData] = useState<string | null>(null);
 
   // API Key State
   const [apiKeyConnected, setApiKeyConnected] = useState(false);
 
   // Settings & Theme State
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [showHistory, setShowHistory] = useState(false);
   const [theme, setTheme] = useState<'dark' | 'light'>('dark');
+
+  // Get current session
+  const currentSession = sessions.find(s => s.session_id === currentSessionId) || null;
 
   // --- EFFECTS ---
   useEffect(() => {
     // Load initial data
-    const loadedChats = StorageService.getChats();
-    setChats(loadedChats);
-    if (loadedChats.length > 0) {
-      handleSelectChat(loadedChats[0].chat_id);
+    const loadedSessions = StorageService.getSessions();
+    setSessions(loadedSessions);
+    if (loadedSessions.length > 0) {
+      handleSelectSession(loadedSessions[0].session_id);
     } else {
-      handleNewChat();
+      handleNewSession();
     }
-    
+
     // Check API Key Status
     GeminiService.checkApiKey().then(setApiKeyConnected);
 
@@ -79,78 +84,105 @@ export default function App() {
     }
   };
 
-  const handleNewChat = () => {
-    const newChat = StorageService.createChat();
-    setChats([newChat, ...chats]);
-    setCurrentChatId(newChat.chat_id);
+  const handleNewSession = () => {
+    const newSession = StorageService.createSession();
+    setSessions([newSession, ...sessions]);
+    setCurrentSessionId(newSession.session_id);
     resetInputs();
   };
 
-  const handleDeleteChat = (id: string) => {
-      StorageService.deleteChat(id);
-      const remaining = chats.filter(c => c.chat_id !== id);
-      setChats(remaining);
-      if (currentChatId === id) {
+  const handleDeleteSession = (id: string) => {
+      StorageService.deleteSession(id);
+      const remaining = sessions.filter(s => s.session_id !== id);
+      setSessions(remaining);
+      if (currentSessionId === id) {
           if (remaining.length > 0) {
-              handleSelectChat(remaining[0].chat_id);
+              handleSelectSession(remaining[0].session_id);
           } else {
-              handleNewChat();
+              handleNewSession();
           }
       }
   };
 
-  const handleSelectChat = (id: string) => {
-    setCurrentChatId(id);
-    const chat = StorageService.getChat(id);
-    if (!chat) return;
-    
-    // If the chat has generations, load the most recent one into view
-    if (chat.generation_ids.length > 0) {
-      const lastGenId = chat.generation_ids[chat.generation_ids.length - 1];
-      const gen = StorageService.getGeneration(lastGenId);
-      if (gen) {
-        // Load state from history
-        const promptObj = StorageService.getPrompt(gen.inputs.prompt_hash);
-        setPrompt(promptObj?.text || "");
-        
-        if (gen.inputs.control_image_hash) {
-            setControlImage(StorageService.getImage(gen.inputs.control_image_hash));
-        } else setControlImage(null);
+  const handleRenameSession = (id: string, newTitle: string) => {
+    StorageService.renameSession(id, newTitle);
+    setSessions(StorageService.getSessions());
+  };
 
-        if (gen.inputs.reference_image_hash) {
-            setReferenceImage(StorageService.getImage(gen.inputs.reference_image_hash));
-        } else setReferenceImage(null);
+  const handleSelectSession = (id: string) => {
+    setCurrentSessionId(id);
+    const session = StorageService.loadSession(id);
+    if (!session) return;
 
-        setConfig(gen.parameters);
-        setCurrentGeneration(gen);
-
-        if (gen.outputs?.image_hash) {
-            setOutputImage(StorageService.getImage(gen.outputs.image_hash));
-        }
-      }
+    // If the session has generations, load the most recent one
+    if (session.generations.length > 0) {
+      const lastGen = session.generations[session.generations.length - 1];
+      loadGenerationIntoView(lastGen);
     } else {
         resetInputs();
     }
   };
 
+  const handleSelectGeneration = (gen: SessionGeneration) => {
+    loadGenerationIntoView(gen);
+  };
+
+  const loadGenerationIntoView = (gen: SessionGeneration) => {
+    setPrompt(gen.prompt);
+    setConfig(gen.parameters);
+    setCurrentGeneration(gen);
+
+    // Load control image
+    if (gen.control_image) {
+      const imageData = StorageService.loadImage('control', gen.control_image.id, gen.control_image.filename);
+      setControlImageData(imageData);
+    } else {
+      setControlImageData(null);
+    }
+
+    // Load reference image
+    if (gen.reference_image) {
+      const imageData = StorageService.loadImage('reference', gen.reference_image.id, gen.reference_image.filename);
+      setReferenceImageData(imageData);
+    } else {
+      setReferenceImageData(null);
+    }
+
+    // Load output image
+    if (gen.output_image) {
+      const imageData = StorageService.loadImage('output', gen.output_image.id, gen.output_image.filename);
+      setOutputImageData(imageData);
+    } else {
+      setOutputImageData(null);
+    }
+  };
+
   const resetInputs = () => {
     setPrompt("");
-    setControlImage(null);
-    setReferenceImage(null);
+    setControlImageData(null);
+    setReferenceImageData(null);
     setConfig(DEFAULT_CONFIG);
     setCurrentGeneration(null);
-    setOutputImage(null);
+    setOutputImageData(null);
   };
 
   const handleImageUpload = async (file: File, role: 'control' | 'reference') => {
     const reader = new FileReader();
     reader.onload = (e) => {
         const base64 = e.target?.result as string;
-        const imgRecord = StorageService.saveImage(file, role, base64);
-        if (role === 'control') setControlImage(imgRecord);
-        else setReferenceImage(imgRecord);
+        if (role === 'control') setControlImageData(base64);
+        else setReferenceImageData(base64);
     };
     reader.readAsDataURL(file);
+  };
+
+  const handleExportImage = (filename: string) => {
+    const success = StorageService.exportImage(filename);
+    if (success) {
+      alert('Image exported successfully!');
+    } else {
+      alert('Failed to export image');
+    }
   };
 
   const handleConnectApiKey = async () => {
@@ -170,7 +202,7 @@ export default function App() {
   };
 
   const handleGenerate = async () => {
-    if (!currentChatId || !prompt) return;
+    if (!currentSessionId || !prompt) return;
 
     // 1. Ensure API Key ONLY if model requires it (Pro models)
     if (config.model === 'gemini-3-pro-image-preview' && !apiKeyConnected) {
@@ -183,52 +215,56 @@ export default function App() {
 
     setIsGenerating(true);
     setCurrentGeneration(null);
-    setOutputImage(null);
+    setOutputImageData(null);
 
-    // 2. Persist Inputs (Provenance)
-    const promptObj = StorageService.savePrompt(prompt);
-    
-    // 3. Create Generation Record
+    // 2. Create Generation Record
     const gen = StorageService.createGeneration(
-        currentChatId, 
-        promptObj.prompt_hash, 
+        currentSessionId,
+        prompt,
         config,
-        controlImage?.image_hash, 
-        referenceImage?.image_hash
+        controlImageData || undefined,
+        referenceImageData || undefined
     );
     setCurrentGeneration(gen);
 
     const startTime = Date.now();
 
     try {
-        // 4. API Call
+        // 3. API Call
         const base64Output = await GeminiService.generateImage(
-            prompt, 
-            config, 
-            controlImage?.data_uri,
-            referenceImage?.data_uri
+            prompt,
+            config,
+            controlImageData || undefined,
+            referenceImageData || undefined
         );
 
         const duration = Date.now() - startTime;
 
-        // 5. Save Artifacts
-        const outputImg = StorageService.saveGeneratedImage(base64Output);
-        
-        // 6. Complete Record
-        StorageService.completeGeneration(gen.generation_id, outputImg.image_hash, duration);
-        
-        // Update UI
-        setCurrentGeneration(StorageService.getGeneration(gen.generation_id));
-        setOutputImage(outputImg);
+        // 4. Complete Generation and Save Output
+        const outputDataUri = `data:image/png;base64,${base64Output}`;
+        StorageService.completeGeneration(currentSessionId, gen.generation_id, outputDataUri, duration);
 
-        // Update Chat List to show new activity timestamp
-        setChats(StorageService.getChats());
+        // 5. Reload session and update UI
+        const updatedSession = StorageService.loadSession(currentSessionId);
+        if (updatedSession) {
+          const completedGen = updatedSession.generations.find(g => g.generation_id === gen.generation_id);
+          if (completedGen) {
+            setCurrentGeneration(completedGen);
+            if (completedGen.output_image) {
+              const outputData = StorageService.loadImage('output', completedGen.output_image.id, completedGen.output_image.filename);
+              setOutputImageData(outputData);
+            }
+          }
+        }
+
+        // Update sessions list to show new activity
+        setSessions(StorageService.getSessions());
 
     } catch (error: any) {
         console.error("Generation failed:", error);
-        
+
         const errorMessage = error.message || error.toString();
-        
+
         if (errorMessage.includes("Requested entity was not found")) {
             setApiKeyConnected(false);
             alert("The selected API Key is no longer valid or the project was not found. Please select a valid key.");
@@ -237,8 +273,14 @@ export default function App() {
             }
         }
 
-        StorageService.failGeneration(gen.generation_id, errorMessage);
-        setCurrentGeneration(StorageService.getGeneration(gen.generation_id)); 
+        StorageService.failGeneration(currentSessionId, gen.generation_id, errorMessage);
+
+        // Reload generation with error
+        const updatedSession = StorageService.loadSession(currentSessionId);
+        if (updatedSession) {
+          const failedGen = updatedSession.generations.find(g => g.generation_id === gen.generation_id);
+          if (failedGen) setCurrentGeneration(failedGen);
+        }
     } finally {
         setIsGenerating(false);
     }
@@ -248,12 +290,20 @@ export default function App() {
     <div className={`flex h-screen w-screen overflow-hidden font-sans selection:bg-blue-500/30 transition-colors duration-200 ${theme === 'dark' ? 'bg-black text-zinc-100' : 'bg-white text-zinc-900'}`}>
       
       {/* SIDEBAR */}
-      <Sidebar 
-        chats={chats} 
-        currentChatId={currentChatId}
-        onSelectChat={handleSelectChat}
-        onNewChat={handleNewChat}
-        onDeleteChat={handleDeleteChat}
+      <Sidebar
+        chats={sessions.map(s => ({
+          chat_id: s.session_id,
+          created_at: s.created_at,
+          updated_at: s.updated_at,
+          title: s.title,
+          description: '',
+          generation_ids: s.generations.map(g => g.generation_id)
+        }))}
+        currentChatId={currentSessionId}
+        onSelectChat={handleSelectSession}
+        onNewChat={handleNewSession}
+        onDeleteChat={handleDeleteSession}
+        onRenameChat={handleRenameSession}
         onOpenSettings={() => setIsSettingsOpen(true)}
       />
 
@@ -271,11 +321,23 @@ export default function App() {
             </div>
             
             <div className="flex items-center gap-4">
+                <button
+                  onClick={() => setShowHistory(!showHistory)}
+                  className={`flex items-center gap-2 text-xs px-3 py-1.5 rounded border transition-colors font-medium ${
+                    showHistory
+                      ? 'bg-blue-50 dark:bg-blue-950/30 border-blue-300 dark:border-blue-900 text-blue-700 dark:text-blue-400'
+                      : 'bg-white dark:bg-zinc-800/50 border-zinc-300 dark:border-zinc-700 text-zinc-700 dark:text-zinc-400 hover:bg-zinc-50 dark:hover:bg-zinc-800'
+                  }`}
+                >
+                  <History size={12} />
+                  History ({currentSession?.generations.length || 0})
+                </button>
+
                 {config.model === 'gemini-3-pro-image-preview' && (
-                    <a 
-                      href="https://ai.google.dev/gemini-api/docs/billing" 
-                      target="_blank" 
-                      rel="noreferrer" 
+                    <a
+                      href="https://ai.google.dev/gemini-api/docs/billing"
+                      target="_blank"
+                      rel="noreferrer"
                       className="hidden md:flex items-center gap-1 text-[10px] text-zinc-500 hover:text-blue-500 transition-colors"
                     >
                       <ExternalLink size={10} />
@@ -318,29 +380,39 @@ export default function App() {
 
                     {/* Image Controls Grid */}
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        <ImageUploadPanel 
-                            title="Control Image" 
+                        <ImageUploadPanel
+                            title="Control Image"
                             description="Use for structure/composition"
-                            image={controlImage}
+                            image={controlImageData ? { data_uri: controlImageData } as any : null}
                             onUpload={(f) => handleImageUpload(f, 'control')}
-                            onRemove={() => setControlImage(null)}
+                            onRemove={() => setControlImageData(null)}
                         />
-                        <ImageUploadPanel 
-                            title="Reference Image" 
+                        <ImageUploadPanel
+                            title="Reference Image"
                             description="Use for style transfer"
-                            image={referenceImage}
+                            image={referenceImageData ? { data_uri: referenceImageData } as any : null}
                             onUpload={(f) => handleImageUpload(f, 'reference')}
-                            onRemove={() => setReferenceImage(null)}
+                            onRemove={() => setReferenceImageData(null)}
                         />
                     </div>
 
-                    {/* Output Area */}
+                    {/* Output Area or History */}
                     <div className="h-[500px]">
-                        <ResultPanel 
-                            isGenerating={isGenerating} 
-                            generation={currentGeneration} 
-                            outputImage={outputImage} 
-                        />
+                        {showHistory && currentSession ? (
+                            <HistoryPanel
+                                generations={currentSession.generations}
+                                onSelectGeneration={handleSelectGeneration}
+                                selectedGenerationId={currentGeneration?.generation_id}
+                                onExportImage={handleExportImage}
+                                loadImage={(role, id, filename) => StorageService.loadImage(role, id, filename)}
+                            />
+                        ) : (
+                            <ResultPanel
+                                isGenerating={isGenerating}
+                                generation={currentGeneration as any}
+                                outputImage={outputImageData ? { data_uri: outputImageData } as any : null}
+                            />
+                        )}
                     </div>
                 </div>
 
