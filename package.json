@@ -43,7 +43,8 @@
     ],
     "win": {
       "target": "nsis",
-      "sign": false
+      "signingHashAlgorithms": [],
+      "sign": null
     },
     "mac": {
       "target": "dmg"
