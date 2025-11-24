@@ -1,8 +1,4 @@
-<div align="center">
-<img width="1200" height="475" alt="GHBanner" src="https://github.com/user-attachments/assets/0aa67016-6eaf-458a-adb2-6e31a0763ed6" />
-</div>
-
-# Image Provenance Studio
+# AREA49 Nano Banana App
 
 A professional desktop application for AI-powered image generation using Google's Gemini API. Create, manage, and track your AI-generated images with full session history and provenance tracking.
 
