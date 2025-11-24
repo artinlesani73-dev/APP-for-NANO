@@ -63,10 +63,34 @@ const GraphView: React.FC<GraphViewProps> = ({ session, theme, loadImage, onGene
   const [isDraggingOver, setIsDraggingOver] = useState(false);
   const [connectingFrom, setConnectingFrom] = useState<{ nodeId: string; handle?: string } | null>(null);
   const [connectionPreview, setConnectionPreview] = useState<{ x: number; y: number } | null>(null);
+  const [isDraggingNode, setIsDraggingNode] = useState(false);
 
   useEffect(() => {
     generateGraphLayout();
-  }, [session, standaloneNodes]);
+  }, [session]);
+
+  // Sync standalone nodes into the main nodes array without regenerating layout
+  useEffect(() => {
+    setNodes(prevNodes => {
+      // Keep session-generated nodes, update standalone nodes
+      const sessionNodes = prevNodes.filter(n => !n.isStandalone);
+      return [...sessionNodes, ...standaloneNodes];
+    });
+  }, [standaloneNodes]);
+
+  // Sync standalone edges
+  useEffect(() => {
+    setEdges(prevEdges => {
+      // Keep session-generated edges, add standalone edges
+      const sessionEdges = prevEdges.filter(e => {
+        // Session edges connect session nodes
+        const fromNode = nodes.find(n => n.id === e.from);
+        const toNode = nodes.find(n => n.id === e.to);
+        return fromNode && toNode && !fromNode.isStandalone && !toNode.isStandalone;
+      });
+      return [...sessionEdges, ...standaloneEdges];
+    });
+  }, [standaloneEdges]);
 
   const generateGraphLayout = () => {
     const newNodes: Node[] = [];
@@ -237,16 +261,6 @@ const GraphView: React.FC<GraphViewProps> = ({ session, theme, loadImage, onGene
       }
     });
 
-    // Add standalone nodes
-    standaloneNodes.forEach(node => {
-      newNodes.push(node);
-    });
-
-    // Add standalone edges
-    standaloneEdges.forEach(edge => {
-      newEdges.push(edge);
-    });
-
     setNodes(newNodes);
     setEdges(newEdges);
   };
@@ -296,6 +310,7 @@ const GraphView: React.FC<GraphViewProps> = ({ session, theme, loadImage, onGene
       const node = nodes.find(n => n.id === nodeId);
       if (node) {
         setDraggingNode(nodeId);
+        setIsDraggingNode(true);
         const rect = svgRef.current?.getBoundingClientRect();
         if (rect) {
           const svgX = (e.clientX - rect.left - pan.x) / zoom;
@@ -321,13 +336,27 @@ const GraphView: React.FC<GraphViewProps> = ({ session, theme, loadImage, onGene
         const svgX = (e.clientX - rect.left - pan.x) / zoom;
         const svgY = (e.clientY - rect.top - pan.y) / zoom;
 
-        setNodes(prevNodes =>
-          prevNodes.map(node =>
-            node.id === draggingNode
-              ? { ...node, x: svgX - dragOffset.x, y: svgY - dragOffset.y }
-              : node
-          )
-        );
+        // Check if it's a standalone node
+        const node = standaloneNodes.find(n => n.id === draggingNode);
+        if (node) {
+          // Update standalone node position
+          setStandaloneNodes(prevNodes =>
+            prevNodes.map(n =>
+              n.id === draggingNode
+                ? { ...n, x: svgX - dragOffset.x, y: svgY - dragOffset.y }
+                : n
+            )
+          );
+        } else {
+          // Update regular node position
+          setNodes(prevNodes =>
+            prevNodes.map(n =>
+              n.id === draggingNode
+                ? { ...n, x: svgX - dragOffset.x, y: svgY - dragOffset.y }
+                : n
+            )
+          );
+        }
       }
     } else if (connectingFrom) {
       // Update connection preview
@@ -349,6 +378,7 @@ const GraphView: React.FC<GraphViewProps> = ({ session, theme, loadImage, onGene
   const handleMouseUp = () => {
     setIsPanning(false);
     setDraggingNode(null);
+    setIsDraggingNode(false);
     setConnectingFrom(null);
     setConnectionPreview(null);
   };
@@ -448,7 +478,7 @@ const GraphView: React.FC<GraphViewProps> = ({ session, theme, loadImage, onGene
   // Drag and drop handlers for external images
   const handleDragOver = (e: React.DragEvent) => {
     // Only handle external file drags, not internal node drags
-    if (e.dataTransfer.types.includes('Files')) {
+    if (!isDraggingNode && e.dataTransfer.types.includes('Files')) {
       e.preventDefault();
       e.stopPropagation();
       setIsDraggingOver(true);
@@ -456,7 +486,7 @@ const GraphView: React.FC<GraphViewProps> = ({ session, theme, loadImage, onGene
   };
 
   const handleDragLeave = (e: React.DragEvent) => {
-    if (e.dataTransfer.types.includes('Files')) {
+    if (!isDraggingNode && e.dataTransfer.types.includes('Files')) {
       e.preventDefault();
       e.stopPropagation();
       setIsDraggingOver(false);
@@ -464,8 +494,8 @@ const GraphView: React.FC<GraphViewProps> = ({ session, theme, loadImage, onGene
   };
 
   const handleDrop = async (e: React.DragEvent) => {
-    // Only handle external file drops
-    if (!e.dataTransfer.types.includes('Files')) return;
+    // Only handle external file drops, not node drags
+    if (isDraggingNode || !e.dataTransfer.types.includes('Files')) return;
 
     e.preventDefault();
     e.stopPropagation();
@@ -576,6 +606,58 @@ const GraphView: React.FC<GraphViewProps> = ({ session, theme, loadImage, onGene
   const handleConnectionEnd = (e: React.MouseEvent, toNodeId: string, toHandle?: string) => {
     e.stopPropagation();
     if (connectingFrom && connectingFrom.nodeId !== toNodeId) {
+      const fromNode = nodes.find(n => n.id === connectingFrom.nodeId);
+      const toNode = nodes.find(n => n.id === toNodeId);
+
+      if (!fromNode || !toNode) {
+        setConnectingFrom(null);
+        setConnectionPreview(null);
+        return;
+      }
+
+      // Validation rules
+      let isValid = true;
+      let errorMessage = '';
+
+      // Rule 1: Workflow prompt handle only accepts prompt nodes (not images)
+      if (toNode.type === 'workflow' && toHandle === 'prompt') {
+        if (fromNode.type !== 'prompt') {
+          isValid = false;
+          errorMessage = 'Prompt handle only accepts prompt nodes';
+        }
+        // Check if already has a prompt connection
+        const existingPromptEdge = [...edges, ...standaloneEdges].find(
+          e => e.to === toNodeId && e.toHandle === 'prompt'
+        );
+        if (existingPromptEdge) {
+          isValid = false;
+          errorMessage = 'Workflow already has a prompt connected';
+        }
+      }
+
+      // Rule 2: Workflow control handle only accepts image nodes
+      if (toNode.type === 'workflow' && toHandle === 'control') {
+        if (!fromNode.type.includes('image')) {
+          isValid = false;
+          errorMessage = 'Control handle only accepts image nodes';
+        }
+      }
+
+      // Rule 3: Workflow reference handle only accepts image nodes
+      if (toNode.type === 'workflow' && toHandle === 'reference') {
+        if (!fromNode.type.includes('image')) {
+          isValid = false;
+          errorMessage = 'Reference handle only accepts image nodes';
+        }
+      }
+
+      if (!isValid) {
+        alert(errorMessage);
+        setConnectingFrom(null);
+        setConnectionPreview(null);
+        return;
+      }
+
       // Determine edge color based on handle type
       let color = '#8b5cf6'; // default purple
       if (toHandle === 'control') color = '#10b981'; // green
@@ -999,7 +1081,7 @@ const GraphView: React.FC<GraphViewProps> = ({ session, theme, loadImage, onGene
     );
   };
 
-  const renderEdge = (edge: Edge) => {
+  const renderEdge = (edge: Edge, index: number) => {
     const fromNode = nodes.find(n => n.id === edge.from);
     const toNode = nodes.find(n => n.id === edge.to);
 
@@ -1007,8 +1089,11 @@ const GraphView: React.FC<GraphViewProps> = ({ session, theme, loadImage, onGene
 
     const path = generateCurvePath(fromNode, toNode, edge.toHandle);
 
+    // Generate unique key using index to avoid duplicates
+    const key = `edge-${index}-${edge.from}-${edge.to}-${edge.toHandle || 'none'}`;
+
     return (
-      <g key={`${edge.from}-${edge.to}-${edge.toHandle || 'default'}`}>
+      <g key={key}>
         <path
           d={path}
           stroke={edge.color}
@@ -1081,7 +1166,7 @@ const GraphView: React.FC<GraphViewProps> = ({ session, theme, loadImage, onGene
       >
         <g transform={`translate(${pan.x}, ${pan.y}) scale(${zoom})`}>
           {/* Render edges first (behind nodes) */}
-          {edges.map(renderEdge)}
+          {edges.map((edge, index) => renderEdge(edge, index))}
 
           {/* Render connection preview */}
           {connectingFrom && connectionPreview && (() => {
