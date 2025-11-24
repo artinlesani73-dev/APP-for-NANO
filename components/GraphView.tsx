@@ -1,15 +1,16 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { SessionGeneration } from '../types';
-import { FileText, Settings, Image as ImageIcon } from 'lucide-react';
+import { Session, SessionGeneration } from '../types';
+import { FileText, Settings, Image as ImageIcon, ZoomIn, ZoomOut, Maximize2 } from 'lucide-react';
 
 interface GraphViewProps {
-  generation: SessionGeneration;
+  session: Session;
   theme: 'dark' | 'light';
   loadImage: (role: 'control' | 'reference' | 'output', id: string, filename: string) => string | null;
 }
 
 interface Node {
   id: string;
+  generationId: string;
   type: 'prompt' | 'workflow' | 'control-image' | 'reference-image' | 'output-image';
   label: string;
   x: number;
@@ -26,18 +27,21 @@ interface Edge {
   color: string;
 }
 
-const GraphView: React.FC<GraphViewProps> = ({ generation, theme, loadImage }) => {
+const GraphView: React.FC<GraphViewProps> = ({ session, theme, loadImage }) => {
   const svgRef = useRef<SVGSVGElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
   const [nodes, setNodes] = useState<Node[]>([]);
   const [edges, setEdges] = useState<Edge[]>([]);
   const [pan, setPan] = useState({ x: 50, y: 50 });
-  const [zoom, setZoom] = useState(0.8);
+  const [zoom, setZoom] = useState(0.7);
   const [isPanning, setIsPanning] = useState(false);
   const [panStart, setPanStart] = useState({ x: 0, y: 0 });
+  const [draggingNode, setDraggingNode] = useState<string | null>(null);
+  const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
 
   useEffect(() => {
     generateGraphLayout();
-  }, [generation]);
+  }, [session]);
 
   const generateGraphLayout = () => {
     const newNodes: Node[] = [];
@@ -47,145 +51,166 @@ const GraphView: React.FC<GraphViewProps> = ({ generation, theme, loadImage }) =
     const nodeHeight = 160;
     const imageNodeHeight = 220;
     const workflowNodeHeight = 280;
+    const generationSpacingX = 1200; // Horizontal spacing between generations
+    const generationSpacingY = 800; // Vertical spacing between generations
     const columnSpacing = 300;
-    const rowSpacing = 250;
 
-    let currentX = 100;
-    const centerY = 300;
+    let currentGenX = 100;
+    let currentGenY = 100;
+    let generationsPerRow = 2; // Layout generations in a grid
 
-    // Column 0: Prompt Node
-    newNodes.push({
-      id: 'prompt',
-      type: 'prompt',
-      label: 'Prompt',
-      x: currentX,
-      y: centerY,
-      width: nodeWidth,
-      height: nodeHeight,
-      data: { text: generation.prompt }
-    });
+    session.generations.forEach((generation, genIndex) => {
+      // Calculate grid position for this generation
+      const row = Math.floor(genIndex / generationsPerRow);
+      const col = genIndex % generationsPerRow;
+      const baseX = col * generationSpacingX + 100;
+      const baseY = row * generationSpacingY + 100;
 
-    currentX += columnSpacing;
+      let currentX = baseX;
+      const centerY = baseY + 300;
 
-    // Column 1: Control and Reference Images
-    const totalImages = (generation.control_images?.length || 0) + (generation.reference_images?.length || 0);
-    const imageColumnStartY = centerY - ((totalImages - 1) * rowSpacing) / 2;
-
-    let currentImageY = imageColumnStartY;
-
-    // Control Images
-    if (generation.control_images && generation.control_images.length > 0) {
-      generation.control_images.forEach((img, idx) => {
-        const nodeId = `control-${idx}`;
-        const imageData = loadImage('control', img.id, img.filename);
-
-        newNodes.push({
-          id: nodeId,
-          type: 'control-image',
-          label: `Control ${idx + 1}`,
-          x: currentX,
-          y: currentImageY,
-          width: nodeWidth,
-          height: imageNodeHeight,
-          data: { image: img, imageData }
-        });
-
-        currentImageY += rowSpacing;
-      });
-    }
-
-    // Reference Images
-    if (generation.reference_images && generation.reference_images.length > 0) {
-      generation.reference_images.forEach((img, idx) => {
-        const nodeId = `reference-${idx}`;
-        const imageData = loadImage('reference', img.id, img.filename);
-
-        newNodes.push({
-          id: nodeId,
-          type: 'reference-image',
-          label: `Reference ${idx + 1}`,
-          x: currentX,
-          y: currentImageY,
-          width: nodeWidth,
-          height: imageNodeHeight,
-          data: { image: img, imageData }
-        });
-
-        currentImageY += rowSpacing;
-      });
-    }
-
-    currentX += columnSpacing;
-
-    // Column 2: Workflow/Parameters Node (centered)
-    const workflowY = centerY - workflowNodeHeight / 2 + nodeHeight / 2;
-    newNodes.push({
-      id: 'workflow',
-      type: 'workflow',
-      label: 'Workflow',
-      x: currentX,
-      y: workflowY,
-      width: nodeWidth,
-      height: workflowNodeHeight,
-      data: { parameters: generation.parameters }
-    });
-
-    // Connect prompt to workflow prompt handle
-    newEdges.push({
-      from: 'prompt',
-      to: 'workflow',
-      toHandle: 'prompt',
-      color: '#8b5cf6' // purple
-    });
-
-    // Connect control images to workflow control handle
-    if (generation.control_images && generation.control_images.length > 0) {
-      generation.control_images.forEach((_, idx) => {
-        newEdges.push({
-          from: `control-${idx}`,
-          to: 'workflow',
-          toHandle: 'control',
-          color: '#10b981' // green
-        });
-      });
-    }
-
-    // Connect reference images to workflow reference handle
-    if (generation.reference_images && generation.reference_images.length > 0) {
-      generation.reference_images.forEach((_, idx) => {
-        newEdges.push({
-          from: `reference-${idx}`,
-          to: 'workflow',
-          toHandle: 'reference',
-          color: '#3b82f6' // blue
-        });
-      });
-    }
-
-    currentX += columnSpacing;
-
-    // Column 3: Output Image
-    if (generation.output_image) {
-      const outputY = centerY - imageNodeHeight / 2 + nodeHeight / 2;
-      const imageData = loadImage('output', generation.output_image.id, generation.output_image.filename);
-
+      // Column 0: Prompt Node
+      const promptNodeId = `gen${genIndex}-prompt`;
       newNodes.push({
-        id: 'output',
-        type: 'output-image',
-        label: 'Output',
+        id: promptNodeId,
+        generationId: generation.generation_id,
+        type: 'prompt',
+        label: `Prompt #${genIndex + 1}`,
         x: currentX,
-        y: outputY,
+        y: centerY,
         width: nodeWidth,
-        height: imageNodeHeight,
-        data: { image: generation.output_image, imageData }
+        height: nodeHeight,
+        data: { text: generation.prompt, status: generation.status }
       });
 
-      newEdges.push({
-        from: 'workflow',
-        to: 'output',
-        color: '#f59e0b' // amber
+      currentX += columnSpacing;
+
+      // Column 1: Control and Reference Images
+      const totalImages = (generation.control_images?.length || 0) + (generation.reference_images?.length || 0);
+      const imageColumnStartY = centerY - ((totalImages - 1) * 250) / 2;
+
+      let currentImageY = imageColumnStartY;
+
+      // Control Images
+      if (generation.control_images && generation.control_images.length > 0) {
+        generation.control_images.forEach((img, idx) => {
+          const nodeId = `gen${genIndex}-control-${idx}`;
+          const imageData = loadImage('control', img.id, img.filename);
+
+          newNodes.push({
+            id: nodeId,
+            generationId: generation.generation_id,
+            type: 'control-image',
+            label: `Control ${idx + 1}`,
+            x: currentX,
+            y: currentImageY,
+            width: nodeWidth,
+            height: imageNodeHeight,
+            data: { image: img, imageData }
+          });
+
+          currentImageY += 250;
+        });
+      }
+
+      // Reference Images
+      if (generation.reference_images && generation.reference_images.length > 0) {
+        generation.reference_images.forEach((img, idx) => {
+          const nodeId = `gen${genIndex}-reference-${idx}`;
+          const imageData = loadImage('reference', img.id, img.filename);
+
+          newNodes.push({
+            id: nodeId,
+            generationId: generation.generation_id,
+            type: 'reference-image',
+            label: `Reference ${idx + 1}`,
+            x: currentX,
+            y: currentImageY,
+            width: nodeWidth,
+            height: imageNodeHeight,
+            data: { image: img, imageData }
+          });
+
+          currentImageY += 250;
+        });
+      }
+
+      currentX += columnSpacing;
+
+      // Column 2: Workflow/Parameters Node
+      const workflowNodeId = `gen${genIndex}-workflow`;
+      const workflowY = centerY - workflowNodeHeight / 2 + nodeHeight / 2;
+      newNodes.push({
+        id: workflowNodeId,
+        generationId: generation.generation_id,
+        type: 'workflow',
+        label: `Workflow #${genIndex + 1}`,
+        x: currentX,
+        y: workflowY,
+        width: nodeWidth,
+        height: workflowNodeHeight,
+        data: { parameters: generation.parameters }
       });
-    }
+
+      // Connect prompt to workflow
+      newEdges.push({
+        from: promptNodeId,
+        to: workflowNodeId,
+        toHandle: 'prompt',
+        color: '#8b5cf6' // purple
+      });
+
+      // Connect control images to workflow
+      if (generation.control_images && generation.control_images.length > 0) {
+        generation.control_images.forEach((_, idx) => {
+          newEdges.push({
+            from: `gen${genIndex}-control-${idx}`,
+            to: workflowNodeId,
+            toHandle: 'control',
+            color: '#10b981' // green
+          });
+        });
+      }
+
+      // Connect reference images to workflow
+      if (generation.reference_images && generation.reference_images.length > 0) {
+        generation.reference_images.forEach((_, idx) => {
+          newEdges.push({
+            from: `gen${genIndex}-reference-${idx}`,
+            to: workflowNodeId,
+            toHandle: 'reference',
+            color: '#3b82f6' // blue
+          });
+        });
+      }
+
+      currentX += columnSpacing;
+
+      // Column 3: Output Image
+      if (generation.output_image) {
+        const outputNodeId = `gen${genIndex}-output`;
+        const outputY = centerY - imageNodeHeight / 2 + nodeHeight / 2;
+        const imageData = loadImage('output', generation.output_image.id, generation.output_image.filename);
+
+        newNodes.push({
+          id: outputNodeId,
+          generationId: generation.generation_id,
+          type: 'output-image',
+          label: `Output #${genIndex + 1}`,
+          x: currentX,
+          y: outputY,
+          width: nodeWidth,
+          height: imageNodeHeight,
+          data: { image: generation.output_image, imageData }
+        });
+
+        newEdges.push({
+          from: workflowNodeId,
+          to: outputNodeId,
+          color: '#f59e0b' // amber
+        });
+      }
+    });
 
     setNodes(newNodes);
     setEdges(newEdges);
@@ -226,19 +251,51 @@ const GraphView: React.FC<GraphViewProps> = ({ generation, theme, loadImage }) =
   const handleWheel = (e: React.WheelEvent) => {
     e.preventDefault();
     const delta = e.deltaY * -0.001;
-    const newZoom = Math.min(Math.max(0.3, zoom + delta), 2);
+    const newZoom = Math.min(Math.max(0.2, zoom + delta), 2);
     setZoom(newZoom);
   };
 
-  const handleMouseDown = (e: React.MouseEvent) => {
-    if (e.button === 0) {
+  const handleMouseDown = (e: React.MouseEvent, nodeId?: string) => {
+    if (nodeId) {
+      // Start dragging a node
+      const node = nodes.find(n => n.id === nodeId);
+      if (node) {
+        setDraggingNode(nodeId);
+        const rect = svgRef.current?.getBoundingClientRect();
+        if (rect) {
+          const svgX = (e.clientX - rect.left - pan.x) / zoom;
+          const svgY = (e.clientY - rect.top - pan.y) / zoom;
+          setDragOffset({
+            x: svgX - node.x,
+            y: svgY - node.y
+          });
+        }
+      }
+    } else if (e.button === 0) {
+      // Start panning the canvas
       setIsPanning(true);
       setPanStart({ x: e.clientX - pan.x, y: e.clientY - pan.y });
     }
   };
 
   const handleMouseMove = (e: React.MouseEvent) => {
-    if (isPanning) {
+    if (draggingNode) {
+      // Drag the node
+      const rect = svgRef.current?.getBoundingClientRect();
+      if (rect) {
+        const svgX = (e.clientX - rect.left - pan.x) / zoom;
+        const svgY = (e.clientY - rect.top - pan.y) / zoom;
+
+        setNodes(prevNodes =>
+          prevNodes.map(node =>
+            node.id === draggingNode
+              ? { ...node, x: svgX - dragOffset.x, y: svgY - dragOffset.y }
+              : node
+          )
+        );
+      }
+    } else if (isPanning) {
+      // Pan the canvas
       setPan({
         x: e.clientX - panStart.x,
         y: e.clientY - panStart.y
@@ -248,6 +305,7 @@ const GraphView: React.FC<GraphViewProps> = ({ generation, theme, loadImage }) =
 
   const handleMouseUp = () => {
     setIsPanning(false);
+    setDraggingNode(null);
   };
 
   const renderNode = (node: Node) => {
@@ -255,7 +313,15 @@ const GraphView: React.FC<GraphViewProps> = ({ generation, theme, loadImage }) =
     const isDark = theme === 'dark';
 
     return (
-      <g key={node.id} transform={`translate(${node.x}, ${node.y})`}>
+      <g
+        key={node.id}
+        transform={`translate(${node.x}, ${node.y})`}
+        onMouseDown={(e) => {
+          e.stopPropagation();
+          handleMouseDown(e.nativeEvent, node.id);
+        }}
+        style={{ cursor: 'move' }}
+      >
         {/* Node background */}
         <rect
           width={node.width}
@@ -287,6 +353,15 @@ const GraphView: React.FC<GraphViewProps> = ({ generation, theme, loadImage }) =
               {node.type === 'workflow' && <Settings size={16} />}
               {node.type.includes('image') && <ImageIcon size={16} />}
               <span className="text-sm font-semibold">{node.label}</span>
+              {node.type === 'prompt' && node.data.status && (
+                <span className={`text-[10px] px-1.5 py-0.5 rounded ${
+                  node.data.status === 'completed' ? 'bg-green-500/30' :
+                  node.data.status === 'failed' ? 'bg-red-500/30' :
+                  'bg-yellow-500/30'
+                }`}>
+                  {node.data.status}
+                </span>
+              )}
             </div>
           </foreignObject>
         </g>
@@ -339,7 +414,7 @@ const GraphView: React.FC<GraphViewProps> = ({ generation, theme, loadImage }) =
                   </div>
                 )}
                 <p className={`text-xs mt-2 ${isDark ? 'text-gray-400' : 'text-gray-600'} truncate`}>
-                  {node.data.image.filename}
+                  {node.data.image?.filename || 'No image'}
                 </p>
               </div>
             )}
@@ -457,48 +532,54 @@ const GraphView: React.FC<GraphViewProps> = ({ generation, theme, loadImage }) =
   const isDark = theme === 'dark';
 
   return (
-    <div className={`w-full h-full rounded-lg overflow-hidden relative ${isDark ? 'bg-gray-900' : 'bg-gray-50'}`}>
+    <div
+      ref={containerRef}
+      className={`w-full h-full relative ${isDark ? 'bg-gray-900' : 'bg-gray-50'}`}
+    >
       {/* Controls */}
       <div className={`absolute top-4 right-4 z-10 rounded-lg p-2 space-y-2 ${isDark ? 'bg-gray-800' : 'bg-white'} shadow-lg`}>
         <button
           onClick={() => setZoom(Math.min(zoom + 0.1, 2))}
-          className={`block w-full px-3 py-1 rounded text-sm transition-colors ${
+          className={`block w-full px-3 py-2 rounded text-sm transition-colors flex items-center gap-2 ${
             isDark
               ? 'bg-gray-700 hover:bg-gray-600 text-white'
               : 'bg-gray-100 hover:bg-gray-200 text-gray-900'
           }`}
         >
-          Zoom +
+          <ZoomIn size={16} />
+          Zoom In
         </button>
         <button
-          onClick={() => setZoom(Math.max(zoom - 0.1, 0.3))}
-          className={`block w-full px-3 py-1 rounded text-sm transition-colors ${
+          onClick={() => setZoom(Math.max(zoom - 0.1, 0.2))}
+          className={`block w-full px-3 py-2 rounded text-sm transition-colors flex items-center gap-2 ${
             isDark
               ? 'bg-gray-700 hover:bg-gray-600 text-white'
               : 'bg-gray-100 hover:bg-gray-200 text-gray-900'
           }`}
         >
-          Zoom -
+          <ZoomOut size={16} />
+          Zoom Out
         </button>
         <button
-          onClick={() => { setZoom(0.8); setPan({ x: 50, y: 50 }); }}
-          className={`block w-full px-3 py-1 rounded text-sm transition-colors ${
+          onClick={() => { setZoom(0.7); setPan({ x: 50, y: 50 }); }}
+          className={`block w-full px-3 py-2 rounded text-sm transition-colors flex items-center gap-2 ${
             isDark
               ? 'bg-gray-700 hover:bg-gray-600 text-white'
               : 'bg-gray-100 hover:bg-gray-200 text-gray-900'
           }`}
         >
-          Reset
+          <Maximize2 size={16} />
+          Reset View
         </button>
       </div>
 
       {/* Graph canvas */}
       <svg
         ref={svgRef}
-        className="w-full h-full cursor-grab active:cursor-grabbing"
+        className={`w-full h-full ${isPanning ? 'cursor-grabbing' : 'cursor-grab'}`}
         onWheel={handleWheel}
-        onMouseDown={handleMouseDown}
-        onMouseMove={handleMouseMove}
+        onMouseDown={(e) => handleMouseDown(e.nativeEvent)}
+        onMouseMove={(e) => handleMouseMove(e.nativeEvent)}
         onMouseUp={handleMouseUp}
         onMouseLeave={handleMouseUp}
       >
@@ -513,7 +594,8 @@ const GraphView: React.FC<GraphViewProps> = ({ generation, theme, loadImage }) =
 
       {/* Legend */}
       <div className={`absolute bottom-4 left-4 rounded-lg p-3 space-y-1 text-xs ${isDark ? 'bg-gray-800' : 'bg-white'} shadow-lg`}>
-        <div className="font-semibold mb-2">Legend</div>
+        <div className="font-semibold mb-2">Session: {session.title}</div>
+        <div className="text-xs text-gray-500 mb-2">{session.generations.length} generation(s)</div>
         <div className="flex items-center gap-2">
           <div className="w-4 h-1 bg-purple-600 rounded"></div>
           <span>Prompt Flow</span>
@@ -529,6 +611,11 @@ const GraphView: React.FC<GraphViewProps> = ({ generation, theme, loadImage }) =
         <div className="flex items-center gap-2">
           <div className="w-4 h-1 bg-amber-600 rounded"></div>
           <span>Output</span>
+        </div>
+        <div className="mt-2 pt-2 border-t border-gray-600 text-gray-500">
+          <div>💡 Drag nodes to reposition</div>
+          <div>🖱️ Drag canvas to pan</div>
+          <div>🔍 Scroll to zoom</div>
         </div>
       </div>
     </div>

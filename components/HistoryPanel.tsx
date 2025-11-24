@@ -1,7 +1,6 @@
 import React from 'react';
 import { SessionGeneration } from '../types';
-import { Clock, Image, Download, CheckCircle2, XCircle, Loader2, Network } from 'lucide-react';
-import GraphView from './GraphView';
+import { Clock, Image, Download, CheckCircle2, XCircle, Loader2 } from 'lucide-react';
 
 interface HistoryPanelProps {
   generations: SessionGeneration[];
@@ -9,8 +8,6 @@ interface HistoryPanelProps {
   selectedGenerationId?: string;
   onExportImage: (filename: string) => void;
   loadImage: (role: 'control' | 'reference' | 'output', id: string, filename: string) => string | null;
-  viewMode: 'list' | 'graph';
-  theme: 'dark' | 'light';
 }
 
 export const HistoryPanel: React.FC<HistoryPanelProps> = ({
@@ -18,9 +15,7 @@ export const HistoryPanel: React.FC<HistoryPanelProps> = ({
   onSelectGeneration,
   selectedGenerationId,
   onExportImage,
-  loadImage,
-  viewMode,
-  theme
+  loadImage
 }) => {
 
   if (generations.length === 0) {
@@ -35,14 +30,8 @@ export const HistoryPanel: React.FC<HistoryPanelProps> = ({
     );
   }
 
-  const selectedGeneration = generations.find(g => g.generation_id === selectedGenerationId);
-
   return (
-    <div className="h-full flex flex-col">
-
-      {/* List View */}
-      {viewMode === 'list' && (
-        <div className="flex-1 overflow-y-auto space-y-3 p-4 pt-2">
+    <div className="h-full overflow-y-auto space-y-3 p-4">
           {generations.slice().reverse().map((gen) => {
         const isSelected = gen.generation_id === selectedGenerationId;
         const outputDataUri = gen.output_image
@@ -139,29 +128,6 @@ export const HistoryPanel: React.FC<HistoryPanelProps> = ({
           </div>
         );
       })}
-        </div>
-      )}
-
-      {/* Graph View */}
-      {viewMode === 'graph' && (
-        <div className="flex-1 overflow-hidden">
-          {selectedGeneration ? (
-            <GraphView
-              generation={selectedGeneration}
-              theme={theme}
-              loadImage={loadImage}
-            />
-          ) : (
-            <div className="h-full flex items-center justify-center text-zinc-500 dark:text-zinc-400 bg-zinc-50 dark:bg-zinc-900 rounded-lg">
-              <div className="text-center">
-                <Network size={48} className="mx-auto mb-4 opacity-30" />
-                <p className="text-sm">No generation selected</p>
-                <p className="text-xs mt-1">Select a generation from the list view to see its graph</p>
-              </div>
-            </div>
-          )}
-        </div>
-      )}
     </div>
   );
 };
