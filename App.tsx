@@ -132,20 +132,24 @@ export default function App() {
     setConfig(gen.parameters);
     setCurrentGeneration(gen);
 
-    // Load control image
-    if (gen.control_image) {
-      const imageData = StorageService.loadImage('control', gen.control_image.id, gen.control_image.filename);
-      setControlImageData(imageData);
+    // Load control images
+    if (gen.control_images && gen.control_images.length > 0) {
+      const imagesData = gen.control_images
+        .map(img => StorageService.loadImage('control', img.id, img.filename))
+        .filter(data => data !== null) as string[];
+      setControlImagesData(imagesData);
     } else {
-      setControlImageData(null);
+      setControlImagesData([]);
     }
 
-    // Load reference image
-    if (gen.reference_image) {
-      const imageData = StorageService.loadImage('reference', gen.reference_image.id, gen.reference_image.filename);
-      setReferenceImageData(imageData);
+    // Load reference images
+    if (gen.reference_images && gen.reference_images.length > 0) {
+      const imagesData = gen.reference_images
+        .map(img => StorageService.loadImage('reference', img.id, img.filename))
+        .filter(data => data !== null) as string[];
+      setReferenceImagesData(imagesData);
     } else {
-      setReferenceImageData(null);
+      setReferenceImagesData([]);
     }
 
     // Load output image
@@ -159,8 +163,8 @@ export default function App() {
 
   const resetInputs = () => {
     setPrompt("");
-    setControlImageData(null);
-    setReferenceImageData(null);
+    setControlImagesData([]);
+    setReferenceImagesData([]);
     setConfig(DEFAULT_CONFIG);
     setCurrentGeneration(null);
     setOutputImageData(null);
@@ -170,10 +174,21 @@ export default function App() {
     const reader = new FileReader();
     reader.onload = (e) => {
         const base64 = e.target?.result as string;
-        if (role === 'control') setControlImageData(base64);
-        else setReferenceImageData(base64);
+        if (role === 'control') {
+          setControlImagesData(prev => [...prev, base64]);
+        } else {
+          setReferenceImagesData(prev => [...prev, base64]);
+        }
     };
     reader.readAsDataURL(file);
+  };
+
+  const handleImageRemove = (index: number, role: 'control' | 'reference') => {
+    if (role === 'control') {
+      setControlImagesData(prev => prev.filter((_, i) => i !== index));
+    } else {
+      setReferenceImagesData(prev => prev.filter((_, i) => i !== index));
+    }
   };
 
   const handleExportImage = (filename: string) => {
@@ -222,20 +237,20 @@ export default function App() {
         currentSessionId,
         prompt,
         config,
-        controlImageData || undefined,
-        referenceImageData || undefined
+        controlImagesData.length > 0 ? controlImagesData : undefined,
+        referenceImagesData.length > 0 ? referenceImagesData : undefined
     );
     setCurrentGeneration(gen);
 
     const startTime = Date.now();
 
     try {
-        // 3. API Call
+        // 3. API Call (using first image of each type for now)
         const base64Output = await GeminiService.generateImage(
             prompt,
             config,
-            controlImageData || undefined,
-            referenceImageData || undefined
+            controlImagesData[0] || undefined,
+            referenceImagesData[0] || undefined
         );
 
         const duration = Date.now() - startTime;
@@ -383,19 +398,21 @@ export default function App() {
 
                     {/* Image Controls Grid */}
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        <ImageUploadPanel
-                            title="Control Image"
-                            description="Use for structure/composition"
-                            image={controlImageData ? { data_uri: controlImageData } as any : null}
+                        <MultiImageUploadPanel
+                            title="Control Images"
+                            description="For structure/composition"
+                            images={controlImagesData}
                             onUpload={(f) => handleImageUpload(f, 'control')}
-                            onRemove={() => setControlImageData(null)}
+                            onRemove={(idx) => handleImageRemove(idx, 'control')}
+                            maxImages={5}
                         />
-                        <ImageUploadPanel
-                            title="Reference Image"
-                            description="Use for style transfer"
-                            image={referenceImageData ? { data_uri: referenceImageData } as any : null}
+                        <MultiImageUploadPanel
+                            title="Reference Images"
+                            description="For style transfer"
+                            images={referenceImagesData}
                             onUpload={(f) => handleImageUpload(f, 'reference')}
-                            onRemove={() => setReferenceImageData(null)}
+                            onRemove={(idx) => handleImageRemove(idx, 'reference')}
+                            maxImages={5}
                         />
                     </div>
 
