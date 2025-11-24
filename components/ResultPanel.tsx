@@ -6,22 +6,17 @@ interface ResultPanelProps {
   isGenerating: boolean;
   generation: Generation | null;
   outputImage: ImageRecord | null;
-  retryStatus?: string | null;
 }
 
-export const ResultPanel: React.FC<ResultPanelProps> = ({ isGenerating, generation, outputImage, retryStatus }) => {
-
+export const ResultPanel: React.FC<ResultPanelProps> = ({ isGenerating, generation, outputImage }) => {
+  
   if (isGenerating) {
     return (
       <div className="h-full w-full bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-lg flex flex-col items-center justify-center p-8 space-y-4 shadow-sm">
         <Loader2 className="animate-spin text-blue-600 dark:text-blue-500" size={48} />
         <div className="text-center">
             <h3 className="text-zinc-800 dark:text-zinc-200 font-medium">Generating Artifact...</h3>
-            {retryStatus ? (
-              <p className="text-orange-600 dark:text-orange-400 text-sm mt-2 font-medium">{retryStatus}</p>
-            ) : (
-              <p className="text-zinc-500 text-sm mt-2">Running complex inference on Gemini models.</p>
-            )}
+            <p className="text-zinc-500 text-sm mt-2">Running complex inference on Gemini models.</p>
         </div>
       </div>
     );
