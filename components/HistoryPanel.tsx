@@ -1,6 +1,7 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { SessionGeneration } from '../types';
-import { Clock, Image, Download, CheckCircle2, XCircle, Loader2 } from 'lucide-react';
+import { Clock, Image, Download, CheckCircle2, XCircle, Loader2, List, Network } from 'lucide-react';
+import GraphView from './GraphView';
 
 interface HistoryPanelProps {
   generations: SessionGeneration[];
@@ -17,6 +18,8 @@ export const HistoryPanel: React.FC<HistoryPanelProps> = ({
   onExportImage,
   loadImage
 }) => {
+  const [viewMode, setViewMode] = useState<'list' | 'graph'>('list');
+
   if (generations.length === 0) {
     return (
       <div className="h-full flex items-center justify-center text-zinc-500 dark:text-zinc-400">
@@ -29,15 +32,46 @@ export const HistoryPanel: React.FC<HistoryPanelProps> = ({
     );
   }
 
+  const selectedGeneration = generations.find(g => g.generation_id === selectedGenerationId);
+
   return (
-    <div className="h-full overflow-y-auto space-y-3 p-4">
-      <div className="flex items-center justify-between mb-4">
+    <div className="h-full flex flex-col">
+      <div className="flex items-center justify-between p-4 pb-2">
         <h3 className="text-sm font-semibold text-zinc-700 dark:text-zinc-300">
           Generation History ({generations.length})
         </h3>
+
+        {/* View Mode Toggle */}
+        <div className="flex items-center gap-1 bg-zinc-100 dark:bg-zinc-800 rounded-lg p-1">
+          <button
+            onClick={() => setViewMode('list')}
+            className={`flex items-center gap-1 px-3 py-1 rounded text-xs font-medium transition-colors ${
+              viewMode === 'list'
+                ? 'bg-white dark:bg-zinc-700 text-zinc-900 dark:text-white shadow-sm'
+                : 'text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-white'
+            }`}
+          >
+            <List size={14} />
+            List
+          </button>
+          <button
+            onClick={() => setViewMode('graph')}
+            className={`flex items-center gap-1 px-3 py-1 rounded text-xs font-medium transition-colors ${
+              viewMode === 'graph'
+                ? 'bg-white dark:bg-zinc-700 text-zinc-900 dark:text-white shadow-sm'
+                : 'text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-white'
+            }`}
+          >
+            <Network size={14} />
+            Graph
+          </button>
+        </div>
       </div>
 
-      {generations.slice().reverse().map((gen) => {
+      {/* List View */}
+      {viewMode === 'list' && (
+        <div className="flex-1 overflow-y-auto space-y-3 p-4 pt-2">
+          {generations.slice().reverse().map((gen) => {
         const isSelected = gen.generation_id === selectedGenerationId;
         const outputDataUri = gen.output_image
           ? loadImage('output', gen.output_image.id, gen.output_image.filename)
@@ -133,6 +167,25 @@ export const HistoryPanel: React.FC<HistoryPanelProps> = ({
           </div>
         );
       })}
+        </div>
+      )}
+
+      {/* Graph View */}
+      {viewMode === 'graph' && (
+        <div className="flex-1 p-4 pt-2">
+          {selectedGeneration ? (
+            <GraphView generation={selectedGeneration} />
+          ) : (
+            <div className="h-full flex items-center justify-center text-zinc-500 dark:text-zinc-400 bg-zinc-50 dark:bg-zinc-900 rounded-lg">
+              <div className="text-center">
+                <Network size={48} className="mx-auto mb-4 opacity-30" />
+                <p className="text-sm">No generation selected</p>
+                <p className="text-xs mt-1">Select a generation from the list view to see its graph</p>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 };
