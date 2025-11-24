@@ -36,6 +36,7 @@ export default function App() {
   const [isGenerating, setIsGenerating] = useState(false);
   const [currentGeneration, setCurrentGeneration] = useState<SessionGeneration | null>(null);
   const [outputImageData, setOutputImageData] = useState<string | null>(null);
+  const [retryStatus, setRetryStatus] = useState<string | null>(null);
 
   // API Key State
   const [apiKeyConnected, setApiKeyConnected] = useState(false);
@@ -233,6 +234,7 @@ export default function App() {
     setIsGenerating(true);
     setCurrentGeneration(null);
     setOutputImageData(null);
+    setRetryStatus(null);
 
     // 2. Create Generation Record
     const gen = StorageService.createGeneration(
@@ -247,12 +249,18 @@ export default function App() {
     const startTime = Date.now();
 
     try {
-        // 3. API Call (using first image of each type for now)
+        // 3. API Call with retry callback
         const base64Output = await GeminiService.generateImage(
             prompt,
             config,
             controlImagesData[0] || undefined,
-            referenceImagesData[0] || undefined
+            referenceImagesData[0] || undefined,
+            (attempt: number, error: any, delayMs: number) => {
+              // Update UI with retry status
+              const errorMsg = error.message || error.toString();
+              const waitSeconds = Math.ceil(delayMs / 1000);
+              setRetryStatus(`API temporarily unavailable. Retry ${attempt}/4 in ${waitSeconds}s...`);
+            }
         );
 
         const duration = Date.now() - startTime;
@@ -277,6 +285,9 @@ export default function App() {
         // Update sessions list to show new activity
         setSessions(StorageService.getSessions());
 
+        // Clear retry status on success
+        setRetryStatus(null);
+
     } catch (error: any) {
         console.error("Generation failed:", error);
 
@@ -298,6 +309,9 @@ export default function App() {
           const failedGen = updatedSession.generations.find(g => g.generation_id === gen.generation_id);
           if (failedGen) setCurrentGeneration(failedGen);
         }
+
+        // Clear retry status on final failure
+        setRetryStatus(null);
     } finally {
         setIsGenerating(false);
     }
@@ -483,6 +497,7 @@ export default function App() {
                                 isGenerating={isGenerating}
                                 generation={currentGeneration as any}
                                 outputImage={outputImageData ? { data_uri: outputImageData } as any : null}
+                                retryStatus={retryStatus}
                             />
                         )}
                     </div>
