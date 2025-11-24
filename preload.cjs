@@ -9,7 +9,7 @@ contextBridge.exposeInMainWorld('electron', {
   // Image operations
   saveImageSync: (folder, filename, base64Data) => ipcRenderer.sendSync('save-image-sync', folder, filename, base64Data),
   loadImageSync: (folder, filename) => ipcRenderer.sendSync('load-image-sync', folder, filename),
-  exportImageSync: (folder, filename, savePath) => ipcRenderer.sendSync('export-image-sync', folder, filename, savePath),
+  exportImageSync: (folder, filename) => ipcRenderer.sendSync('export-image-sync', folder, filename),
 
   // Session operations
   listSessionsSync: () => ipcRenderer.sendSync('list-sessions-sync'),

@@ -142,9 +142,8 @@ export const StorageService = {
   exportImage: (filename: string, role: ImageRole = 'output') => {
     if (isElectron()) {
       // In Electron, this will trigger a save dialog
-      // For now, we'll just log - you can implement dialog later
       // @ts-ignore
-      const result = window.electron.exportImageSync(role + 's', filename, filename);
+      const result = window.electron.exportImageSync(role + 's', filename);
       return result.success;
     } else {
       // For web, download the image

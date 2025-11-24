@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog } = require('electron');
 const path = require('path');
 const fs = require('fs');
 
@@ -138,17 +138,34 @@ ipcMain.on('load-image-sync', (event, folder, filename) => {
     }
 });
 
-// Export/download a single image
-ipcMain.on('export-image-sync', (event, folder, filename, savePath) => {
+// Export/download a single image with save dialog
+ipcMain.on('export-image-sync', (event, folder, filename) => {
     try {
         const dataPath = getDataPath();
         const sourcePath = path.join(dataPath, folder, filename);
 
-        if (fs.existsSync(sourcePath)) {
-            fs.copyFileSync(sourcePath, savePath);
-            event.returnValue = { success: true };
-        } else {
+        if (!fs.existsSync(sourcePath)) {
             event.returnValue = { success: false, error: 'File not found' };
+            return;
+        }
+
+        // Show save dialog
+        const result = dialog.showSaveDialogSync({
+            title: 'Export Image',
+            defaultPath: path.join(app.getPath('downloads'), filename),
+            filters: [
+                { name: 'Images', extensions: ['png', 'jpg', 'jpeg', 'webp'] },
+                { name: 'All Files', extensions: ['*'] }
+            ]
+        });
+
+        if (result) {
+            // User selected a path
+            fs.copyFileSync(sourcePath, result);
+            event.returnValue = { success: true, path: result };
+        } else {
+            // User cancelled
+            event.returnValue = { success: false, cancelled: true };
         }
     } catch (e) {
         console.error("Export image failed", e);
