@@ -318,7 +318,7 @@ const GraphView: React.FC<GraphViewProps> = ({ session, theme, loadImage }) => {
         transform={`translate(${node.x}, ${node.y})`}
         onMouseDown={(e) => {
           e.stopPropagation();
-          handleMouseDown(e.nativeEvent, node.id);
+          handleMouseDown(e, node.id);
         }}
         style={{ cursor: 'move' }}
       >
@@ -578,8 +578,8 @@ const GraphView: React.FC<GraphViewProps> = ({ session, theme, loadImage }) => {
         ref={svgRef}
         className={`w-full h-full ${isPanning ? 'cursor-grabbing' : 'cursor-grab'}`}
         onWheel={handleWheel}
-        onMouseDown={(e) => handleMouseDown(e.nativeEvent)}
-        onMouseMove={(e) => handleMouseMove(e.nativeEvent)}
+        onMouseDown={handleMouseDown}
+        onMouseMove={handleMouseMove}
         onMouseUp={handleMouseUp}
         onMouseLeave={handleMouseUp}
       >
