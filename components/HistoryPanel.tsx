@@ -17,6 +17,7 @@ export const HistoryPanel: React.FC<HistoryPanelProps> = ({
   onExportImage,
   loadImage
 }) => {
+
   if (generations.length === 0) {
     return (
       <div className="h-full flex items-center justify-center text-zinc-500 dark:text-zinc-400">
@@ -31,13 +32,7 @@ export const HistoryPanel: React.FC<HistoryPanelProps> = ({
 
   return (
     <div className="h-full overflow-y-auto space-y-3 p-4">
-      <div className="flex items-center justify-between mb-4">
-        <h3 className="text-sm font-semibold text-zinc-700 dark:text-zinc-300">
-          Generation History ({generations.length})
-        </h3>
-      </div>
-
-      {generations.slice().reverse().map((gen) => {
+          {generations.slice().reverse().map((gen) => {
         const isSelected = gen.generation_id === selectedGenerationId;
         const outputDataUri = gen.output_image
           ? loadImage('output', gen.output_image.id, gen.output_image.filename)
