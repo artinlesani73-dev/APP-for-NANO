@@ -1,4 +1,4 @@
-import React, { useRef } from 'react';
+import React, { useRef, useState } from 'react';
 import { X, Image as ImageIcon } from 'lucide-react';
 import { ImageRecord } from '../types';
 
@@ -20,11 +20,44 @@ export const ImageUploadPanel: React.FC<ImageUploadPanelProps> = ({
   description
 }) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [isDragging, setIsDragging] = useState(false);
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
       onUpload(file);
+    }
+  };
+
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+  };
+
+  const handleDragEnter = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(true);
+  };
+
+  const handleDragLeave = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(false);
+  };
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(false);
+
+    const files = e.dataTransfer.files;
+    if (files && files.length > 0) {
+      const file = files[0];
+      // Check if file type is accepted
+      if (file.type.startsWith('image/')) {
+        onUpload(file);
+      }
     }
   };
 
@@ -34,12 +67,18 @@ export const ImageUploadPanel: React.FC<ImageUploadPanelProps> = ({
         <label className="text-sm font-medium text-zinc-700 dark:text-zinc-300">{title}</label>
       </div>
       
-      <div 
+      <div
         className={`relative border-2 border-dashed rounded-lg transition-all h-40 flex flex-col items-center justify-center overflow-hidden
-        ${image 
-            ? 'border-blue-500/50 bg-zinc-50 dark:bg-zinc-900' 
-            : 'border-zinc-300 dark:border-zinc-800 hover:border-zinc-400 dark:hover:border-zinc-700 bg-zinc-50 dark:bg-zinc-900/50 hover:bg-zinc-100 dark:hover:bg-zinc-800/50'
+        ${image
+            ? 'border-blue-500/50 bg-zinc-50 dark:bg-zinc-900'
+            : isDragging
+              ? 'border-blue-500 bg-blue-50 dark:bg-blue-950/30'
+              : 'border-zinc-300 dark:border-zinc-800 hover:border-zinc-400 dark:hover:border-zinc-700 bg-zinc-50 dark:bg-zinc-900/50 hover:bg-zinc-100 dark:hover:bg-zinc-800/50'
         }`}
+        onDragOver={handleDragOver}
+        onDragEnter={handleDragEnter}
+        onDragLeave={handleDragLeave}
+        onDrop={handleDrop}
       >
         {image ? (
           <div className="relative w-full h-full p-2 group">
@@ -63,12 +102,14 @@ export const ImageUploadPanel: React.FC<ImageUploadPanelProps> = ({
             )}
           </div>
         ) : (
-          <div 
+          <div
             onClick={() => fileInputRef.current?.click()}
             className="cursor-pointer flex flex-col items-center justify-center text-zinc-500 dark:text-zinc-500 w-full h-full p-4 text-center"
           >
             <ImageIcon size={24} className="mb-2 opacity-40" />
-            <span className="text-xs font-medium text-zinc-600 dark:text-zinc-400 block">Click to upload</span>
+            <span className="text-xs font-medium text-zinc-600 dark:text-zinc-400 block">
+              {isDragging ? 'Drop image here' : 'Click or drag to upload'}
+            </span>
             <span className="text-[10px] opacity-60 mt-1 block max-w-[120px] leading-tight">{description}</span>
           </div>
         )}
