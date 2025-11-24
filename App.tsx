@@ -9,7 +9,7 @@ import { SettingsModal } from './components/SettingsModal';
 import { StorageService } from './services/newStorageService';
 import { GeminiService } from './services/geminiService';
 import { Session, SessionGeneration, GenerationConfig } from './types';
-import { Zap, Database, Key, ExternalLink, History } from 'lucide-react';
+import { Zap, Database, Key, ExternalLink, History, List, Network } from 'lucide-react';
 
 const DEFAULT_CONFIG: GenerationConfig = {
   temperature: 0.7,
@@ -42,6 +42,7 @@ export default function App() {
   // Settings & Theme State
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
+  const [viewMode, setViewMode] = useState<'list' | 'graph'>('list');
   const [theme, setTheme] = useState<'dark' | 'light'>('dark');
 
   // Get current session
@@ -351,6 +352,33 @@ export default function App() {
                   History ({currentSession?.generations.length || 0})
                 </button>
 
+                {showHistory && (
+                  <div className="flex items-center gap-1 bg-zinc-100 dark:bg-zinc-800 rounded-lg p-1">
+                    <button
+                      onClick={() => setViewMode('list')}
+                      className={`flex items-center gap-1 px-3 py-1 rounded text-xs font-medium transition-colors ${
+                        viewMode === 'list'
+                          ? 'bg-white dark:bg-zinc-700 text-zinc-900 dark:text-white shadow-sm'
+                          : 'text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-white'
+                      }`}
+                    >
+                      <List size={12} />
+                      List
+                    </button>
+                    <button
+                      onClick={() => setViewMode('graph')}
+                      className={`flex items-center gap-1 px-3 py-1 rounded text-xs font-medium transition-colors ${
+                        viewMode === 'graph'
+                          ? 'bg-white dark:bg-zinc-700 text-zinc-900 dark:text-white shadow-sm'
+                          : 'text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-white'
+                      }`}
+                    >
+                      <Network size={12} />
+                      Graph
+                    </button>
+                  </div>
+                )}
+
                 {config.model === 'gemini-3-pro-image-preview' && (
                     <a
                       href="https://ai.google.dev/gemini-api/docs/billing"
@@ -425,6 +453,8 @@ export default function App() {
                                 selectedGenerationId={currentGeneration?.generation_id}
                                 onExportImage={handleExportImage}
                                 loadImage={(role, id, filename) => StorageService.loadImage(role, id, filename)}
+                                viewMode={viewMode}
+                                theme={theme}
                             />
                         ) : (
                             <ResultPanel
