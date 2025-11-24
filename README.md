@@ -1,6 +1,6 @@
 # AREA49 Nano Banana App
 
-A professional desktop application for AI-powered image generation using Google's Gemini API. Create, manage, and track your AI-generated images with full session history and provenance tracking. Made by AREA49 Team! 
+A professional desktop application for AI-powered image generation using Google's Gemini API. Create, manage, and track your AI-generated images with full session history and provenance tracking. Made for AREA49 Team! 
 https://www.area49.it/
 
 ## Features
