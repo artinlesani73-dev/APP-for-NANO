@@ -15,14 +15,14 @@ export interface SessionGeneration {
 
   // Inputs
   prompt: string;
-  control_image?: {
+  control_images?: Array<{
     id: string;
     filename: string;
-  } | null;
-  reference_image?: {
+  }>;
+  reference_images?: Array<{
     id: string;
     filename: string;
-  } | null;
+  }>;
 
   // Parameters
   parameters: GenerationConfig;

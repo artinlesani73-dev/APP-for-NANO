@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { Sidebar } from './components/Sidebar';
 import { PromptPanel } from './components/PromptPanel';
-import { ImageUploadPanel } from './components/ImageUploadPanel';
+import { MultiImageUploadPanel } from './components/MultiImageUploadPanel';
 import { ParametersPanel } from './components/ParametersPanel';
 import { ResultPanel } from './components/ResultPanel';
 import { HistoryPanel } from './components/HistoryPanel';
@@ -27,8 +27,8 @@ export default function App() {
 
   // Active Generation Inputs
   const [prompt, setPrompt] = useState<string>('');
-  const [controlImageData, setControlImageData] = useState<string | null>(null);
-  const [referenceImageData, setReferenceImageData] = useState<string | null>(null);
+  const [controlImagesData, setControlImagesData] = useState<string[]>([]);
+  const [referenceImagesData, setReferenceImagesData] = useState<string[]>([]);
   const [config, setConfig] = useState<GenerationConfig>(DEFAULT_CONFIG);
 
   // Output State
