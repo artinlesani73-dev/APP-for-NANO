@@ -317,7 +317,7 @@ export default function App() {
         >
             <div className="flex items-center gap-2 text-zinc-600 dark:text-zinc-400">
                 <Database size={16} />
-                <span className="text-sm font-medium tracking-wide">PROVENANCE STUDIO</span>
+                <span className="text-sm font-medium tracking-wide">AREA49 - NANO BANANA UI</span>
                 <span className="text-xs bg-zinc-200 dark:bg-zinc-800 px-2 py-0.5 rounded text-zinc-600 dark:text-zinc-500 border border-zinc-300 dark:border-zinc-700">
                   {StorageService.isElectron() ? "DESKTOP" : "WEB PREVIEW"}
                 </span>

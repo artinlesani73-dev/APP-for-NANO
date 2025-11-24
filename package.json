@@ -1,9 +1,9 @@
 {
-  "name": "image-provenance-studio",
+  "name": "area49-nano-banana-ui",
   "version": "1.0.0",
-  "description": "Professional Image Generation Tool",
+  "description": "AREA49 - Nano Banana UI",
   "main": "electron-main.cjs",
-  "author": "Your Name",
+  "author": "Artin Lesani",
   "license": "MIT",
   "type": "module",
   "scripts": {
@@ -30,8 +30,8 @@
     "vite": "^5.1.4"
   },
   "build": {
-    "appId": "com.provenance.studio",
-    "productName": "Image Provenance Studio",
+    "appId": "com.area49.nanobanana",
+    "productName": "AREA49 - Nano Banana UI",
     "directories": {
       "output": "dist-electron"
     },
