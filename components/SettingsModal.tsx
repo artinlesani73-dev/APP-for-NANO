@@ -218,7 +218,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
         {/* Footer */}
         <div className={`p-4 border-t text-center text-xs ${theme === 'dark' ? 'border-zinc-800 text-zinc-500' : 'border-zinc-100 text-zinc-400'}`}>
-          Image Provenance Studio v1.2 • {isElectron ? "Desktop Edition" : "Web Edition"}
+          AREA49 - Nano Banana UI v1.0 • Created by Artin Lesani
         </div>
       </div>
     </div>

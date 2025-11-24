@@ -94,14 +94,14 @@ export const HistoryPanel: React.FC<HistoryPanelProps> = ({
             {/* Stats */}
             <div className="flex items-center justify-between text-xs text-zinc-500 dark:text-zinc-400">
               <div className="flex items-center gap-2">
-                {gen.control_image && (
+                {gen.control_images && gen.control_images.length > 0 && (
                   <span className="bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-400 px-2 py-0.5 rounded">
-                    Control
+                    Control ({gen.control_images.length})
                   </span>
                 )}
-                {gen.reference_image && (
+                {gen.reference_images && gen.reference_images.length > 0 && (
                   <span className="bg-orange-100 dark:bg-orange-900/30 text-orange-700 dark:text-orange-400 px-2 py-0.5 rounded">
-                    Reference
+                    Reference ({gen.reference_images.length})
                   </span>
                 )}
               </div>

@@ -142,9 +142,8 @@ export const StorageService = {
   exportImage: (filename: string, role: ImageRole = 'output') => {
     if (isElectron()) {
       // In Electron, this will trigger a save dialog
-      // For now, we'll just log - you can implement dialog later
       // @ts-ignore
-      const result = window.electron.exportImageSync(role + 's', filename, filename);
+      const result = window.electron.exportImageSync(role + 's', filename);
       return result.success;
     } else {
       // For web, download the image
@@ -174,8 +173,8 @@ export const StorageService = {
     sessionId: string,
     prompt: string,
     config: GenerationConfig,
-    controlImageData?: string,
-    referenceImageData?: string
+    controlImagesData?: string[],
+    referenceImagesData?: string[]
   ): SessionGeneration => {
     const generation: SessionGeneration = {
       generation_id: generateUUID(),
@@ -185,16 +184,18 @@ export const StorageService = {
       parameters: config
     };
 
-    // Save control image if provided
-    if (controlImageData) {
-      const imageInfo = StorageService.saveImage(controlImageData, 'control');
-      generation.control_image = imageInfo;
+    // Save control images if provided
+    if (controlImagesData && controlImagesData.length > 0) {
+      generation.control_images = controlImagesData.map(data =>
+        StorageService.saveImage(data, 'control')
+      );
     }
 
-    // Save reference image if provided
-    if (referenceImageData) {
-      const imageInfo = StorageService.saveImage(referenceImageData, 'reference');
-      generation.reference_image = imageInfo;
+    // Save reference images if provided
+    if (referenceImagesData && referenceImagesData.length > 0) {
+      generation.reference_images = referenceImagesData.map(data =>
+        StorageService.saveImage(data, 'reference')
+      );
     }
 
     // Add generation to session
