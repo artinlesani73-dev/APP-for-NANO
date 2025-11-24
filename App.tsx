@@ -311,7 +311,10 @@ export default function App() {
       <div className="flex-1 flex flex-col min-w-0 bg-white dark:bg-black">
         
         {/* Top Bar */}
-        <header className="h-14 border-b bg-white dark:bg-zinc-900/50 border-zinc-200 dark:border-zinc-800 backdrop-blur flex items-center justify-between px-6 transition-colors duration-200 sticky top-0 z-10">
+        <header
+          className="h-14 border-b bg-white dark:bg-zinc-900/50 border-zinc-200 dark:border-zinc-800 backdrop-blur flex items-center justify-between px-6 transition-colors duration-200 sticky top-0 z-10"
+          style={{ WebkitAppRegion: 'drag' } as any}
+        >
             <div className="flex items-center gap-2 text-zinc-600 dark:text-zinc-400">
                 <Database size={16} />
                 <span className="text-sm font-medium tracking-wide">PROVENANCE STUDIO</span>
@@ -319,8 +322,8 @@ export default function App() {
                   {StorageService.isElectron() ? "DESKTOP" : "WEB PREVIEW"}
                 </span>
             </div>
-            
-            <div className="flex items-center gap-4">
+
+            <div className="flex items-center gap-4" style={{ WebkitAppRegion: 'no-drag' } as any}>
                 <button
                   onClick={() => setShowHistory(!showHistory)}
                   className={`flex items-center gap-2 text-xs px-3 py-1.5 rounded border transition-colors font-medium ${
