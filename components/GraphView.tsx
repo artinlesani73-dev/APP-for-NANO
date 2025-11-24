@@ -1,16 +1,17 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Session, SessionGeneration } from '../types';
-import { FileText, Settings, Image as ImageIcon, ZoomIn, ZoomOut, Maximize2 } from 'lucide-react';
+import { Session, SessionGeneration, GenerationConfig } from '../types';
+import { FileText, Settings, Image as ImageIcon, ZoomIn, ZoomOut, Maximize2, Play, Plus } from 'lucide-react';
 
 interface GraphViewProps {
   session: Session;
   theme: 'dark' | 'light';
   loadImage: (role: 'control' | 'reference' | 'output', id: string, filename: string) => string | null;
+  onGenerateFromNode?: (prompt: string, config: GenerationConfig, controlImages?: string[], referenceImages?: string[]) => Promise<void>;
 }
 
 interface Node {
   id: string;
-  generationId: string;
+  generationId?: string; // Optional for standalone nodes
   type: 'prompt' | 'workflow' | 'control-image' | 'reference-image' | 'output-image';
   label: string;
   x: number;
@@ -18,6 +19,7 @@ interface Node {
   width: number;
   height: number;
   data?: any;
+  isStandalone?: boolean; // True if created directly in graph view
 }
 
 interface Edge {
@@ -27,7 +29,23 @@ interface Edge {
   color: string;
 }
 
-const GraphView: React.FC<GraphViewProps> = ({ session, theme, loadImage }) => {
+interface ContextMenu {
+  x: number;
+  y: number;
+  svgX: number;
+  svgY: number;
+}
+
+const DEFAULT_CONFIG: GenerationConfig = {
+  temperature: 0.7,
+  top_p: 0.95,
+  aspect_ratio: '1:1',
+  image_size: '1K',
+  safety_filter: 'medium',
+  model: 'gemini-2.5-flash-image'
+};
+
+const GraphView: React.FC<GraphViewProps> = ({ session, theme, loadImage, onGenerateFromNode }) => {
   const svgRef = useRef<SVGSVGElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const [nodes, setNodes] = useState<Node[]>([]);
@@ -38,10 +56,14 @@ const GraphView: React.FC<GraphViewProps> = ({ session, theme, loadImage }) => {
   const [panStart, setPanStart] = useState({ x: 0, y: 0 });
   const [draggingNode, setDraggingNode] = useState<string | null>(null);
   const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
+  const [contextMenu, setContextMenu] = useState<ContextMenu | null>(null);
+  const [editingNode, setEditingNode] = useState<string | null>(null);
+  const [standaloneNodes, setStandaloneNodes] = useState<Node[]>([]);
+  const [isDraggingOver, setIsDraggingOver] = useState(false);
 
   useEffect(() => {
     generateGraphLayout();
-  }, [session]);
+  }, [session, standaloneNodes]);
 
   const generateGraphLayout = () => {
     const newNodes: Node[] = [];
@@ -212,6 +234,11 @@ const GraphView: React.FC<GraphViewProps> = ({ session, theme, loadImage }) => {
       }
     });
 
+    // Add standalone nodes
+    standaloneNodes.forEach(node => {
+      newNodes.push(node);
+    });
+
     setNodes(newNodes);
     setEdges(newEdges);
   };
@@ -308,6 +335,165 @@ const GraphView: React.FC<GraphViewProps> = ({ session, theme, loadImage }) => {
     setDraggingNode(null);
   };
 
+  // Context menu handlers
+  const handleContextMenu = (e: React.MouseEvent) => {
+    e.preventDefault();
+    const rect = svgRef.current?.getBoundingClientRect();
+    if (rect) {
+      const svgX = (e.clientX - rect.left - pan.x) / zoom;
+      const svgY = (e.clientY - rect.top - pan.y) / zoom;
+      setContextMenu({
+        x: e.clientX,
+        y: e.clientY,
+        svgX,
+        svgY
+      });
+    }
+  };
+
+  const closeContextMenu = () => {
+    setContextMenu(null);
+  };
+
+  const addPromptNode = (x: number, y: number) => {
+    const newNode: Node = {
+      id: `standalone-prompt-${Date.now()}`,
+      type: 'prompt',
+      label: 'New Prompt',
+      x,
+      y,
+      width: 220,
+      height: 160,
+      isStandalone: true,
+      data: { text: 'Enter your prompt here...', status: 'pending' }
+    };
+    setStandaloneNodes([...standaloneNodes, newNode]);
+    closeContextMenu();
+  };
+
+  const addWorkflowNode = (x: number, y: number) => {
+    const newNode: Node = {
+      id: `standalone-workflow-${Date.now()}`,
+      type: 'workflow',
+      label: 'New Workflow',
+      x,
+      y,
+      width: 220,
+      height: 280,
+      isStandalone: true,
+      data: { parameters: { ...DEFAULT_CONFIG } }
+    };
+    setStandaloneNodes([...standaloneNodes, newNode]);
+    closeContextMenu();
+  };
+
+  // Drag and drop handlers for external images
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDraggingOver(true);
+  };
+
+  const handleDragLeave = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDraggingOver(false);
+  };
+
+  const handleDrop = async (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDraggingOver(false);
+
+    const files = Array.from(e.dataTransfer.files);
+    const imageFiles = files.filter(f => f.type.startsWith('image/'));
+
+    if (imageFiles.length === 0) return;
+
+    const rect = svgRef.current?.getBoundingClientRect();
+    if (!rect) return;
+
+    const svgX = (e.clientX - rect.left - pan.x) / zoom;
+    const svgY = (e.clientY - rect.top - pan.y) / zoom;
+
+    // Process each image
+    for (let i = 0; i < imageFiles.length; i++) {
+      const file = imageFiles[i];
+      const reader = new FileReader();
+
+      reader.onload = (event) => {
+        const base64 = event.target?.result as string;
+        const newNode: Node = {
+          id: `standalone-control-${Date.now()}-${i}`,
+          type: 'control-image',
+          label: file.name,
+          x: svgX + (i * 250),
+          y: svgY,
+          width: 220,
+          height: 220,
+          isStandalone: true,
+          data: { image: { filename: file.name }, imageData: base64 }
+        };
+        setStandaloneNodes(prev => [...prev, newNode]);
+      };
+
+      reader.readAsDataURL(file);
+    }
+  };
+
+  // Generate from workflow node
+  const handleGenerateFromWorkflow = async (workflowNodeId: string) => {
+    if (!onGenerateFromNode) return;
+
+    const workflowNode = nodes.find(n => n.id === workflowNodeId);
+    if (!workflowNode || workflowNode.type !== 'workflow') return;
+
+    // Find connected nodes
+    const connectedEdges = edges.filter(e => e.to === workflowNodeId);
+    const promptEdge = connectedEdges.find(e => e.toHandle === 'prompt');
+    const controlEdges = connectedEdges.filter(e => e.toHandle === 'control');
+    const referenceEdges = connectedEdges.filter(e => e.toHandle === 'reference');
+
+    // Get prompt
+    const promptNode = promptEdge ? nodes.find(n => n.id === promptEdge.from) : null;
+    const prompt = promptNode?.data?.text || 'Default prompt';
+
+    // Get control images
+    const controlImages: string[] = [];
+    for (const edge of controlEdges) {
+      const node = nodes.find(n => n.id === edge.from);
+      if (node?.data?.imageData) {
+        controlImages.push(node.data.imageData);
+      }
+    }
+
+    // Get reference images
+    const referenceImages: string[] = [];
+    for (const edge of referenceEdges) {
+      const node = nodes.find(n => n.id === edge.from);
+      if (node?.data?.imageData) {
+        referenceImages.push(node.data.imageData);
+      }
+    }
+
+    // Call the generation function
+    await onGenerateFromNode(
+      prompt,
+      workflowNode.data.parameters,
+      controlImages.length > 0 ? controlImages : undefined,
+      referenceImages.length > 0 ? referenceImages : undefined
+    );
+  };
+
+  // Update node data (for editing)
+  const updateNodeData = (nodeId: string, newData: any) => {
+    setStandaloneNodes(prev =>
+      prev.map(node =>
+        node.id === nodeId ? { ...node, data: { ...node.data, ...newData } } : node
+      )
+    );
+  };
+
   const renderNode = (node: Node) => {
     const isImage = node.type.includes('image');
     const isDark = theme === 'dark';
@@ -370,34 +556,214 @@ const GraphView: React.FC<GraphViewProps> = ({ session, theme, loadImage }) => {
         <foreignObject x={10} y={50} width={node.width - 20} height={node.height - 60}>
           <div className={`${isDark ? 'text-gray-300' : 'text-gray-700'} text-xs overflow-hidden h-full`}>
             {node.type === 'prompt' && (
-              <p className="line-clamp-6 p-2 leading-relaxed">{node.data.text}</p>
+              node.isStandalone && editingNode === node.id ? (
+                <textarea
+                  className={`w-full h-full p-2 text-xs resize-none rounded ${
+                    isDark ? 'bg-gray-700 text-gray-300' : 'bg-gray-100 text-gray-700'
+                  }`}
+                  value={node.data.text}
+                  onChange={(e) => {
+                    e.stopPropagation();
+                    updateNodeData(node.id, { text: e.target.value });
+                  }}
+                  onBlur={() => setEditingNode(null)}
+                  autoFocus
+                  onClick={(e) => e.stopPropagation()}
+                  onMouseDown={(e) => e.stopPropagation()}
+                />
+              ) : (
+                <p
+                  className="line-clamp-6 p-2 leading-relaxed cursor-text"
+                  onDoubleClick={(e) => {
+                    e.stopPropagation();
+                    if (node.isStandalone) setEditingNode(node.id);
+                  }}
+                >
+                  {node.data.text}
+                </p>
+              )
             )}
             {node.type === 'workflow' && (
               <div className="p-2 space-y-2">
+                {/* Play button for standalone workflow nodes */}
+                {node.isStandalone && onGenerateFromNode && (
+                  <button
+                    className={`w-full flex items-center justify-center gap-2 py-2 mb-2 rounded transition-colors ${
+                      isDark
+                        ? 'bg-green-600 hover:bg-green-500 text-white'
+                        : 'bg-green-500 hover:bg-green-400 text-white'
+                    }`}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleGenerateFromWorkflow(node.id);
+                    }}
+                    onMouseDown={(e) => e.stopPropagation()}
+                  >
+                    <Play size={14} fill="currentColor" />
+                    Generate
+                  </button>
+                )}
+
                 <div className={`flex justify-between py-1 border-b ${isDark ? 'border-gray-700' : 'border-gray-200'}`}>
                   <span className={isDark ? 'text-gray-500' : 'text-gray-600'}>Model:</span>
-                  <span className="font-medium">{node.data.parameters.model.includes('flash') ? 'Flash' : 'Pro'}</span>
+                  {node.isStandalone && editingNode === node.id ? (
+                    <select
+                      className={`text-xs px-1 rounded ${isDark ? 'bg-gray-700' : 'bg-gray-100'}`}
+                      value={node.data.parameters.model}
+                      onChange={(e) => {
+                        e.stopPropagation();
+                        updateNodeData(node.id, { parameters: { ...node.data.parameters, model: e.target.value } });
+                      }}
+                      onClick={(e) => e.stopPropagation()}
+                      onMouseDown={(e) => e.stopPropagation()}
+                    >
+                      <option value="gemini-2.5-flash-image">Flash</option>
+                      <option value="gemini-3-pro-image-preview">Pro</option>
+                    </select>
+                  ) : (
+                    <span className="font-medium">{node.data.parameters.model.includes('flash') ? 'Flash' : 'Pro'}</span>
+                  )}
                 </div>
                 <div className={`flex justify-between py-1 border-b ${isDark ? 'border-gray-700' : 'border-gray-200'}`}>
                   <span className={isDark ? 'text-gray-500' : 'text-gray-600'}>Temperature:</span>
-                  <span className="font-medium">{node.data.parameters.temperature}</span>
+                  {node.isStandalone && editingNode === node.id ? (
+                    <input
+                      type="number"
+                      step="0.1"
+                      min="0"
+                      max="2"
+                      className={`w-16 text-xs px-1 rounded ${isDark ? 'bg-gray-700' : 'bg-gray-100'}`}
+                      value={node.data.parameters.temperature}
+                      onChange={(e) => {
+                        e.stopPropagation();
+                        updateNodeData(node.id, { parameters: { ...node.data.parameters, temperature: parseFloat(e.target.value) } });
+                      }}
+                      onClick={(e) => e.stopPropagation()}
+                      onMouseDown={(e) => e.stopPropagation()}
+                    />
+                  ) : (
+                    <span className="font-medium">{node.data.parameters.temperature}</span>
+                  )}
                 </div>
                 <div className={`flex justify-between py-1 border-b ${isDark ? 'border-gray-700' : 'border-gray-200'}`}>
                   <span className={isDark ? 'text-gray-500' : 'text-gray-600'}>Top-p:</span>
-                  <span className="font-medium">{node.data.parameters.top_p}</span>
+                  {node.isStandalone && editingNode === node.id ? (
+                    <input
+                      type="number"
+                      step="0.05"
+                      min="0"
+                      max="1"
+                      className={`w-16 text-xs px-1 rounded ${isDark ? 'bg-gray-700' : 'bg-gray-100'}`}
+                      value={node.data.parameters.top_p}
+                      onChange={(e) => {
+                        e.stopPropagation();
+                        updateNodeData(node.id, { parameters: { ...node.data.parameters, top_p: parseFloat(e.target.value) } });
+                      }}
+                      onClick={(e) => e.stopPropagation()}
+                      onMouseDown={(e) => e.stopPropagation()}
+                    />
+                  ) : (
+                    <span className="font-medium">{node.data.parameters.top_p}</span>
+                  )}
                 </div>
                 <div className={`flex justify-between py-1 border-b ${isDark ? 'border-gray-700' : 'border-gray-200'}`}>
                   <span className={isDark ? 'text-gray-500' : 'text-gray-600'}>Aspect Ratio:</span>
-                  <span className="font-medium">{node.data.parameters.aspect_ratio}</span>
+                  {node.isStandalone && editingNode === node.id ? (
+                    <select
+                      className={`text-xs px-1 rounded ${isDark ? 'bg-gray-700' : 'bg-gray-100'}`}
+                      value={node.data.parameters.aspect_ratio}
+                      onChange={(e) => {
+                        e.stopPropagation();
+                        updateNodeData(node.id, { parameters: { ...node.data.parameters, aspect_ratio: e.target.value } });
+                      }}
+                      onClick={(e) => e.stopPropagation()}
+                      onMouseDown={(e) => e.stopPropagation()}
+                    >
+                      <option value="1:1">1:1</option>
+                      <option value="16:9">16:9</option>
+                      <option value="9:16">9:16</option>
+                      <option value="3:4">3:4</option>
+                      <option value="4:3">4:3</option>
+                    </select>
+                  ) : (
+                    <span className="font-medium">{node.data.parameters.aspect_ratio}</span>
+                  )}
                 </div>
                 <div className={`flex justify-between py-1 border-b ${isDark ? 'border-gray-700' : 'border-gray-200'}`}>
                   <span className={isDark ? 'text-gray-500' : 'text-gray-600'}>Image Size:</span>
-                  <span className="font-medium">{node.data.parameters.image_size}</span>
+                  {node.isStandalone && editingNode === node.id ? (
+                    <select
+                      className={`text-xs px-1 rounded ${isDark ? 'bg-gray-700' : 'bg-gray-100'}`}
+                      value={node.data.parameters.image_size}
+                      onChange={(e) => {
+                        e.stopPropagation();
+                        updateNodeData(node.id, { parameters: { ...node.data.parameters, image_size: e.target.value } });
+                      }}
+                      onClick={(e) => e.stopPropagation()}
+                      onMouseDown={(e) => e.stopPropagation()}
+                    >
+                      <option value="1K">1K</option>
+                      <option value="2K">2K</option>
+                    </select>
+                  ) : (
+                    <span className="font-medium">{node.data.parameters.image_size}</span>
+                  )}
                 </div>
                 <div className={`flex justify-between py-1`}>
                   <span className={isDark ? 'text-gray-500' : 'text-gray-600'}>Safety:</span>
-                  <span className="font-medium">{node.data.parameters.safety_filter}</span>
+                  {node.isStandalone && editingNode === node.id ? (
+                    <select
+                      className={`text-xs px-1 rounded ${isDark ? 'bg-gray-700' : 'bg-gray-100'}`}
+                      value={node.data.parameters.safety_filter}
+                      onChange={(e) => {
+                        e.stopPropagation();
+                        updateNodeData(node.id, { parameters: { ...node.data.parameters, safety_filter: e.target.value } });
+                      }}
+                      onClick={(e) => e.stopPropagation()}
+                      onMouseDown={(e) => e.stopPropagation()}
+                    >
+                      <option value="low">Low</option>
+                      <option value="medium">Medium</option>
+                      <option value="high">High</option>
+                    </select>
+                  ) : (
+                    <span className="font-medium">{node.data.parameters.safety_filter}</span>
+                  )}
                 </div>
+
+                {/* Edit button for standalone workflow nodes */}
+                {node.isStandalone && !editingNode && (
+                  <button
+                    className={`w-full py-1 mt-2 text-xs rounded transition-colors ${
+                      isDark
+                        ? 'bg-gray-700 hover:bg-gray-600 text-gray-300'
+                        : 'bg-gray-100 hover:bg-gray-200 text-gray-700'
+                    }`}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setEditingNode(node.id);
+                    }}
+                    onMouseDown={(e) => e.stopPropagation()}
+                  >
+                    Edit Parameters
+                  </button>
+                )}
+                {node.isStandalone && editingNode === node.id && (
+                  <button
+                    className={`w-full py-1 mt-2 text-xs rounded transition-colors ${
+                      isDark
+                        ? 'bg-blue-600 hover:bg-blue-500 text-white'
+                        : 'bg-blue-500 hover:bg-blue-400 text-white'
+                    }`}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setEditingNode(null);
+                    }}
+                    onMouseDown={(e) => e.stopPropagation()}
+                  >
+                    Done
+                  </button>
+                )}
               </div>
             )}
             {isImage && (
@@ -576,12 +942,16 @@ const GraphView: React.FC<GraphViewProps> = ({ session, theme, loadImage }) => {
       {/* Graph canvas */}
       <svg
         ref={svgRef}
-        className={`w-full h-full ${isPanning ? 'cursor-grabbing' : 'cursor-grab'}`}
+        className={`w-full h-full ${isPanning ? 'cursor-grabbing' : 'cursor-grab'} ${isDraggingOver ? 'ring-4 ring-blue-500' : ''}`}
         onWheel={handleWheel}
         onMouseDown={handleMouseDown}
         onMouseMove={handleMouseMove}
         onMouseUp={handleMouseUp}
         onMouseLeave={handleMouseUp}
+        onContextMenu={handleContextMenu}
+        onDragOver={handleDragOver}
+        onDragLeave={handleDragLeave}
+        onDrop={handleDrop}
       >
         <g transform={`translate(${pan.x}, ${pan.y}) scale(${zoom})`}>
           {/* Render edges first (behind nodes) */}
@@ -616,8 +986,54 @@ const GraphView: React.FC<GraphViewProps> = ({ session, theme, loadImage }) => {
           <div>💡 Drag nodes to reposition</div>
           <div>🖱️ Drag canvas to pan</div>
           <div>🔍 Scroll to zoom</div>
+          <div>📁 Drop images onto canvas</div>
+          <div>🖱️ Right-click to add nodes</div>
         </div>
       </div>
+
+      {/* Context Menu */}
+      {contextMenu && (
+        <>
+          <div
+            className="fixed inset-0 z-40"
+            onClick={closeContextMenu}
+          />
+          <div
+            className={`fixed z-50 rounded-lg shadow-xl border ${
+              isDark ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'
+            }`}
+            style={{ left: contextMenu.x, top: contextMenu.y }}
+          >
+            <button
+              className={`w-full px-4 py-2 text-left text-sm flex items-center gap-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-t-lg transition-colors ${
+                isDark ? 'text-gray-300' : 'text-gray-700'
+              }`}
+              onClick={() => addPromptNode(contextMenu.svgX, contextMenu.svgY)}
+            >
+              <FileText size={16} />
+              Add Prompt Node
+            </button>
+            <button
+              className={`w-full px-4 py-2 text-left text-sm flex items-center gap-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-b-lg transition-colors ${
+                isDark ? 'text-gray-300' : 'text-gray-700'
+              }`}
+              onClick={() => addWorkflowNode(contextMenu.svgX, contextMenu.svgY)}
+            >
+              <Settings size={16} />
+              Add Workflow Node
+            </button>
+          </div>
+        </>
+      )}
+
+      {/* Drag overlay */}
+      {isDraggingOver && (
+        <div className="absolute inset-0 z-30 pointer-events-none flex items-center justify-center bg-blue-500/10">
+          <div className={`text-2xl font-bold ${isDark ? 'text-blue-400' : 'text-blue-600'}`}>
+            Drop images here to add to canvas
+          </div>
+        </div>
+      )}
     </div>
   );
 };
