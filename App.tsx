@@ -6,11 +6,10 @@ import { ParametersPanel } from './components/ParametersPanel';
 import { ResultPanel } from './components/ResultPanel';
 import { HistoryPanel } from './components/HistoryPanel';
 import { SettingsModal } from './components/SettingsModal';
-import GraphView from './components/GraphView';
 import { StorageService } from './services/newStorageService';
 import { GeminiService } from './services/geminiService';
 import { Session, SessionGeneration, GenerationConfig } from './types';
-import { Zap, Database, Key, ExternalLink, History, Network, Layers } from 'lucide-react';
+import { Zap, Database, Key, ExternalLink, History } from 'lucide-react';
 
 const DEFAULT_CONFIG: GenerationConfig = {
   temperature: 0.7,
@@ -44,7 +43,6 @@ export default function App() {
   // Settings & Theme State
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
-  const [mainView, setMainView] = useState<'result' | 'graph'>('result');
   const [theme, setTheme] = useState<'dark' | 'light'>('dark');
 
   // Get current session
@@ -353,34 +351,10 @@ export default function App() {
             </div>
 
             <div className="flex items-center gap-4" style={{ WebkitAppRegion: 'no-drag' } as any}>
-                {/* Main View Toggle */}
-                <div className="flex items-center gap-1 bg-zinc-100 dark:bg-zinc-800 rounded-lg p-1">
-                  <button
-                    onClick={() => setMainView('result')}
-                    className={`flex items-center gap-1 px-3 py-1.5 rounded text-xs font-medium transition-colors ${
-                      mainView === 'result'
-                        ? 'bg-white dark:bg-zinc-700 text-zinc-900 dark:text-white shadow-sm'
-                        : 'text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-white'
-                    }`}
-                  >
-                    <Layers size={12} />
-                    Result View
-                  </button>
-                  <button
-                    onClick={() => setMainView('graph')}
-                    className={`flex items-center gap-1 px-3 py-1.5 rounded text-xs font-medium transition-colors ${
-                      mainView === 'graph'
-                        ? 'bg-white dark:bg-zinc-700 text-zinc-900 dark:text-white shadow-sm'
-                        : 'text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-white'
-                    }`}
-                  >
-                    <Network size={12} />
-                    Graph View
-                  </button>
-                </div>
+                {/* Graph View Deactivated - View toggle removed */}
 
-                {/* History Toggle (only in Result View) */}
-                {mainView === 'result' && (
+                {/* History Toggle */}
+                {(
                   <button
                     onClick={() => setShowHistory(!showHistory)}
                     className={`flex items-center gap-2 text-xs px-3 py-1.5 rounded border transition-colors font-medium ${
@@ -429,109 +403,8 @@ export default function App() {
             </div>
         </header>
 
-        {/* Content Area */}
-        {mainView === 'graph' ? (
-          /* Graph View - Full Screen */
-          <div className="flex-1 overflow-hidden">
-            {currentSession ? (
-              <GraphView
-                session={currentSession}
-                theme={theme}
-                loadImage={(role, id, filename) => StorageService.loadImage(role, id, filename)}
-                onGenerateFromNode={async (prompt, config, controlImages, referenceImages) => {
-                  // Similar to handleGenerate but using provided parameters
-                  if (!currentSessionId) return;
-
-                  // Check API key if needed
-                  if (config.model === 'gemini-3-pro-image-preview' && !apiKeyConnected) {
-                    await handleConnectApiKey();
-                    const isConnected = await GeminiService.checkApiKey();
-                    if (!isConnected) return;
-                    setApiKeyConnected(true);
-                  }
-
-                  setIsGenerating(true);
-
-                  // Create generation record
-                  const gen = StorageService.createGeneration(
-                    currentSessionId,
-                    prompt,
-                    config,
-                    controlImages,
-                    referenceImages
-                  );
-
-                  const startTime = Date.now();
-
-                  try {
-                    // API Call
-                    const base64Output = await GeminiService.generateImage(
-                      prompt,
-                      config,
-                      controlImages,
-                      referenceImages
-                    );
-
-                    const duration = Date.now() - startTime;
-
-                    // Complete generation
-                    const outputDataUri = `data:image/png;base64,${base64Output}`;
-                    StorageService.completeGeneration(currentSessionId, gen.generation_id, outputDataUri, duration);
-
-                    // Update UI
-                    const updatedSession = StorageService.loadSession(currentSessionId);
-                    if (updatedSession) {
-                      const completedGen = updatedSession.generations.find(g => g.generation_id === gen.generation_id);
-                      if (completedGen) {
-                        setCurrentGeneration(completedGen);
-                        const outputs = completedGen.output_images || (completedGen.output_image ? [completedGen.output_image] : []);
-                        if (outputs.length > 0) {
-                          const outputData = outputs
-                            .map(img => StorageService.loadImage('output', img.id, img.filename))
-                            .filter(data => data !== null) as string[];
-                          setOutputImagesData(outputData);
-                        }
-                        setOutputTexts(completedGen.output_texts || []);
-                      }
-                    }
-
-                    setSessions(StorageService.getSessions());
-                  } catch (error: any) {
-                    console.error("Generation failed:", error);
-                    const errorMessage = error.message || error.toString();
-
-                    if (errorMessage.includes("Requested entity was not found")) {
-                      setApiKeyConnected(false);
-                      alert("The selected API Key is no longer valid. Please select a valid key.");
-                      if (config.model === 'gemini-3-pro-image-preview') {
-                        await handleConnectApiKey();
-                      }
-                    }
-
-                    StorageService.failGeneration(currentSessionId, gen.generation_id, errorMessage);
-
-                    const updatedSession = StorageService.loadSession(currentSessionId);
-                    if (updatedSession) {
-                      const failedGen = updatedSession.generations.find(g => g.generation_id === gen.generation_id);
-                      if (failedGen) setCurrentGeneration(failedGen);
-                    }
-                  } finally {
-                    setIsGenerating(false);
-                  }
-                }}
-              />
-            ) : (
-              <div className="h-full flex items-center justify-center bg-zinc-50 dark:bg-zinc-900">
-                <div className="text-center text-zinc-500 dark:text-zinc-400">
-                  <Network size={64} className="mx-auto mb-4 opacity-30" />
-                  <p className="text-lg font-medium">No Session Selected</p>
-                  <p className="text-sm mt-2">Select a session from the sidebar to view its graph</p>
-                </div>
-              </div>
-            )}
-          </div>
-        ) : (
-          /* Result View - Original Layout */
+        {/* Content Area - Graph View Deactivated */}
+        {/* Result View - Original Layout */}
           <div className="flex-1 overflow-y-auto p-6 bg-zinc-50 dark:bg-black/50">
             <div className="max-w-6xl mx-auto grid grid-cols-12 gap-6">
 
@@ -631,7 +504,6 @@ export default function App() {
 
             </div>
           </div>
-        )}
       </div>
 
       <SettingsModal
