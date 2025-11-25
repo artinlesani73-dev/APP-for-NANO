@@ -113,20 +113,6 @@ function AppContent() {
     LoggerService.logAction('Created new session', { sessionId: newSession.session_id });
   };
 
-  const handleDeleteSession = (id: string) => {
-    StorageService.deleteSession(id);
-    const remaining = sessions.filter(s => s.session_id !== id);
-    setSessions(remaining);
-    LoggerService.logAction('Deleted session', { sessionId: id });
-    if (currentSessionId === id) {
-      if (remaining.length > 0) {
-        handleSelectSession(remaining[0].session_id);
-      } else {
-        handleNewSession();
-      }
-    }
-  };
-
   const handleRenameSession = (id: string, newTitle: string) => {
     StorageService.renameSession(id, newTitle);
     setSessions(StorageService.getSessions());
@@ -390,7 +376,6 @@ function AppContent() {
         currentChatId={currentSessionId}
         onSelectChat={handleSelectSession}
         onNewChat={handleNewSession}
-        onDeleteChat={handleDeleteSession}
         onRenameChat={handleRenameSession}
         onOpenSettings={() => setIsSettingsOpen(true)}
       />

@@ -132,12 +132,8 @@ export const StorageService = {
 
   // Delete a session
   deleteSession: (sessionId: string) => {
-    if (isElectron()) {
-      // @ts-ignore
-      window.electron.deleteSessionSync(sessionId);
-    } else {
-      localStorage.removeItem(`session_${sessionId}`);
-    }
+    console.warn('Session deletion is disabled to preserve history. Requested session:', sessionId);
+    // Intentionally no-op to keep sessions intact
   },
 
   // Persist graph state for a session
