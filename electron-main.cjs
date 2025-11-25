@@ -109,7 +109,7 @@ const sendUpdateStatus = (channel, payload) => {
 };
 
 const ensureSubdirectories = (basePath) => {
-    const subDirs = ['outputs', 'inputs', 'controls', 'references', 'sessions'];
+    const subDirs = ['outputs', 'inputs', 'sessions'];
     subDirs.forEach(dir => {
         const dirPath = path.join(basePath, dir);
         if (!fs.existsSync(dirPath)) {
