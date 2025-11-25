@@ -40,9 +40,41 @@ const BASE_Y = 160;
 const COLUMN_SPACING = 320;
 const GENERATION_SPACING = 420;
 
+const themeTokens = {
+  dark: {
+    background: 'radial-gradient(circle at 20% 20%, #1c1b2a 0%, rgba(12,12,18,0.8) 25%, #0a0a12 45%, #0c0c14 75%, #05050c 100%)',
+    card: '#0f1018',
+    cardMuted: '#0c0d14',
+    stroke: '#1f1f2b',
+    border: 'border-white/10',
+    textPrimary: 'text-zinc-100',
+    textMuted: 'text-zinc-400',
+    panel: 'bg-[#11111b]/80 border border-white/10 shadow-[0_15px_45px_rgba(0,0,0,0.45)]',
+  },
+  light: {
+    background: 'radial-gradient(circle at 20% 20%, #f7f7fb 0%, #f4f4f9 25%, #eef1ff 45%, #f5f7ff 75%, #ffffff 100%)',
+    card: '#ffffff',
+    cardMuted: '#f5f6fb',
+    stroke: '#e5e7eb',
+    border: 'border-zinc-200',
+    textPrimary: 'text-zinc-900',
+    textMuted: 'text-zinc-500',
+    panel: 'bg-white/90 border border-zinc-200 shadow-[0_18px_50px_rgba(0,0,0,0.08)] backdrop-blur-xl',
+  }
+};
+
 const GraphView: React.FC<GraphViewProps> = ({ sessions, theme, loadImage, onGenerateFromNode }) => {
   const svgRef = useRef<SVGSVGElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
+  const palette = themeTokens[theme];
+  const nodeAccents: Record<Node['type'], { solid: string; soft: string; text: string }> = {
+    'prompt': { solid: '#a855f7', soft: 'rgba(168,85,247,0.12)', text: '#f5ecff' },
+    'workflow': { solid: '#6366f1', soft: 'rgba(99,102,241,0.12)', text: '#eef1ff' },
+    'control-image': { solid: '#10b981', soft: 'rgba(16,185,129,0.1)', text: '#e6fff4' },
+    'reference-image': { solid: '#3b82f6', soft: 'rgba(59,130,246,0.12)', text: '#e8f1ff' },
+    'output-image': { solid: '#f59e0b', soft: 'rgba(245,158,11,0.14)', text: '#fff8e6' },
+    'output-text': { solid: '#f59e0b', soft: 'rgba(245,158,11,0.14)', text: '#fff8e6' }
+  } as const;
   const [nodes, setNodes] = useState<Node[]>([]);
   const [edges, setEdges] = useState<Edge[]>([]);
   const [pan, setPan] = useState({ x: 50, y: 50 });
@@ -753,6 +785,7 @@ const GraphView: React.FC<GraphViewProps> = ({ sessions, theme, loadImage, onGen
   const renderNode = (node: Node) => {
     const isImage = node.type.includes('image');
     const isDark = theme === 'dark';
+    const accent = nodeAccents[node.type];
     // Disable workflow editing in graph view since we're viewing across sessions
     const workflowEditingEnabled = false;
     const isWorkflowEditing = workflowEditingEnabled && editingNode === node.id;
@@ -774,10 +807,10 @@ const GraphView: React.FC<GraphViewProps> = ({ sessions, theme, loadImage, onGen
         {/* Node background with shadow */}
         <defs>
           <filter id={`shadow-${node.id}`} x="-50%" y="-50%" width="200%" height="200%">
-            <feGaussianBlur in="SourceAlpha" stdDeviation="4"/>
-            <feOffset dx="0" dy="4" result="offsetblur"/>
+            <feGaussianBlur in="SourceAlpha" stdDeviation="6"/>
+            <feOffset dx="0" dy="10" result="offsetblur"/>
             <feComponentTransfer>
-              <feFuncA type="linear" slope="0.3"/>
+              <feFuncA type="linear" slope={isDark ? '0.45' : '0.25'}/>
             </feComponentTransfer>
             <feMerge>
               <feMergeNode/>
@@ -785,49 +818,30 @@ const GraphView: React.FC<GraphViewProps> = ({ sessions, theme, loadImage, onGen
             </feMerge>
           </filter>
           <linearGradient id={`grad-${node.id}`} x1="0%" y1="0%" x2="0%" y2="100%">
-            <stop offset="0%" stopColor={isDark ? '#27272a' : '#fafafa'} />
-            <stop offset="100%" stopColor={isDark ? '#18181b' : '#f4f4f5'} />
+            <stop offset="0%" stopColor={palette.card} />
+            <stop offset="100%" stopColor={palette.cardMuted} />
           </linearGradient>
         </defs>
         <rect
           width={node.width}
           height={node.height}
-          rx={12}
+          rx={18}
           fill={`url(#grad-${node.id})`}
-          className={isDark ? 'stroke-zinc-700' : 'stroke-zinc-300'}
-          strokeWidth={1.5}
+          stroke={palette.stroke}
+          strokeWidth={1.2}
           filter={`url(#shadow-${node.id})`}
+          style={{
+            boxShadow: isDark
+              ? '0 20px 50px rgba(0,0,0,0.45), 0 0 0 1px rgba(255,255,255,0.03)'
+              : '0 18px 40px rgba(0,0,0,0.12), 0 0 0 1px rgba(0,0,0,0.02)'
+          }}
         />
 
         {/* Node header with gradient */}
         <defs>
           <linearGradient id={`header-grad-${node.id}`} x1="0%" y1="0%" x2="100%" y2="0%">
-            {node.type === 'prompt' ? (
-              <>
-                <stop offset="0%" stopColor={isDark ? '#9333ea' : '#a855f7'} />
-                <stop offset="100%" stopColor={isDark ? '#7c3aed' : '#9333ea'} />
-              </>
-            ) : node.type === 'workflow' ? (
-              <>
-                <stop offset="0%" stopColor={isDark ? '#6366f1' : '#818cf8'} />
-                <stop offset="100%" stopColor={isDark ? '#4f46e5' : '#6366f1'} />
-              </>
-            ) : node.type === 'control-image' ? (
-              <>
-                <stop offset="0%" stopColor={isDark ? '#10b981' : '#34d399'} />
-                <stop offset="100%" stopColor={isDark ? '#059669' : '#10b981'} />
-              </>
-            ) : node.type === 'reference-image' ? (
-              <>
-                <stop offset="0%" stopColor={isDark ? '#3b82f6' : '#60a5fa'} />
-                <stop offset="100%" stopColor={isDark ? '#2563eb' : '#3b82f6'} />
-              </>
-            ) : (
-              <>
-                <stop offset="0%" stopColor={isDark ? '#f59e0b' : '#fbbf24'} />
-                <stop offset="100%" stopColor={isDark ? '#d97706' : '#f59e0b'} />
-              </>
-            )}
+            <stop offset="0%" stopColor={accent.soft} />
+            <stop offset="100%" stopColor={accent.solid} />
           </linearGradient>
         </defs>
         <rect
@@ -840,16 +854,19 @@ const GraphView: React.FC<GraphViewProps> = ({ sessions, theme, loadImage, onGen
         {/* Node icon and title */}
         <g transform="translate(10, 10)">
           <foreignObject width={node.width - 20} height={20}>
-            <div className="flex items-center gap-2 text-white">
+            <div
+              className="flex items-center gap-2"
+              style={{ color: isDark ? '#f7f7fb' : '#0f172a' }}
+            >
               {node.type === 'prompt' && <FileText size={16} />}
               {node.type === 'workflow' && <Settings size={16} />}
               {node.type.includes('image') && <ImageIcon size={16} />}
-              <span className="text-sm font-semibold">{node.label}</span>
+              <span className="text-sm font-semibold tracking-tight">{node.label}</span>
               {node.type === 'prompt' && node.data.status && (
-                <span className={`text-[10px] px-1.5 py-0.5 rounded ${
-                  node.data.status === 'completed' ? 'bg-green-500/30' :
-                  node.data.status === 'failed' ? 'bg-red-500/30' :
-                  'bg-yellow-500/30'
+                <span className={`text-[10px] px-2 py-0.5 rounded-full border ${
+                  node.data.status === 'completed' ? 'border-emerald-300 bg-emerald-500/15 text-emerald-100' :
+                  node.data.status === 'failed' ? 'border-red-300 bg-red-500/15 text-red-100' :
+                  'border-amber-300 bg-amber-500/15 text-amber-100'
                 }`}>
                   {node.data.status}
                 </span>
@@ -860,12 +877,12 @@ const GraphView: React.FC<GraphViewProps> = ({ sessions, theme, loadImage, onGen
 
         {/* Node content */}
         <foreignObject x={10} y={50} width={node.width - 20} height={node.height - 60}>
-          <div className={`${isDark ? 'text-gray-300' : 'text-gray-700'} text-xs overflow-hidden h-full`}>
+          <div className={`flex flex-col h-full gap-3 text-[13px] ${isDark ? 'text-zinc-200' : 'text-zinc-800'}`}>
             {node.type === 'prompt' && (
               node.isStandalone && editingNode === node.id ? (
                 <textarea
-                  className={`w-full h-full p-2 text-xs resize-none rounded select-text ${
-                    isDark ? 'bg-gray-700 text-gray-300' : 'bg-gray-100 text-gray-700'
+                  className={`w-full h-full p-3 text-sm leading-relaxed resize-none rounded-xl select-text border ${
+                    isDark ? 'bg-black/30 border-white/10 text-zinc-100' : 'bg-white border-zinc-200 text-zinc-800 shadow-inner'
                   }`}
                   value={node.data.text}
                   onChange={(e) => {
@@ -878,32 +895,34 @@ const GraphView: React.FC<GraphViewProps> = ({ sessions, theme, loadImage, onGen
                   onMouseDown={(e) => e.stopPropagation()}
                 />
               ) : (
-                <p
-                  className="line-clamp-6 p-2 leading-relaxed cursor-text select-text"
+                <div
+                  className={`line-clamp-6 p-3 leading-relaxed cursor-text select-text rounded-xl border ${
+                    isDark ? 'bg-white/5 border-white/5 text-zinc-100' : 'bg-white border-zinc-200 shadow-sm'
+                  }`}
                   onDoubleClick={(e) => {
                     e.stopPropagation();
                     if (node.isStandalone) setEditingNode(node.id);
                   }}
                 >
                   {node.data.text}
-                </p>
+                </div>
               )
             )}
             {node.type === 'workflow' && (
               <div className="p-2 space-y-2">
                 {/* User name if available */}
                 {node.data?.userName && (
-                  <div className={`flex justify-between py-1 border-b ${isDark ? 'border-gray-700' : 'border-gray-200'}`}>
-                    <span className={isDark ? 'text-gray-500' : 'text-gray-600'}>User:</span>
-                    <span className="font-medium">{node.data.userName}</span>
+                  <div className={`flex justify-between items-center px-2 py-1.5 rounded-lg ${isDark ? 'bg-white/5' : 'bg-zinc-50'}`}>
+                    <span className={isDark ? 'text-zinc-400' : 'text-zinc-500'}>User</span>
+                    <span className="font-semibold">{node.data.userName}</span>
                   </div>
                 )}
 
-                <div className={`flex justify-between py-1 border-b ${isDark ? 'border-gray-700' : 'border-gray-200'}`}>
-                  <span className={isDark ? 'text-gray-500' : 'text-gray-600'}>Model:</span>
+                <div className={`flex justify-between items-center px-2 py-1.5 rounded-lg ${isDark ? 'bg-white/5' : 'bg-zinc-50'}`}>
+                  <span className={isDark ? 'text-zinc-400' : 'text-zinc-500'}>Model</span>
                   {isWorkflowEditing ? (
                     <select
-                      className={`text-xs px-1 rounded ${isDark ? 'bg-gray-700' : 'bg-gray-100'}`}
+                      className={`text-xs px-2 py-1 rounded-lg border ${isDark ? 'bg-black/30 border-white/10' : 'bg-white border-zinc-200'}`}
                       value={node.data.parameters.model}
                       onChange={(e) => {
                         e.stopPropagation();
@@ -916,18 +935,18 @@ const GraphView: React.FC<GraphViewProps> = ({ sessions, theme, loadImage, onGen
                       <option value="gemini-3-pro-image-preview">Pro</option>
                     </select>
                   ) : (
-                    <span className="font-medium">{node.data.parameters.model.includes('flash') ? 'Flash' : 'Pro'}</span>
+                    <span className="font-semibold">{node.data.parameters.model.includes('flash') ? 'Flash' : 'Pro'}</span>
                   )}
                 </div>
-                <div className={`flex justify-between py-1 border-b ${isDark ? 'border-gray-700' : 'border-gray-200'}`}>
-                  <span className={isDark ? 'text-gray-500' : 'text-gray-600'}>Temperature:</span>
+                <div className={`flex justify-between items-center px-2 py-1.5 rounded-lg ${isDark ? 'bg-white/5' : 'bg-zinc-50'}`}>
+                  <span className={isDark ? 'text-zinc-400' : 'text-zinc-500'}>Temperature</span>
                   {isWorkflowEditing ? (
                     <input
                       type="number"
                       step="0.1"
                       min="0"
                       max="2"
-                      className={`w-16 text-xs px-1 rounded ${isDark ? 'bg-gray-700' : 'bg-gray-100'}`}
+                      className={`w-16 text-xs px-2 py-1 rounded-lg border ${isDark ? 'bg-black/30 border-white/10' : 'bg-white border-zinc-200'}`}
                       value={node.data.parameters.temperature}
                       onChange={(e) => {
                         e.stopPropagation();
@@ -937,18 +956,18 @@ const GraphView: React.FC<GraphViewProps> = ({ sessions, theme, loadImage, onGen
                       onMouseDown={(e) => e.stopPropagation()}
                     />
                   ) : (
-                    <span className="font-medium">{node.data.parameters.temperature}</span>
+                    <span className="font-semibold">{node.data.parameters.temperature}</span>
                   )}
                 </div>
-                <div className={`flex justify-between py-1 border-b ${isDark ? 'border-gray-700' : 'border-gray-200'}`}>
-                  <span className={isDark ? 'text-gray-500' : 'text-gray-600'}>Top-p:</span>
+                <div className={`flex justify-between items-center px-2 py-1.5 rounded-lg ${isDark ? 'bg-white/5' : 'bg-zinc-50'}`}>
+                  <span className={isDark ? 'text-zinc-400' : 'text-zinc-500'}>Top-p</span>
                   {isWorkflowEditing ? (
                     <input
                       type="number"
                       step="0.05"
                       min="0"
                       max="1"
-                      className={`w-16 text-xs px-1 rounded ${isDark ? 'bg-gray-700' : 'bg-gray-100'}`}
+                      className={`w-16 text-xs px-2 py-1 rounded-lg border ${isDark ? 'bg-black/30 border-white/10' : 'bg-white border-zinc-200'}`}
                       value={node.data.parameters.top_p}
                       onChange={(e) => {
                         e.stopPropagation();
@@ -958,14 +977,14 @@ const GraphView: React.FC<GraphViewProps> = ({ sessions, theme, loadImage, onGen
                       onMouseDown={(e) => e.stopPropagation()}
                     />
                   ) : (
-                    <span className="font-medium">{node.data.parameters.top_p}</span>
+                    <span className="font-semibold">{node.data.parameters.top_p}</span>
                   )}
                 </div>
-                <div className={`flex justify-between py-1 border-b ${isDark ? 'border-gray-700' : 'border-gray-200'}`}>
-                  <span className={isDark ? 'text-gray-500' : 'text-gray-600'}>Aspect Ratio:</span>
+                <div className={`flex justify-between items-center px-2 py-1.5 rounded-lg ${isDark ? 'bg-white/5' : 'bg-zinc-50'}`}>
+                  <span className={isDark ? 'text-zinc-400' : 'text-zinc-500'}>Aspect Ratio</span>
                   {isWorkflowEditing ? (
                     <select
-                      className={`text-xs px-1 rounded ${isDark ? 'bg-gray-700' : 'bg-gray-100'}`}
+                      className={`text-xs px-2 py-1 rounded-lg border ${isDark ? 'bg-black/30 border-white/10' : 'bg-white border-zinc-200'}`}
                       value={node.data.parameters.aspect_ratio}
                       onChange={(e) => {
                         e.stopPropagation();
@@ -981,14 +1000,14 @@ const GraphView: React.FC<GraphViewProps> = ({ sessions, theme, loadImage, onGen
                       <option value="4:3">4:3</option>
                     </select>
                   ) : (
-                    <span className="font-medium">{node.data.parameters.aspect_ratio}</span>
+                    <span className="font-semibold">{node.data.parameters.aspect_ratio}</span>
                   )}
                 </div>
-                <div className={`flex justify-between py-1 border-b ${isDark ? 'border-gray-700' : 'border-gray-200'}`}>
-                  <span className={isDark ? 'text-gray-500' : 'text-gray-600'}>Image Size:</span>
+                <div className={`flex justify-between items-center px-2 py-1.5 rounded-lg ${isDark ? 'bg-white/5' : 'bg-zinc-50'}`}>
+                  <span className={isDark ? 'text-zinc-400' : 'text-zinc-500'}>Image Size</span>
                   {isWorkflowEditing ? (
                     <select
-                      className={`text-xs px-1 rounded ${isDark ? 'bg-gray-700' : 'bg-gray-100'}`}
+                      className={`text-xs px-2 py-1 rounded-lg border ${isDark ? 'bg-black/30 border-white/10' : 'bg-white border-zinc-200'}`}
                       value={node.data.parameters.image_size}
                       onChange={(e) => {
                         e.stopPropagation();
@@ -1001,14 +1020,14 @@ const GraphView: React.FC<GraphViewProps> = ({ sessions, theme, loadImage, onGen
                       <option value="2K">2K</option>
                     </select>
                   ) : (
-                    <span className="font-medium">{node.data.parameters.image_size}</span>
+                    <span className="font-semibold">{node.data.parameters.image_size}</span>
                   )}
                 </div>
-                <div className={`flex justify-between py-1`}>
-                  <span className={isDark ? 'text-gray-500' : 'text-gray-600'}>Safety:</span>
+                <div className={`flex justify-between items-center px-2 py-1.5 rounded-lg ${isDark ? 'bg-white/5' : 'bg-zinc-50'}`}>
+                  <span className={isDark ? 'text-zinc-400' : 'text-zinc-500'}>Safety</span>
                   {isWorkflowEditing ? (
                     <select
-                      className={`text-xs px-1 rounded ${isDark ? 'bg-gray-700' : 'bg-gray-100'}`}
+                      className={`text-xs px-2 py-1 rounded-lg border ${isDark ? 'bg-black/30 border-white/10' : 'bg-white border-zinc-200'}`}
                       value={node.data.parameters.safety_filter}
                       onChange={(e) => {
                         e.stopPropagation();
@@ -1022,7 +1041,7 @@ const GraphView: React.FC<GraphViewProps> = ({ sessions, theme, loadImage, onGen
                       <option value="high">High</option>
                     </select>
                   ) : (
-                    <span className="font-medium">{node.data.parameters.safety_filter}</span>
+                    <span className="font-semibold capitalize">{node.data.parameters.safety_filter}</span>
                   )}
                 </div>
 
@@ -1068,25 +1087,25 @@ const GraphView: React.FC<GraphViewProps> = ({ sessions, theme, loadImage, onGen
             )}
             {isImage && (
               <div className="h-full flex flex-col gap-2">
-                <div className="flex-1 flex flex-col">
+                <div className={`flex-1 flex flex-col rounded-xl border overflow-hidden ${isDark ? 'border-white/10 bg-white/5' : 'border-zinc-200 bg-white shadow-sm'}`}>
                   {node.data.imageData ? (
                     <img
                       src={node.data.imageData}
                       alt={node.label}
-                      className="w-full h-40 object-cover rounded"
+                      className="w-full h-44 object-cover"
                       draggable={false}
                     />
                   ) : (
-                    <div className={`w-full h-40 flex items-center justify-center rounded ${isDark ? 'bg-gray-700' : 'bg-gray-100'}`}>
-                      <ImageIcon className={isDark ? 'text-gray-500' : 'text-gray-400'} size={32} />
+                    <div className={`w-full h-44 flex items-center justify-center ${isDark ? 'bg-white/5' : 'bg-zinc-50'}`}>
+                      <ImageIcon className={isDark ? 'text-zinc-500' : 'text-zinc-400'} size={32} />
                     </div>
                   )}
-                  <p className={`text-xs mt-2 ${isDark ? 'text-gray-400' : 'text-gray-600'} truncate`}>
-                    {node.data.image?.filename || 'No image'}
-                  </p>
                 </div>
+                <p className={`text-xs px-1 ${isDark ? 'text-zinc-400' : 'text-zinc-600'} truncate`}>
+                  {node.data.image?.filename || 'No image'}
+                </p>
                 {node.type === 'output-image' && (
-                  <div className={`p-2 rounded border ${isDark ? 'border-gray-700 bg-gray-800 text-gray-200' : 'border-gray-200 bg-gray-50 text-gray-700'}`}>
+                  <div className={`p-3 rounded-xl border ${isDark ? 'border-white/10 bg-white/5 text-zinc-100' : 'border-zinc-200 bg-white text-zinc-700 shadow-sm'}`}>
                     <p className="text-[11px] leading-relaxed max-h-20 overflow-y-auto whitespace-pre-wrap">
                       {node.data.text || 'Text output will appear here'}
                     </p>
@@ -1096,7 +1115,7 @@ const GraphView: React.FC<GraphViewProps> = ({ sessions, theme, loadImage, onGen
             )}
             {node.type === 'output-text' && (
               <div className="h-full flex flex-col">
-                <div className={`w-full h-full p-2 rounded ${isDark ? 'bg-gray-800 text-gray-200' : 'bg-gray-50 text-gray-700'}`}>
+                <div className={`w-full h-full p-3 rounded-xl border ${isDark ? 'bg-white/5 border-white/10 text-zinc-100' : 'bg-white border-zinc-200 text-zinc-700 shadow-sm'}`}>
                   <p className="text-sm leading-relaxed whitespace-pre-wrap break-words max-h-32 overflow-y-auto">
                     {node.data.text || 'Text output'}
                   </p>
@@ -1249,48 +1268,39 @@ const GraphView: React.FC<GraphViewProps> = ({ sessions, theme, loadImage, onGen
   return (
     <div
       ref={containerRef}
-      className={`w-full h-full relative ${isDark ? 'bg-zinc-950' : 'bg-zinc-100'} select-none`}
-      style={isDark ? {
-        background: 'linear-gradient(to bottom right, #0a0a0a, #1a1a1a, #0a0a0a)'
-      } : {
-        background: 'linear-gradient(to bottom right, #f4f4f5, #ffffff, #f4f4f5)'
-      }}
+      className={`w-full h-full relative overflow-hidden select-none ${isDark ? 'text-white' : 'text-zinc-900'}`}
+      style={{ background: palette.background }}
     >
+      {/* Ambient grid + vignette */}
+      <div
+        className="pointer-events-none absolute inset-0 opacity-70"
+        style={{
+          backgroundImage: `radial-gradient(circle at 1px 1px, ${isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)'} 1px, transparent 0)`,
+          backgroundSize: '120px 120px'
+        }}
+      />
+      <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-transparent via-transparent to-black/20" />
+
       {/* Controls */}
-      <div className={`absolute top-4 right-4 z-10 rounded-xl p-3 space-y-2 backdrop-blur-xl ${isDark ? 'bg-zinc-900/80 border border-zinc-800' : 'bg-white/80 border border-zinc-200'} shadow-2xl`}>
-        <button
-          onClick={() => setZoom(Math.min(zoom + 0.1, 2))}
-          className={`block w-full px-3 py-2 rounded-lg text-sm transition-all flex items-center gap-2 ${
-            isDark
-              ? 'bg-zinc-800 hover:bg-zinc-700 text-zinc-100 hover:shadow-lg'
-              : 'bg-zinc-100 hover:bg-zinc-200 text-zinc-900 hover:shadow-md'
-          }`}
-        >
-          <ZoomIn size={16} />
-          Zoom In
-        </button>
-        <button
-          onClick={() => setZoom(Math.max(zoom - 0.1, 0.2))}
-          className={`block w-full px-3 py-2 rounded-lg text-sm transition-all flex items-center gap-2 ${
-            isDark
-              ? 'bg-zinc-800 hover:bg-zinc-700 text-zinc-100 hover:shadow-lg'
-              : 'bg-zinc-100 hover:bg-zinc-200 text-zinc-900 hover:shadow-md'
-          }`}
-        >
-          <ZoomOut size={16} />
-          Zoom Out
-        </button>
-        <button
-          onClick={() => { setZoom(0.7); setPan({ x: 50, y: 50 }); }}
-          className={`block w-full px-3 py-2 rounded-lg text-sm transition-all flex items-center gap-2 ${
-            isDark
-              ? 'bg-zinc-800 hover:bg-zinc-700 text-zinc-100 hover:shadow-lg'
-              : 'bg-zinc-100 hover:bg-zinc-200 text-zinc-900 hover:shadow-md'
-          }`}
-        >
-          <Maximize2 size={16} />
-          Reset View
-        </button>
+      <div className={`absolute top-4 right-4 z-10 flex flex-col gap-3 p-3 rounded-2xl backdrop-blur-xl ${palette.panel}`}>
+        {[{
+          icon: <ZoomIn size={16} />, label: 'Zoom In', action: () => setZoom(Math.min(zoom + 0.1, 2))
+        }, {
+          icon: <ZoomOut size={16} />, label: 'Zoom Out', action: () => setZoom(Math.max(zoom - 0.1, 0.2))
+        }, {
+          icon: <Maximize2 size={16} />, label: 'Reset View', action: () => { setZoom(0.7); setPan({ x: 50, y: 50 }); }
+        }].map((item, idx) => (
+          <button
+            key={idx}
+            onClick={item.action}
+            className={`flex items-center justify-between gap-3 px-3 py-2 rounded-xl text-sm transition-all border ${isDark ? 'border-white/10 hover:bg-white/5 text-white' : 'border-zinc-200 hover:bg-zinc-50 text-zinc-900'} shadow-sm`}
+          >
+            <span className={`flex items-center justify-center w-8 h-8 rounded-lg ${isDark ? 'bg-white/5' : 'bg-zinc-100'} border border-white/10`}>
+              {item.icon}
+            </span>
+            <span className="flex-1 text-left font-medium">{item.label}</span>
+          </button>
+        ))}
       </div>
 
       {/* Graph canvas */}
@@ -1365,15 +1375,21 @@ const GraphView: React.FC<GraphViewProps> = ({ sessions, theme, loadImage, onGen
       </svg>
 
       {/* Session Filter */}
-      <div className={`absolute top-4 left-4 rounded-xl p-4 space-y-2 backdrop-blur-xl ${isDark ? 'bg-zinc-900/80 border border-zinc-800' : 'bg-white/80 border border-zinc-200'} shadow-2xl`}>
-        <div className={`font-semibold text-sm mb-2 ${isDark ? 'text-zinc-100' : 'text-zinc-900'}`}>Filter by Session</div>
+      <div className={`absolute top-4 left-4 rounded-2xl p-4 space-y-3 w-72 backdrop-blur-xl ${palette.panel}`}>
+        <div className="flex items-center justify-between">
+          <div className={`font-semibold text-sm ${isDark ? 'text-zinc-100' : 'text-zinc-900'}`}>Graph Overview</div>
+          <span className={`text-[11px] px-2 py-1 rounded-full ${isDark ? 'bg-white/5 text-zinc-300' : 'bg-zinc-100 text-zinc-600'}`}>
+            {nodes.length} nodes
+          </span>
+        </div>
+        <div className={`text-xs ${isDark ? 'text-zinc-400' : 'text-zinc-600'}`}>Choose which session to visualize</div>
         <select
           value={selectedSessionId}
           onChange={(e) => setSelectedSessionId(e.target.value as string)}
-          className={`w-full px-3 py-2 text-sm rounded-lg border transition-all ${
+          className={`w-full px-3 py-2 text-sm rounded-xl border transition-all ${
             isDark
-              ? 'bg-zinc-800 border-zinc-700 text-zinc-200 hover:bg-zinc-700'
-              : 'bg-white border-zinc-300 text-zinc-700 hover:bg-zinc-50'
+              ? 'bg-black/30 border-white/10 text-zinc-100 hover:bg-white/5'
+              : 'bg-white border-zinc-200 text-zinc-700 hover:bg-zinc-50 shadow-sm'
           }`}
         >
           <option value="all">All Sessions ({sessions.length})</option>
@@ -1386,37 +1402,27 @@ const GraphView: React.FC<GraphViewProps> = ({ sessions, theme, loadImage, onGen
       </div>
 
       {/* Legend */}
-      <div className={`absolute bottom-4 left-4 rounded-xl p-4 space-y-2 text-xs backdrop-blur-xl ${isDark ? 'bg-zinc-900/80 border border-zinc-800' : 'bg-white/80 border border-zinc-200'} shadow-2xl`}>
-        <div className={`font-semibold mb-2 ${isDark ? 'text-zinc-100' : 'text-zinc-900'}`}>
+      <div className={`absolute bottom-4 left-4 rounded-2xl p-4 space-y-3 text-xs w-72 backdrop-blur-xl ${palette.panel}`}>
+        <div className={`font-semibold text-sm ${isDark ? 'text-zinc-100' : 'text-zinc-900'}`}>
           {selectedSessionId === 'all'
             ? `All Sessions (${sessions.length})`
             : sessions.find(s => s.session_id === selectedSessionId)?.title || 'Session'}
         </div>
-        <div className={`text-xs mb-3 ${isDark ? 'text-zinc-400' : 'text-zinc-600'}`}>
-          {nodes.length} nodes, {edges.length} edges
+        <div className={`text-xs ${isDark ? 'text-zinc-400' : 'text-zinc-600'}`}>
+          {nodes.length} nodes · {edges.length} edges
         </div>
-        <div className="space-y-1.5">
-          <div className="flex items-center gap-2">
-            <div className="w-6 h-1 bg-gradient-to-r from-purple-600 to-purple-500 rounded-full shadow-sm shadow-purple-500/50"></div>
-            <span className={isDark ? 'text-zinc-300' : 'text-zinc-700'}>Prompt Flow</span>
-          </div>
-          <div className="flex items-center gap-2">
-            <div className="w-6 h-1 bg-gradient-to-r from-green-600 to-green-500 rounded-full shadow-sm shadow-green-500/50"></div>
-            <span className={isDark ? 'text-zinc-300' : 'text-zinc-700'}>Control Images</span>
-          </div>
-          <div className="flex items-center gap-2">
-            <div className="w-6 h-1 bg-gradient-to-r from-blue-500 to-blue-400 rounded-full shadow-sm shadow-blue-500/50"></div>
-            <span className={isDark ? 'text-zinc-300' : 'text-zinc-700'}>Reference Images</span>
-          </div>
-          <div className="flex items-center gap-2">
-            <div className="w-6 h-1 bg-gradient-to-r from-amber-600 to-amber-500 rounded-full shadow-sm shadow-amber-500/50"></div>
-            <span className={isDark ? 'text-zinc-300' : 'text-zinc-700'}>Output</span>
-          </div>
+        <div className="space-y-2">
+          {[{ label: 'Prompt Flow', color: 'from-purple-500 to-purple-400' }, { label: 'Control Images', color: 'from-emerald-500 to-emerald-400' }, { label: 'Reference Images', color: 'from-sky-500 to-sky-400' }, { label: 'Output', color: 'from-amber-500 to-amber-400' }].map(item => (
+            <div key={item.label} className="flex items-center gap-2">
+              <div className={`w-6 h-1 bg-gradient-to-r ${item.color} rounded-full shadow-sm`} />
+              <span className={isDark ? 'text-zinc-200' : 'text-zinc-700'}>{item.label}</span>
+            </div>
+          ))}
         </div>
-        <div className={`mt-3 pt-3 border-t space-y-1 ${isDark ? 'border-zinc-700 text-zinc-500' : 'border-zinc-300 text-zinc-600'}`}>
+        <div className={`mt-2 pt-3 border-t space-y-1.5 ${isDark ? 'border-white/5 text-zinc-500' : 'border-zinc-200 text-zinc-600'}`}>
           <div>💡 Drag nodes to reposition</div>
-          <div>🔗 Drag from handles to connect</div>
-          <div>🖱️ Drag canvas to pan</div>
+          <div>🔗 Connect handles to link steps</div>
+          <div>🖱️ Pan the canvas with drag</div>
           <div>🔍 Scroll to zoom</div>
           <div>📁 Drop images onto canvas</div>
           <div>🖱️ Right-click to add nodes</div>
