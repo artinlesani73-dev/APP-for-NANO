@@ -163,3 +163,22 @@ export interface LogEntry {
   message: string;
   context?: Record<string, unknown>;
 }
+
+export interface AdminMetrics {
+  platform: string;
+  arch: string;
+  uptimeSeconds: number;
+  memory: {
+    total: number;
+    used: number;
+    free: number;
+    percentUsed: number;
+  };
+  cpu: {
+    cores: number;
+    load: number;
+    model: string;
+  };
+  sessions: number;
+  timestamp: string;
+}
