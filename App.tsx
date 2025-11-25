@@ -9,9 +9,11 @@ import { SettingsModal } from './components/SettingsModal';
 import { LoginForm } from './components/LoginForm';
 import { UserProvider, useUser } from './components/UserContext';
 import { AdminLogs } from './components/AdminLogs';
+import { AdminDashboard } from './components/AdminDashboard';
 import { StorageService } from './services/newStorageService';
 import { GeminiService } from './services/geminiService';
 import { LoggerService } from './services/logger';
+import { AdminService } from './services/adminService';
 import { Session, SessionGeneration, GenerationConfig, UploadedImagePayload } from './types';
 import { Zap, Database, Key, ExternalLink, History, ShieldCheck } from 'lucide-react';
 
@@ -50,6 +52,11 @@ function AppContent() {
   const [showHistory, setShowHistory] = useState(false);
   const [theme, setTheme] = useState<'dark' | 'light'>('dark');
   const [isAdminLogsOpen, setIsAdminLogsOpen] = useState(false);
+  const [isAdminDashboardOpen, setIsAdminDashboardOpen] = useState(false);
+  const [isAdminAuthorized, setIsAdminAuthorized] = useState<boolean>(() => {
+    if (typeof window === 'undefined') return false;
+    return sessionStorage.getItem('admin_authorized') === 'true';
+  });
 
   // Get current session
   const currentSession = sessions.find(s => s.session_id === currentSessionId) || null;
@@ -62,6 +69,13 @@ function AppContent() {
   useEffect(() => {
     LoggerService.setCurrentUser(currentUser);
   }, [currentUser]);
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('admin') === '1') {
+      setIsAdminDashboardOpen(true);
+    }
+  }, []);
 
   useEffect(() => {
     // Load initial data
@@ -102,6 +116,37 @@ function AppContent() {
       document.documentElement.classList.add('dark');
     } else {
       document.documentElement.classList.remove('dark');
+    }
+  };
+
+  const grantAdminAccess = () => {
+    setIsAdminAuthorized(true);
+    sessionStorage.setItem('admin_authorized', 'true');
+  };
+
+  const handleAdminAuthorize = async (candidate: string) => {
+    const ok = await AdminService.verifyPassphrase(candidate);
+    if (ok) {
+      grantAdminAccess();
+      await AdminService.openAdminWindow(true);
+    }
+    return ok;
+  };
+
+  const handleOpenAdminDashboard = async () => {
+    if (isAdminAuthorized) {
+      setIsAdminDashboardOpen(true);
+      await AdminService.openAdminWindow(true);
+      return;
+    }
+
+    const candidate = window.prompt('Enter admin passphrase to open the dashboard');
+    if (!candidate) return;
+    const ok = await handleAdminAuthorize(candidate);
+    if (!ok) {
+      alert('Invalid admin passphrase.');
+    } else {
+      setIsAdminDashboardOpen(true);
     }
   };
 
@@ -415,6 +460,15 @@ function AppContent() {
                 )}
 
                 <button
+                  onClick={handleOpenAdminDashboard}
+                  className="flex items-center gap-2 text-xs px-3 py-1.5 rounded border bg-white dark:bg-emerald-900/30 border-emerald-300 dark:border-emerald-800 text-emerald-700 dark:text-emerald-200 hover:bg-emerald-50 dark:hover:bg-emerald-900 transition-colors"
+                  title="Open the admin dashboard"
+                >
+                  <ShieldCheck size={12} />
+                  Admin Dashboard
+                </button>
+
+                <button
                   onClick={() => setIsAdminLogsOpen(true)}
                   className="flex items-center gap-2 text-xs px-3 py-1.5 rounded border bg-white dark:bg-zinc-800/50 border-zinc-300 dark:border-zinc-700 text-zinc-700 dark:text-zinc-300 hover:bg-zinc-50 dark:hover:bg-zinc-800 transition-colors"
                 >
@@ -566,6 +620,12 @@ function AppContent() {
         theme={theme}
         toggleTheme={toggleTheme}
         onApiKeyUpdate={handleApiKeyUpdate}
+      />
+      <AdminDashboard
+        isOpen={isAdminDashboardOpen}
+        isAuthorized={isAdminAuthorized}
+        onAuthorize={handleAdminAuthorize}
+        onClose={() => setIsAdminDashboardOpen(false)}
       />
       <AdminLogs
         isOpen={isAdminLogsOpen}

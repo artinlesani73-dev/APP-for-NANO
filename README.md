@@ -125,6 +125,50 @@ The distributable will be available in the `dist-electron/` directory.
 2. Click the **download icon** on any generated image
 3. Choose save location in the file dialog
 
+## Admin Dashboard
+
+The desktop build ships with a read-only admin dashboard for operational monitoring.
+
+- **Enable access**: set `VITE_ADMIN_PASSPHRASE` (or `ADMIN_ENABLED=true` with a passphrase) in `.env` next to `electron-main.*`.
+- **Open the view**: click **Admin Dashboard** in the top bar. The app prompts for the passphrase and opens a dedicated Electron window with `contextIsolation` enabled.
+- **Data sources**: metrics are pulled locally via `os` (CPU, memory, uptime) and session counts from the `sessions` directory. Activity logs reuse the same on-device audit log.
+- **Navigation**: use the same button to re-open the dashboard window. Deep-linking `?admin=1` will auto-open the dashboard on launch.
+- **Log capture model**: every renderer action (logins, generates, exports, errors) is buffered by `LoggerService`, flushed through the Electron `log-event` IPC, and saved to `logs.json`. By default, the file lives in `ImageProvenanceStudio` under the user's Documents folder. To redirect logs to a local server/share (for example `\\192.168.1.2\area49`), set `LOG_SHARE_PATH` or `VITE_LOG_SHARE_PATH` in `.env`; the app will write `logs.json` there and fall back locally if the share is unavailable. The dashboard is a read-only view of that audit log; it does not pull events from other machines.
+
+### How to use the admin dashboard
+
+1. **Turn it on**
+   - Create a `.env` file beside `electron-main.js`/`electron-main.cjs` with `VITE_ADMIN_PASSPHRASE=<your-strong-passphrase>`.
+   - Optionally set `ADMIN_ENABLED=true` if you want the window creation route guarded by a flag as well.
+
+2. **Launch and unlock**
+   - Start the desktop app (`npm run dev` for web preview or packaged build for Electron).
+   - Click the **Admin Dashboard** button in the top bar (or launch with `?admin=1` deep link).
+   - Enter the configured passphrase when prompted. Wrong input should refuse access; correct input opens the dashboard window.
+
+3. **Review live status**
+   - The top stat cards show CPU, memory, and uptime pulled from the local `os` module plus active session count.
+   - Data refreshes on a 5-second cadence. Click **Refresh** (if present) to pull immediately.
+
+4. **Scan alerts and activity**
+   - Alert banners highlight high resource usage or notable events returned by the metrics service.
+   - The activity feed lists the latest on-device audit entries (session opens, generations, exports). Use it to validate user actions.
+
+5. **Navigate safely**
+   - Close the dashboard window at any time; the main app stays active. Re-open via the same button without restarting the app.
+   - On macOS/Windows/Linux, verify the window opens, focuses, and closes without crashing the main process.
+
+6. **Troubleshoot**
+   - If the dashboard does not open, confirm `VITE_ADMIN_PASSPHRASE` is set and restart the app to reload environment variables.
+   - If metrics are empty, ensure the preload bridge is allowed (no devtools overrides) and that the app has permission to read from the user Documents folder where sessions are stored.
+   - For repeated auth failures, regenerate the passphrase and restart the app to clear any cached state.
+
+### Admin QA Checklist
+- Unlock the dashboard with the configured passphrase (expected failure on wrong input).
+- Verify live metrics refresh (CPU, memory, uptime update every 5 seconds or on manual refresh).
+- Confirm activity feed matches recent actions in the main app.
+- On macOS/Windows/Linux, open and close the admin window and return to the main app without crashes.
+
 ## Project Structure
 
 ```
