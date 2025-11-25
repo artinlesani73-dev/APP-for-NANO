@@ -255,12 +255,12 @@ export default function App() {
     const startTime = Date.now();
 
     try {
-        // 3. API Call (using first image of each type for now)
+        // 3. API Call (send all control/reference images when provided)
         const base64Output = await GeminiService.generateImage(
             prompt,
             config,
-            controlImagesData[0] || undefined,
-            referenceImagesData[0] || undefined
+            controlImagesData.length > 0 ? controlImagesData : undefined,
+            referenceImagesData.length > 0 ? referenceImagesData : undefined
         );
 
         const duration = Date.now() - startTime;
@@ -468,8 +468,8 @@ export default function App() {
                     const base64Output = await GeminiService.generateImage(
                       prompt,
                       config,
-                      controlImages?.[0],
-                      referenceImages?.[0]
+                      controlImages,
+                      referenceImages
                     );
 
                     const duration = Date.now() - startTime;
