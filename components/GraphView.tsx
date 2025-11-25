@@ -725,7 +725,8 @@ const GraphView: React.FC<GraphViewProps> = ({ sessions, theme, loadImage, onGen
   const renderNode = (node: Node) => {
     const isImage = node.type.includes('image');
     const isDark = theme === 'dark';
-    const workflowEditingEnabled = session.generations.length === 0;
+    // Disable workflow editing in graph view since we're viewing across sessions
+    const workflowEditingEnabled = false;
     const isWorkflowEditing = workflowEditingEnabled && editingNode === node.id;
 
     return (
