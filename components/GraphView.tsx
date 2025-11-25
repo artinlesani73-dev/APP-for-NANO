@@ -771,27 +771,70 @@ const GraphView: React.FC<GraphViewProps> = ({ sessions, theme, loadImage, onGen
         }}
         style={{ cursor: 'move' }}
       >
-        {/* Node background */}
+        {/* Node background with shadow */}
+        <defs>
+          <filter id={`shadow-${node.id}`} x="-50%" y="-50%" width="200%" height="200%">
+            <feGaussianBlur in="SourceAlpha" stdDeviation="4"/>
+            <feOffset dx="0" dy="4" result="offsetblur"/>
+            <feComponentTransfer>
+              <feFuncA type="linear" slope="0.3"/>
+            </feComponentTransfer>
+            <feMerge>
+              <feMergeNode/>
+              <feMergeNode in="SourceGraphic"/>
+            </feMerge>
+          </filter>
+          <linearGradient id={`grad-${node.id}`} x1="0%" y1="0%" x2="0%" y2="100%">
+            <stop offset="0%" stopColor={isDark ? '#27272a' : '#fafafa'} />
+            <stop offset="100%" stopColor={isDark ? '#18181b' : '#f4f4f5'} />
+          </linearGradient>
+        </defs>
         <rect
           width={node.width}
           height={node.height}
-          rx={8}
-          className={isDark ? 'fill-gray-800 stroke-gray-600' : 'fill-white stroke-gray-300'}
-          strokeWidth={2}
+          rx={12}
+          fill={`url(#grad-${node.id})`}
+          className={isDark ? 'stroke-zinc-700' : 'stroke-zinc-300'}
+          strokeWidth={1.5}
+          filter={`url(#shadow-${node.id})`}
         />
 
-        {/* Node header */}
+        {/* Node header with gradient */}
+        <defs>
+          <linearGradient id={`header-grad-${node.id}`} x1="0%" y1="0%" x2="100%" y2="0%">
+            {node.type === 'prompt' ? (
+              <>
+                <stop offset="0%" stopColor={isDark ? '#9333ea' : '#a855f7'} />
+                <stop offset="100%" stopColor={isDark ? '#7c3aed' : '#9333ea'} />
+              </>
+            ) : node.type === 'workflow' ? (
+              <>
+                <stop offset="0%" stopColor={isDark ? '#6366f1' : '#818cf8'} />
+                <stop offset="100%" stopColor={isDark ? '#4f46e5' : '#6366f1'} />
+              </>
+            ) : node.type === 'control-image' ? (
+              <>
+                <stop offset="0%" stopColor={isDark ? '#10b981' : '#34d399'} />
+                <stop offset="100%" stopColor={isDark ? '#059669' : '#10b981'} />
+              </>
+            ) : node.type === 'reference-image' ? (
+              <>
+                <stop offset="0%" stopColor={isDark ? '#3b82f6' : '#60a5fa'} />
+                <stop offset="100%" stopColor={isDark ? '#2563eb' : '#3b82f6'} />
+              </>
+            ) : (
+              <>
+                <stop offset="0%" stopColor={isDark ? '#f59e0b' : '#fbbf24'} />
+                <stop offset="100%" stopColor={isDark ? '#d97706' : '#f59e0b'} />
+              </>
+            )}
+          </linearGradient>
+        </defs>
         <rect
           width={node.width}
           height={40}
-          rx={8}
-          className={`${
-            node.type === 'prompt' ? (isDark ? 'fill-purple-600' : 'fill-purple-500') :
-            node.type === 'workflow' ? (isDark ? 'fill-blue-600' : 'fill-blue-500') :
-            node.type === 'control-image' ? (isDark ? 'fill-green-600' : 'fill-green-500') :
-            node.type === 'reference-image' ? (isDark ? 'fill-blue-500' : 'fill-blue-400') :
-            isDark ? 'fill-amber-600' : 'fill-amber-500'
-          }`}
+          rx={12}
+          fill={`url(#header-grad-${node.id})`}
         />
 
         {/* Node icon and title */}
@@ -1164,12 +1207,37 @@ const GraphView: React.FC<GraphViewProps> = ({ sessions, theme, loadImage, onGen
 
     return (
       <g key={key}>
+        <defs>
+          <filter id={`glow-${key}`} x="-50%" y="-50%" width="200%" height="200%">
+            <feGaussianBlur stdDeviation="3" result="coloredBlur"/>
+            <feMerge>
+              <feMergeNode in="coloredBlur"/>
+              <feMergeNode in="coloredBlur"/>
+              <feMergeNode in="SourceGraphic"/>
+            </feMerge>
+          </filter>
+          <linearGradient id={`edge-grad-${key}`} gradientUnits="userSpaceOnUse">
+            <stop offset="0%" stopColor={edge.color} stopOpacity="0.8"/>
+            <stop offset="50%" stopColor={edge.color} stopOpacity="1"/>
+            <stop offset="100%" stopColor={edge.color} stopOpacity="0.8"/>
+          </linearGradient>
+        </defs>
+        {/* Glow layer */}
         <path
           d={path}
           stroke={edge.color}
+          strokeWidth={6}
+          fill="none"
+          opacity={0.2}
+          strokeLinecap="round"
+          filter={`url(#glow-${key})`}
+        />
+        {/* Main edge */}
+        <path
+          d={path}
+          stroke={`url(#edge-grad-${key})`}
           strokeWidth={2.5}
           fill="none"
-          opacity={0.7}
           strokeLinecap="round"
         />
       </g>
@@ -1181,16 +1249,21 @@ const GraphView: React.FC<GraphViewProps> = ({ sessions, theme, loadImage, onGen
   return (
     <div
       ref={containerRef}
-      className={`w-full h-full relative ${isDark ? 'bg-gray-900' : 'bg-gray-50'} select-none`}
+      className={`w-full h-full relative ${isDark ? 'bg-zinc-950' : 'bg-zinc-100'} select-none`}
+      style={isDark ? {
+        background: 'linear-gradient(to bottom right, #0a0a0a, #1a1a1a, #0a0a0a)'
+      } : {
+        background: 'linear-gradient(to bottom right, #f4f4f5, #ffffff, #f4f4f5)'
+      }}
     >
       {/* Controls */}
-      <div className={`absolute top-4 right-4 z-10 rounded-lg p-2 space-y-2 ${isDark ? 'bg-gray-800' : 'bg-white'} shadow-lg`}>
+      <div className={`absolute top-4 right-4 z-10 rounded-xl p-3 space-y-2 backdrop-blur-xl ${isDark ? 'bg-zinc-900/80 border border-zinc-800' : 'bg-white/80 border border-zinc-200'} shadow-2xl`}>
         <button
           onClick={() => setZoom(Math.min(zoom + 0.1, 2))}
-          className={`block w-full px-3 py-2 rounded text-sm transition-colors flex items-center gap-2 ${
+          className={`block w-full px-3 py-2 rounded-lg text-sm transition-all flex items-center gap-2 ${
             isDark
-              ? 'bg-gray-700 hover:bg-gray-600 text-white'
-              : 'bg-gray-100 hover:bg-gray-200 text-gray-900'
+              ? 'bg-zinc-800 hover:bg-zinc-700 text-zinc-100 hover:shadow-lg'
+              : 'bg-zinc-100 hover:bg-zinc-200 text-zinc-900 hover:shadow-md'
           }`}
         >
           <ZoomIn size={16} />
@@ -1198,10 +1271,10 @@ const GraphView: React.FC<GraphViewProps> = ({ sessions, theme, loadImage, onGen
         </button>
         <button
           onClick={() => setZoom(Math.max(zoom - 0.1, 0.2))}
-          className={`block w-full px-3 py-2 rounded text-sm transition-colors flex items-center gap-2 ${
+          className={`block w-full px-3 py-2 rounded-lg text-sm transition-all flex items-center gap-2 ${
             isDark
-              ? 'bg-gray-700 hover:bg-gray-600 text-white'
-              : 'bg-gray-100 hover:bg-gray-200 text-gray-900'
+              ? 'bg-zinc-800 hover:bg-zinc-700 text-zinc-100 hover:shadow-lg'
+              : 'bg-zinc-100 hover:bg-zinc-200 text-zinc-900 hover:shadow-md'
           }`}
         >
           <ZoomOut size={16} />
@@ -1209,10 +1282,10 @@ const GraphView: React.FC<GraphViewProps> = ({ sessions, theme, loadImage, onGen
         </button>
         <button
           onClick={() => { setZoom(0.7); setPan({ x: 50, y: 50 }); }}
-          className={`block w-full px-3 py-2 rounded text-sm transition-colors flex items-center gap-2 ${
+          className={`block w-full px-3 py-2 rounded-lg text-sm transition-all flex items-center gap-2 ${
             isDark
-              ? 'bg-gray-700 hover:bg-gray-600 text-white'
-              : 'bg-gray-100 hover:bg-gray-200 text-gray-900'
+              ? 'bg-zinc-800 hover:bg-zinc-700 text-zinc-100 hover:shadow-lg'
+              : 'bg-zinc-100 hover:bg-zinc-200 text-zinc-900 hover:shadow-md'
           }`}
         >
           <Maximize2 size={16} />
@@ -1251,15 +1324,38 @@ const GraphView: React.FC<GraphViewProps> = ({ sessions, theme, loadImage, onGen
             const path = `M ${fromX} ${fromY} C ${midX} ${fromY}, ${midX} ${toY}, ${toX} ${toY}`;
 
             return (
-              <path
-                d={path}
-                stroke="#3b82f6"
-                strokeWidth={2.5}
-                fill="none"
-                opacity={0.5}
-                strokeDasharray="5,5"
-                strokeLinecap="round"
-              />
+              <g>
+                <defs>
+                  <filter id="preview-glow" x="-50%" y="-50%" width="200%" height="200%">
+                    <feGaussianBlur stdDeviation="4" result="coloredBlur"/>
+                    <feMerge>
+                      <feMergeNode in="coloredBlur"/>
+                      <feMergeNode in="coloredBlur"/>
+                      <feMergeNode in="SourceGraphic"/>
+                    </feMerge>
+                  </filter>
+                </defs>
+                {/* Glow layer */}
+                <path
+                  d={path}
+                  stroke="#a855f7"
+                  strokeWidth={8}
+                  fill="none"
+                  opacity={0.3}
+                  strokeLinecap="round"
+                  filter="url(#preview-glow)"
+                />
+                {/* Main preview line */}
+                <path
+                  d={path}
+                  stroke="#a855f7"
+                  strokeWidth={2.5}
+                  fill="none"
+                  opacity={0.8}
+                  strokeDasharray="8,4"
+                  strokeLinecap="round"
+                />
+              </g>
             );
           })()}
 
@@ -1269,15 +1365,15 @@ const GraphView: React.FC<GraphViewProps> = ({ sessions, theme, loadImage, onGen
       </svg>
 
       {/* Session Filter */}
-      <div className={`absolute top-20 left-4 rounded-lg p-3 space-y-2 ${isDark ? 'bg-gray-800' : 'bg-white'} shadow-lg`}>
-        <div className="font-semibold text-sm mb-2">Filter by Session</div>
+      <div className={`absolute top-4 left-4 rounded-xl p-4 space-y-2 backdrop-blur-xl ${isDark ? 'bg-zinc-900/80 border border-zinc-800' : 'bg-white/80 border border-zinc-200'} shadow-2xl`}>
+        <div className={`font-semibold text-sm mb-2 ${isDark ? 'text-zinc-100' : 'text-zinc-900'}`}>Filter by Session</div>
         <select
           value={selectedSessionId}
           onChange={(e) => setSelectedSessionId(e.target.value as string)}
-          className={`w-full px-3 py-2 text-sm rounded border ${
+          className={`w-full px-3 py-2 text-sm rounded-lg border transition-all ${
             isDark
-              ? 'bg-gray-700 border-gray-600 text-gray-200'
-              : 'bg-white border-gray-300 text-gray-700'
+              ? 'bg-zinc-800 border-zinc-700 text-zinc-200 hover:bg-zinc-700'
+              : 'bg-white border-zinc-300 text-zinc-700 hover:bg-zinc-50'
           }`}
         >
           <option value="all">All Sessions ({sessions.length})</option>
@@ -1290,32 +1386,34 @@ const GraphView: React.FC<GraphViewProps> = ({ sessions, theme, loadImage, onGen
       </div>
 
       {/* Legend */}
-      <div className={`absolute bottom-4 left-4 rounded-lg p-3 space-y-1 text-xs ${isDark ? 'bg-gray-800' : 'bg-white'} shadow-lg`}>
-        <div className="font-semibold mb-2">
+      <div className={`absolute bottom-4 left-4 rounded-xl p-4 space-y-2 text-xs backdrop-blur-xl ${isDark ? 'bg-zinc-900/80 border border-zinc-800' : 'bg-white/80 border border-zinc-200'} shadow-2xl`}>
+        <div className={`font-semibold mb-2 ${isDark ? 'text-zinc-100' : 'text-zinc-900'}`}>
           {selectedSessionId === 'all'
             ? `All Sessions (${sessions.length})`
             : sessions.find(s => s.session_id === selectedSessionId)?.title || 'Session'}
         </div>
-        <div className="text-xs text-gray-500 mb-2">
+        <div className={`text-xs mb-3 ${isDark ? 'text-zinc-400' : 'text-zinc-600'}`}>
           {nodes.length} nodes, {edges.length} edges
         </div>
-        <div className="flex items-center gap-2">
-          <div className="w-4 h-1 bg-purple-600 rounded"></div>
-          <span>Prompt Flow</span>
+        <div className="space-y-1.5">
+          <div className="flex items-center gap-2">
+            <div className="w-6 h-1 bg-gradient-to-r from-purple-600 to-purple-500 rounded-full shadow-sm shadow-purple-500/50"></div>
+            <span className={isDark ? 'text-zinc-300' : 'text-zinc-700'}>Prompt Flow</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <div className="w-6 h-1 bg-gradient-to-r from-green-600 to-green-500 rounded-full shadow-sm shadow-green-500/50"></div>
+            <span className={isDark ? 'text-zinc-300' : 'text-zinc-700'}>Control Images</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <div className="w-6 h-1 bg-gradient-to-r from-blue-500 to-blue-400 rounded-full shadow-sm shadow-blue-500/50"></div>
+            <span className={isDark ? 'text-zinc-300' : 'text-zinc-700'}>Reference Images</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <div className="w-6 h-1 bg-gradient-to-r from-amber-600 to-amber-500 rounded-full shadow-sm shadow-amber-500/50"></div>
+            <span className={isDark ? 'text-zinc-300' : 'text-zinc-700'}>Output</span>
+          </div>
         </div>
-        <div className="flex items-center gap-2">
-          <div className="w-4 h-1 bg-green-600 rounded"></div>
-          <span>Control Images</span>
-        </div>
-        <div className="flex items-center gap-2">
-          <div className="w-4 h-1 bg-blue-500 rounded"></div>
-          <span>Reference Images</span>
-        </div>
-        <div className="flex items-center gap-2">
-          <div className="w-4 h-1 bg-amber-600 rounded"></div>
-          <span>Output</span>
-        </div>
-        <div className="mt-2 pt-2 border-t border-gray-600 text-gray-500">
+        <div className={`mt-3 pt-3 border-t space-y-1 ${isDark ? 'border-zinc-700 text-zinc-500' : 'border-zinc-300 text-zinc-600'}`}>
           <div>💡 Drag nodes to reposition</div>
           <div>🔗 Drag from handles to connect</div>
           <div>🖱️ Drag canvas to pan</div>
@@ -1333,15 +1431,15 @@ const GraphView: React.FC<GraphViewProps> = ({ sessions, theme, loadImage, onGen
             onClick={closeContextMenu}
           />
           <div
-            className={`fixed z-50 rounded-lg shadow-xl border ${
-              isDark ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'
+            className={`fixed z-50 rounded-xl shadow-2xl border backdrop-blur-xl ${
+              isDark ? 'bg-zinc-900/95 border-zinc-800' : 'bg-white/95 border-zinc-200'
             }`}
             style={{ left: contextMenu.x, top: contextMenu.y }}
           >
             {contextMenu.nodeId && canDeleteNode(contextMenu.nodeId) && (
               <button
-                className={`w-full px-4 py-2 text-left text-sm flex items-center gap-2 hover:bg-red-50 dark:hover:bg-red-900/30 transition-colors rounded-t-lg ${
-                  isDark ? 'text-red-300' : 'text-red-600'
+                className={`w-full px-4 py-2.5 text-left text-sm flex items-center gap-2 transition-all rounded-t-xl ${
+                  isDark ? 'text-red-400 hover:bg-red-950/50' : 'text-red-600 hover:bg-red-50'
                 }`}
                 onClick={() => deleteNode(contextMenu.nodeId!)}
               >
@@ -1350,8 +1448,8 @@ const GraphView: React.FC<GraphViewProps> = ({ sessions, theme, loadImage, onGen
               </button>
             )}
             <button
-              className={`w-full px-4 py-2 text-left text-sm flex items-center gap-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-t-lg ${
-                isDark ? 'text-gray-300' : 'text-gray-700'
+              className={`w-full px-4 py-2.5 text-left text-sm flex items-center gap-2 transition-all rounded-t-xl ${
+                isDark ? 'text-zinc-200 hover:bg-zinc-800' : 'text-zinc-700 hover:bg-zinc-100'
               }`}
               onClick={() => addPromptNode(contextMenu.svgX, contextMenu.svgY)}
             >
@@ -1359,8 +1457,8 @@ const GraphView: React.FC<GraphViewProps> = ({ sessions, theme, loadImage, onGen
               Add Prompt Node
             </button>
             <button
-              className={`w-full px-4 py-2 text-left text-sm flex items-center gap-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-b-lg transition-colors ${
-                isDark ? 'text-gray-300' : 'text-gray-700'
+              className={`w-full px-4 py-2.5 text-left text-sm flex items-center gap-2 transition-all rounded-b-xl ${
+                isDark ? 'text-zinc-200 hover:bg-zinc-800' : 'text-zinc-700 hover:bg-zinc-100'
               }`}
               onClick={() => addWorkflowNode(contextMenu.svgX, contextMenu.svgY)}
             >
@@ -1373,8 +1471,8 @@ const GraphView: React.FC<GraphViewProps> = ({ sessions, theme, loadImage, onGen
 
       {/* Drag overlay */}
       {isDraggingOver && (
-        <div className="absolute inset-0 z-30 pointer-events-none flex items-center justify-center bg-blue-500/10">
-          <div className={`text-2xl font-bold ${isDark ? 'text-blue-400' : 'text-blue-600'}`}>
+        <div className="absolute inset-0 z-30 pointer-events-none flex items-center justify-center bg-gradient-to-br from-blue-500/10 to-purple-500/10 backdrop-blur-sm">
+          <div className={`text-2xl font-bold px-6 py-4 rounded-2xl ${isDark ? 'text-blue-400 bg-zinc-900/50' : 'text-blue-600 bg-white/50'}`}>
             Drop images here to add to canvas
           </div>
         </div>
