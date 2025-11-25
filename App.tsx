@@ -12,7 +12,7 @@ import { AdminLogs } from './components/AdminLogs';
 import { StorageService } from './services/newStorageService';
 import { GeminiService } from './services/geminiService';
 import { LoggerService } from './services/logger';
-import { Session, SessionGeneration, GenerationConfig } from './types';
+import { Session, SessionGeneration, GenerationConfig, UploadedImagePayload } from './types';
 import { Zap, Database, Key, ExternalLink, History, ShieldCheck } from 'lucide-react';
 
 const DEFAULT_CONFIG: GenerationConfig = {
@@ -32,8 +32,8 @@ function AppContent() {
 
   // Active Generation Inputs
   const [prompt, setPrompt] = useState<string>('');
-  const [controlImagesData, setControlImagesData] = useState<string[]>([]);
-  const [referenceImagesData, setReferenceImagesData] = useState<string[]>([]);
+  const [controlImagesData, setControlImagesData] = useState<UploadedImagePayload[]>([]);
+  const [referenceImagesData, setReferenceImagesData] = useState<UploadedImagePayload[]>([]);
   const [config, setConfig] = useState<GenerationConfig>(DEFAULT_CONFIG);
 
   // Output State
@@ -159,7 +159,8 @@ function AppContent() {
     if (gen.control_images && gen.control_images.length > 0) {
       const imagesData = gen.control_images
         .map(img => StorageService.loadImage('control', img.id, img.filename))
-        .filter(data => data !== null) as string[];
+        .filter(data => data !== null)
+        .map(data => ({ data })) as UploadedImagePayload[];
       setControlImagesData(imagesData);
     } else {
       setControlImagesData([]);
@@ -169,7 +170,8 @@ function AppContent() {
     if (gen.reference_images && gen.reference_images.length > 0) {
       const imagesData = gen.reference_images
         .map(img => StorageService.loadImage('reference', img.id, img.filename))
-        .filter(data => data !== null) as string[];
+        .filter(data => data !== null)
+        .map(data => ({ data })) as UploadedImagePayload[];
       setReferenceImagesData(imagesData);
     } else {
       setReferenceImagesData([]);
@@ -203,10 +205,15 @@ function AppContent() {
     const reader = new FileReader();
     reader.onload = (e) => {
         const base64 = e.target?.result as string;
+        const payload: UploadedImagePayload = {
+          data: base64,
+          original_name: file.name,
+          size_bytes: file.size
+        };
         if (role === 'control') {
-          setControlImagesData(prev => [...prev, base64]);
+          setControlImagesData(prev => [...prev, payload]);
         } else {
-          setReferenceImagesData(prev => [...prev, base64]);
+          setReferenceImagesData(prev => [...prev, payload]);
         }
     };
     reader.readAsDataURL(file);
@@ -290,8 +297,8 @@ function AppContent() {
         const base64Output = await GeminiService.generateImage(
             prompt,
             config,
-            controlImagesData.length > 0 ? controlImagesData : undefined,
-            referenceImagesData.length > 0 ? referenceImagesData : undefined,
+            controlImagesData.length > 0 ? controlImagesData.map(img => img.data) : undefined,
+            referenceImagesData.length > 0 ? referenceImagesData.map(img => img.data) : undefined,
             currentUser.displayName
         );
 
@@ -481,7 +488,7 @@ function AppContent() {
                         <MultiImageUploadPanel
                             title="Control Images"
                             description="For structure/composition"
-                            images={controlImagesData}
+                            images={controlImagesData.map(img => img.data)}
                             onUpload={(f) => handleImageUpload(f, 'control')}
                             onRemove={(idx) => handleImageRemove(idx, 'control')}
                             maxImages={5}
@@ -489,7 +496,7 @@ function AppContent() {
                         <MultiImageUploadPanel
                             title="Reference Images"
                             description="For style transfer"
-                            images={referenceImagesData}
+                            images={referenceImagesData.map(img => img.data)}
                             onUpload={(f) => handleImageUpload(f, 'reference')}
                             onRemove={(idx) => handleImageRemove(idx, 'reference')}
                             maxImages={5}

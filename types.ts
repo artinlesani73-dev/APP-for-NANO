@@ -9,6 +9,20 @@ export interface Session {
 }
 
 // Generation data embedded in session (not separated)
+export interface StoredImageMeta {
+  id: string;
+  filename: string;
+  hash?: string;
+  original_name?: string;
+  size_bytes?: number;
+}
+
+export interface UploadedImagePayload {
+  data: string;
+  original_name?: string;
+  size_bytes?: number;
+}
+
 export interface SessionGeneration {
   generation_id: string;
   timestamp: string;
@@ -16,27 +30,15 @@ export interface SessionGeneration {
 
   // Inputs
   prompt: string;
-  control_images?: Array<{
-    id: string;
-    filename: string;
-  }>;
-  reference_images?: Array<{
-    id: string;
-    filename: string;
-  }>;
+  control_images?: StoredImageMeta[];
+  reference_images?: StoredImageMeta[];
 
   // Parameters
   parameters: GenerationConfig;
 
   // Outputs
-  output_image?: {
-    id: string;
-    filename: string;
-  };
-  output_images?: Array<{
-    id: string;
-    filename: string;
-  }>;
+  output_image?: StoredImageMeta;
+  output_images?: StoredImageMeta[];
   output_texts?: string[];
   generation_time_ms?: number;
   error?: string;
