@@ -159,6 +159,7 @@ export interface LogEntry {
   id: string;
   timestamp: string;
   user: string;
+  userId?: string;
   type: LogEventType;
   message: string;
   context?: Record<string, unknown>;

@@ -137,10 +137,10 @@ function AppContent() {
   }, []);
 
   // --- HANDLERS ---
-  const handleLogin = (displayName: string, persist = true) => {
-    setCurrentUser({ displayName }, persist);
-    LoggerService.setCurrentUser({ displayName });
-    LoggerService.logLogin('User logged in', { displayName });
+  const handleLogin = (user: { displayName: string; id: string }, persist = true) => {
+    setCurrentUser(user, persist);
+    LoggerService.setCurrentUser(user);
+    LoggerService.logLogin('User logged in', { displayName: user.displayName, userId: user.id });
   };
 
   const toggleTheme = () => {

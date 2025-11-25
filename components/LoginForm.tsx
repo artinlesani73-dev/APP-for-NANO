@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { AppConfig } from '../services/config';
 
 type LoginFormProps = {
-  onLogin: (displayName: string, persist?: boolean) => void;
+  onLogin: (user: { displayName: string; id: string }, persist?: boolean) => void;
 };
 
 export const LoginForm: React.FC<LoginFormProps> = ({ onLogin }) => {
@@ -48,13 +48,18 @@ export const LoginForm: React.FC<LoginFormProps> = ({ onLogin }) => {
       localStorage.setItem(AppConfig.sharedApiKeyStorageKey, sharedKey);
     }
 
+    const existingId = localStorage.getItem(AppConfig.userIdStorageKey);
+    const userId = existingId || crypto.randomUUID();
+
     if (rememberName) {
       localStorage.setItem(AppConfig.userStorageKey, trimmedName);
+      localStorage.setItem(AppConfig.userIdStorageKey, userId);
     } else {
       localStorage.removeItem(AppConfig.userStorageKey);
+      localStorage.removeItem(AppConfig.userIdStorageKey);
     }
 
-    onLogin(trimmedName, rememberName);
+    onLogin({ displayName: trimmedName, id: userId }, rememberName);
   };
 
   return (

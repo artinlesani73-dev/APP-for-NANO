@@ -42,6 +42,7 @@ declare global {
       deleteSessionSync?: (sessionId: string) => { success: boolean; error?: string };
       logEvent?: (entry: LogEntry) => void;
       fetchLogs?: () => Promise<LogEntry[]>;
+      setUserContext?: (user: { displayName: string; id?: string } | null) => void;
     };
   }
 }
@@ -49,7 +50,7 @@ declare global {
 class Logger {
   private buffer: LogEntry[] = [];
   private flushTimer?: number;
-  private currentUser: string | null = null;
+  private currentUser: { displayName: string; id?: string } | null = null;
 
   init() {
     if (typeof window === 'undefined') return;
@@ -57,8 +58,15 @@ class Logger {
     this.flushTimer = window.setInterval(() => this.flush(), FLUSH_INTERVAL_MS);
   }
 
-  setCurrentUser(user: { displayName: string } | null) {
-    this.currentUser = user?.displayName ?? null;
+  setCurrentUser(user: { displayName: string; id?: string } | null) {
+    this.currentUser = user;
+    if (isElectron()) {
+      try {
+        window.electron?.setUserContext?.(user);
+      } catch (err) {
+        console.error('Failed to sync user context to main process', err);
+      }
+    }
   }
 
   logEvent(type: LogEventType, message: string, context?: Record<string, unknown>) {
@@ -67,7 +75,8 @@ class Logger {
     const entry: LogEntry = {
       id: crypto.randomUUID(),
       timestamp: new Date().toISOString(),
-      user: this.currentUser || 'anonymous',
+      user: this.currentUser?.displayName || 'anonymous',
+      userId: this.currentUser?.id,
       type,
       message,
       context,

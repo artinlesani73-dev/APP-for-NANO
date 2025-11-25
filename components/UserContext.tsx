@@ -1,8 +1,11 @@
 import React, { createContext, useContext, useEffect, useMemo, useState } from 'react';
 import { AppConfig } from '../services/config';
 
+const generateId = () => crypto.randomUUID();
+
 type User = {
   displayName: string;
+  id: string;
 };
 
 type UserContextValue = {
@@ -18,8 +21,12 @@ export const UserProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   useEffect(() => {
     const storedName = localStorage.getItem(AppConfig.userStorageKey);
+    const storedId = localStorage.getItem(AppConfig.userIdStorageKey);
+
     if (storedName) {
-      setCurrentUserState({ displayName: storedName });
+      const userId = storedId || generateId();
+      localStorage.setItem(AppConfig.userIdStorageKey, userId);
+      setCurrentUserState({ displayName: storedName, id: userId });
     }
   }, []);
 
@@ -27,14 +34,17 @@ export const UserProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setCurrentUserState(user);
     if (persist) {
       localStorage.setItem(AppConfig.userStorageKey, user.displayName);
+      localStorage.setItem(AppConfig.userIdStorageKey, user.id);
     } else {
       localStorage.removeItem(AppConfig.userStorageKey);
+      localStorage.removeItem(AppConfig.userIdStorageKey);
     }
   };
 
   const logout = () => {
     setCurrentUserState(null);
     localStorage.removeItem(AppConfig.userStorageKey);
+    localStorage.removeItem(AppConfig.userIdStorageKey);
   };
 
   const value = useMemo(() => ({ currentUser, setCurrentUser, logout }), [currentUser]);

@@ -179,7 +179,12 @@ export const AdminLogs: React.FC<AdminLogsProps> = ({ isOpen, onClose }) => {
                 {filteredLogs.map((log) => (
                   <div key={log.id} className="grid grid-cols-5 px-4 py-3 text-sm">
                     <div className="text-zinc-500">{new Date(log.timestamp).toLocaleString()}</div>
-                    <div className="font-medium">{log.user}</div>
+                    <div className="font-medium">
+                      <div>{log.user}</div>
+                      {log.userId && (
+                        <div className="text-[11px] text-zinc-500">ID: {log.userId}</div>
+                      )}
+                    </div>
                     <div>
                       <span
                         className={`px-2 py-1 rounded-full text-xs font-semibold border ${
