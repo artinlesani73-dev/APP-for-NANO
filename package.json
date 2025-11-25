@@ -13,6 +13,7 @@
   },
   "dependencies": {
     "@google/genai": "^1.30.0",
+    "electron-updater": "^6.3.9",
     "lucide-react": "^0.344.0",
     "react": "^18.2.0",
     "react-dom": "^18.2.0"
@@ -37,10 +38,16 @@
     },
     "files": [
       "dist/**/*",
+      "build/**/*",
       "electron-main.cjs",
+      "electron-main.js",
       "preload.cjs",
+      "preload.js",
       "package.json"
     ],
+    "extraMetadata": {
+      "main": "electron-main.cjs"
+    },
     "win": {
       "target": "nsis",
       "signingHashAlgorithms": [],
@@ -49,7 +56,25 @@
       "artifactName": "AREA49-Nano-Banana-UI-${version}.${ext}"
     },
     "mac": {
-      "target": "dmg"
-    }
+      "target": [
+        "dmg",
+        "pkg"
+      ]
+    },
+    "linux": {
+      "target": [
+        "AppImage",
+        "deb"
+      ],
+      "category": "Utility"
+    },
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "AREA49",
+        "repo": "APP-for-NANO",
+        "releaseType": "draft"
+      }
+    ]
   }
 }
