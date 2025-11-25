@@ -92,6 +92,21 @@ const GraphView: React.FC<GraphViewProps> = ({ session, theme, loadImage, onGene
     });
   }, [standaloneEdges]);
 
+  // Handle wheel events with non-passive listener
+  useEffect(() => {
+    const svg = svgRef.current;
+    if (!svg) return;
+
+    const handleWheel = (e: WheelEvent) => {
+      e.preventDefault();
+      const delta = e.deltaY * -0.001;
+      setZoom(prevZoom => Math.min(Math.max(0.2, prevZoom + delta), 2));
+    };
+
+    svg.addEventListener('wheel', handleWheel, { passive: false });
+    return () => svg.removeEventListener('wheel', handleWheel);
+  }, []);
+
   const generateGraphLayout = () => {
     const newNodes: Node[] = [];
     const newEdges: Edge[] = [];
@@ -295,13 +310,6 @@ const GraphView: React.FC<GraphViewProps> = ({ session, theme, loadImage, onGene
     const midX = (fromX + toX) / 2;
 
     return `M ${fromX} ${fromY} C ${midX} ${fromY}, ${midX} ${toY}, ${toX} ${toY}`;
-  };
-
-  const handleWheel = (e: React.WheelEvent) => {
-    e.preventDefault();
-    const delta = e.deltaY * -0.001;
-    const newZoom = Math.min(Math.max(0.2, zoom + delta), 2);
-    setZoom(newZoom);
   };
 
   const handleMouseDown = (e: React.MouseEvent, nodeId?: string) => {
@@ -1154,7 +1162,6 @@ const GraphView: React.FC<GraphViewProps> = ({ session, theme, loadImage, onGene
       <svg
         ref={svgRef}
         className={`w-full h-full ${isPanning ? 'cursor-grabbing' : 'cursor-grab'} ${isDraggingOver ? 'ring-4 ring-blue-500' : ''}`}
-        onWheel={handleWheel}
         onMouseDown={handleMouseDown}
         onMouseMove={handleMouseMove}
         onMouseUp={handleMouseUp}
