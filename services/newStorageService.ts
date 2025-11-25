@@ -52,6 +52,20 @@ const ensureGraphState = (session: Session): Session => {
 export const StorageService = {
   isElectron: isElectron,
 
+  syncUserData: async (): Promise<{ success: boolean; error?: string; sharedPath?: string }> => {
+    if (!isElectron()) return { success: true };
+
+    try {
+      // @ts-ignore
+      const result = await window.electron?.syncUserData?.();
+      if (!result) return { success: true };
+      return result;
+    } catch (err: any) {
+      console.error('Failed to sync user data', err);
+      return { success: false, error: err?.message || 'Sync failed' };
+    }
+  },
+
   // =======================
   // SESSION MANAGEMENT
   // =======================

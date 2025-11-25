@@ -157,6 +157,22 @@ const getSharedDataPath = () => {
     }
 };
 
+const syncLocalToShared = () => {
+    const sharedBase = getSharedDataPath();
+    if (!sharedBase) {
+        return { success: false, error: 'Shared storage unavailable' };
+    }
+
+    const localBase = getDataPath();
+    try {
+        fs.cpSync(localBase, sharedBase, { recursive: true, force: true });
+        return { success: true, sharedPath: sharedBase };
+    } catch (e) {
+        console.error('Failed to sync local data to shared storage', e);
+        return { success: false, error: e.message };
+    }
+};
+
 const getScopedPath = (relativePath) => {
     const localBase = getDataPath();
     const sharedBase = getSharedDataPath();
@@ -298,10 +314,16 @@ ipcMain.on('set-user-context', (_event, user) => {
         displayName: user?.displayName || 'anonymous',
         id: user?.id || 'anonymous'
     };
+
+    syncLocalToShared();
 });
 
 ipcMain.handle('fetch-logs', async () => {
     return readLogs();
+});
+
+ipcMain.handle('sync-user-data', async () => {
+    return syncLocalToShared();
 });
 
 ipcMain.handle('check-for-updates', async () => {
