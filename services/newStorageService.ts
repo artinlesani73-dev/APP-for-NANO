@@ -1,4 +1,4 @@
-import { Session, SessionGeneration, ImageRole, GenerationConfig, GraphNode, GraphEdge } from '../types';
+import { Session, SessionGeneration, ImageRole, GenerationConfig, GraphNode, GraphEdge, StoredImageMeta, UploadedImagePayload } from '../types';
 
 // Detect Electron
 const isElectron = () => {
@@ -16,6 +16,31 @@ const generateImageFilename = (role: ImageRole, id: string): string => {
   const ext = 'png';
   return `${role}_${timestamp}_${id}.${ext}`;
 };
+
+const stripDataUriHeader = (dataUri: string): string => dataUri.replace(/^data:image\/\w+;base64,/, '');
+
+const estimateSizeFromBase64 = (dataUri: string): number => {
+  const raw = stripDataUriHeader(dataUri);
+  return Math.floor((raw.length * 3) / 4);
+};
+
+// Utility for hashing
+const simpleHash = (str: string): string => {
+  let hash = 0;
+  for (let i = 0; i < str.length; i++) {
+    const char = str.charCodeAt(i);
+    hash = (hash << 5) - hash + char;
+    hash = hash & hash;
+  }
+  return Math.abs(hash).toString(16).padStart(16, '0');
+};
+
+const normalizeImagePayload = (payload: string | UploadedImagePayload): UploadedImagePayload => {
+  if (typeof payload === 'string') return { data: payload };
+  return payload;
+};
+
+const INPUT_LOG_KEY = 'input_image_log';
 
 const ensureGraphState = (session: Session): Session => {
   if (!session.graph) {
@@ -107,12 +132,8 @@ export const StorageService = {
 
   // Delete a session
   deleteSession: (sessionId: string) => {
-    if (isElectron()) {
-      // @ts-ignore
-      window.electron.deleteSessionSync(sessionId);
-    } else {
-      localStorage.removeItem(`session_${sessionId}`);
-    }
+    console.warn('Session deletion is disabled to preserve history. Requested session:', sessionId);
+    // Intentionally no-op to keep sessions intact
   },
 
   // Persist graph state for a session
@@ -129,30 +150,85 @@ export const StorageService = {
   // =======================
 
   // Save image to file system (Electron) or localStorage (web)
-  saveImage: (base64Data: string, role: ImageRole): { id: string; filename: string } => {
+  saveImage: (image: string | UploadedImagePayload, role: ImageRole): StoredImageMeta => {
+    const payload = normalizeImagePayload(image);
     const id = generateUUID();
     const filename = generateImageFilename(role, id);
+    const base64Data = payload.data;
+    const estimatedSize = payload.size_bytes ?? estimateSizeFromBase64(base64Data);
+    const originalName = payload.original_name || `${role}_image.png`;
 
     if (isElectron()) {
-      // Save to appropriate folder: outputs, controls, or references
+      if (role === 'output') {
+        // Save outputs as before
+        // @ts-ignore
+        const result = window.electron.saveImageSync('outputs', filename, base64Data);
+        if (!result.success) {
+          throw new Error(`Failed to save image: ${result.error}`);
+        }
+        return { id, filename, hash: simpleHash(stripDataUriHeader(base64Data)), size_bytes: estimatedSize, original_name: originalName };
+      }
+
+      // Input images: deduplicate by name and size using shared log
       // @ts-ignore
-      const result = window.electron.saveImageSync(role + 's', filename, base64Data);
+      const result = window.electron.saveInputImageSync(originalName, estimatedSize, base64Data);
       if (!result.success) {
         throw new Error(`Failed to save image: ${result.error}`);
       }
-    } else {
-      // For web, store base64 in localStorage
-      localStorage.setItem(`image_${id}`, base64Data);
+      return {
+        id: result.id,
+        filename: result.filename,
+        hash: result.hash,
+        original_name: result.original_name,
+        size_bytes: result.size_bytes,
+      };
     }
 
-    return { id, filename };
+    // Web fallback with localStorage log for deduplication
+    const logRaw = localStorage.getItem(INPUT_LOG_KEY);
+    const log: StoredImageMeta[] = logRaw ? JSON.parse(logRaw) : [];
+    if (role !== 'output') {
+      const existing = log.find(entry => entry.original_name === originalName && entry.size_bytes === estimatedSize);
+      if (existing) {
+        const existingData = localStorage.getItem(`image_${existing.id}`);
+        if (!existingData) {
+          localStorage.setItem(`image_${existing.id}`, base64Data);
+        }
+        return existing;
+      }
+    }
+
+    const hash = simpleHash(stripDataUriHeader(base64Data));
+    const suffix = originalName.includes('.') ? originalName.substring(originalName.lastIndexOf('.')) : '.png';
+    const baseName = originalName.replace(suffix, '');
+    const sanitizedBase = baseName.replace(/[^a-zA-Z0-9_-]/g, '_').replace(/_{2,}/g, '_').replace(/^_+|_+$/g, '') || role;
+    const finalFilename = `${sanitizedBase}_${id}${suffix}`;
+
+    localStorage.setItem(`image_${id}`, base64Data);
+
+    const record: StoredImageMeta = {
+      id,
+      filename: finalFilename,
+      hash,
+      original_name: originalName,
+      size_bytes: estimatedSize,
+    };
+
+    if (role !== 'output') {
+      log.push(record);
+      localStorage.setItem(INPUT_LOG_KEY, JSON.stringify(log));
+    }
+
+    return record;
   },
 
   // Load image from file system or localStorage
   loadImage: (role: ImageRole, id: string, filename: string): string | null => {
     if (isElectron()) {
       // @ts-ignore
-      return window.electron.loadImageSync(role + 's', filename);
+      const folder = role === 'output' ? 'outputs' : 'inputs';
+      // @ts-ignore
+      return window.electron.loadImageSync(folder, filename);
     } else {
       return localStorage.getItem(`image_${id}`);
     }
@@ -193,8 +269,8 @@ export const StorageService = {
     sessionId: string,
     prompt: string,
     config: GenerationConfig,
-    controlImagesData?: string[],
-    referenceImagesData?: string[]
+    controlImagesData?: UploadedImagePayload[],
+    referenceImagesData?: UploadedImagePayload[]
   ): SessionGeneration => {
     const generation: SessionGeneration = {
       generation_id: generateUUID(),

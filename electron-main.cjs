@@ -2,6 +2,7 @@ const { app, BrowserWindow, ipcMain, dialog } = require('electron');
 const { autoUpdater } = require('electron-updater');
 const path = require('path');
 const fs = require('fs');
+const crypto = require('crypto');
 
 const loadDotEnv = () => {
   const envPath = path.join(__dirname, '.env');
@@ -60,7 +61,7 @@ const getDataPath = () => {
     }
 
     // Create image subdirectories
-    const imageDirs = ['outputs', 'controls', 'references', 'sessions'];
+    const imageDirs = ['outputs', 'inputs', 'controls', 'references', 'sessions'];
     imageDirs.forEach(dir => {
         const dirPath = path.join(appDir, dir);
         if (!fs.existsSync(dirPath)) {
@@ -72,6 +73,26 @@ const getDataPath = () => {
 };
 
 const getLogFilePath = () => path.join(getDataPath(), 'logs.json');
+
+const getInputLogFilePath = () => path.join(getDataPath(), 'input-image-log.json');
+
+const readInputLog = () => {
+    const logPath = getInputLogFilePath();
+    if (!fs.existsSync(logPath)) {
+        return [];
+    }
+    try {
+        const content = fs.readFileSync(logPath, 'utf-8');
+        return JSON.parse(content);
+    } catch (e) {
+        console.error('Failed to read input image log', e);
+        return [];
+    }
+};
+
+const writeInputLog = (entries) => {
+    fs.writeFileSync(getInputLogFilePath(), JSON.stringify(entries, null, 2));
+};
 
 const readLogs = () => {
     const logPath = getLogFilePath();
@@ -194,6 +215,53 @@ autoUpdater.on('update-downloaded', (info) => {
 
 autoUpdater.on('error', (error) => {
   sendUpdateStatus('update-error', error?.message ?? String(error));
+});
+
+const hashBase64 = (base64) => crypto.createHash('sha256').update(base64).digest('hex');
+
+// Save input image file with deduplication by name and size
+ipcMain.on('save-input-image-sync', (event, originalName, sizeBytes, base64Data) => {
+    try {
+        const dataPath = getDataPath();
+        const inputsDir = path.join(dataPath, 'inputs');
+        const rawBase64 = base64Data.replace(/^data:image\/\w+;base64,/, '');
+
+        const logEntries = readInputLog();
+        const existing = logEntries.find(entry => entry.original_name === originalName && entry.size_bytes === sizeBytes);
+
+        const ext = path.extname(originalName) || '.png';
+        const baseName = path.basename(originalName, ext) || 'input';
+
+        if (existing) {
+            const existingPath = path.join(inputsDir, existing.filename);
+            if (!fs.existsSync(existingPath)) {
+                const buffer = Buffer.from(rawBase64, 'base64');
+                fs.writeFileSync(existingPath, buffer);
+            }
+            event.returnValue = { success: true, ...existing };
+            return;
+        }
+
+        const id = crypto.randomUUID();
+        const filename = `${baseName}_${id}${ext}`;
+        const buffer = Buffer.from(rawBase64, 'base64');
+        fs.writeFileSync(path.join(inputsDir, filename), buffer);
+
+        const record = {
+            id,
+            filename,
+            hash: hashBase64(rawBase64),
+            original_name: originalName,
+            size_bytes: sizeBytes
+        };
+
+        logEntries.push(record);
+        writeInputLog(logEntries);
+        event.returnValue = { success: true, ...record };
+    } catch (e) {
+        console.error('Save input image failed', e);
+        event.returnValue = { success: false, error: e.message };
+    }
 });
 
 // Save image file to specific folder

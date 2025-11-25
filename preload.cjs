@@ -14,6 +14,7 @@ contextBridge.exposeInMainWorld('electron', {
 
   // Image operations
   saveImageSync: (folder, filename, base64Data) => ipcRenderer.sendSync('save-image-sync', folder, filename, base64Data),
+  saveInputImageSync: (originalName, sizeBytes, base64Data) => ipcRenderer.sendSync('save-input-image-sync', originalName, sizeBytes, base64Data),
   loadImageSync: (folder, filename) => ipcRenderer.sendSync('load-image-sync', folder, filename),
   exportImageSync: (folder, filename) => ipcRenderer.sendSync('export-image-sync', folder, filename),
 

@@ -7,7 +7,7 @@ interface SidebarProps {
   currentChatId: string | null;
   onSelectChat: (id: string) => void;
   onNewChat: () => void;
-  onDeleteChat: (id: string) => void;
+  onDeleteChat?: (id: string) => void;
   onRenameChat?: (id: string, newTitle: string) => void;
   onOpenSettings: () => void;
 }
@@ -146,15 +146,17 @@ export const Sidebar: React.FC<SidebarProps> = ({
                         <Edit2 size={14} />
                       </button>
                     )}
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        onDeleteChat(chat.chat_id);
-                      }}
-                      className="opacity-0 group-hover:opacity-100 p-1.5 rounded hover:bg-red-50 dark:hover:bg-red-900/20 text-zinc-400 hover:text-red-500 transition-all"
-                    >
-                      <Trash2 size={14} />
-                    </button>
+                    {onDeleteChat && (
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onDeleteChat(chat.chat_id);
+                        }}
+                        className="opacity-0 group-hover:opacity-100 p-1.5 rounded hover:bg-red-50 dark:hover:bg-red-900/20 text-zinc-400 hover:text-red-500 transition-all"
+                      >
+                        <Trash2 size={14} />
+                      </button>
+                    )}
                   </>
                 )}
               </div>
