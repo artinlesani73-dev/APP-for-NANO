@@ -5,6 +5,7 @@ import { MultiImageUploadPanel } from './components/MultiImageUploadPanel';
 import { ParametersPanel } from './components/ParametersPanel';
 import { ResultPanel } from './components/ResultPanel';
 import { HistoryPanel, HistoryGalleryItem } from './components/HistoryPanel';
+import GraphView from './components/GraphView';
 import { SettingsModal } from './components/SettingsModal';
 import { LoginForm } from './components/LoginForm';
 import { UserProvider, useUser } from './components/UserContext';
@@ -15,7 +16,7 @@ import { GeminiService } from './services/geminiService';
 import { LoggerService } from './services/logger';
 import { AdminService } from './services/adminService';
 import { Session, SessionGeneration, GenerationConfig, UploadedImagePayload } from './types';
-import { Zap, Database, Key, ExternalLink, History, ShieldCheck } from 'lucide-react';
+import { Zap, Database, Key, ExternalLink, History, ShieldCheck, Network } from 'lucide-react';
 
 const DEFAULT_CONFIG: GenerationConfig = {
   temperature: 0.7,
@@ -50,6 +51,7 @@ function AppContent() {
   // Settings & Theme State
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
+  const [showGraphView, setShowGraphView] = useState(false);
   const [theme, setTheme] = useState<'dark' | 'light'>('dark');
   const [isAdminLogsOpen, setIsAdminLogsOpen] = useState(false);
   const [isAdminDashboardOpen, setIsAdminDashboardOpen] = useState(false);
@@ -511,12 +513,29 @@ function AppContent() {
             </div>
 
             <div className="flex items-center gap-4" style={{ WebkitAppRegion: 'no-drag' } as any}>
-                {/* Graph View Deactivated - View toggle removed */}
+                {/* Graph View Toggle */}
+                <button
+                  onClick={() => {
+                    setShowGraphView(!showGraphView);
+                    setShowHistory(false);
+                  }}
+                  className={`flex items-center gap-2 text-xs px-3 py-1.5 rounded border transition-colors font-medium ${
+                    showGraphView
+                      ? 'bg-purple-50 dark:bg-purple-950/30 border-purple-300 dark:border-purple-900 text-purple-700 dark:text-purple-400'
+                      : 'bg-white dark:bg-zinc-800/50 border-zinc-300 dark:border-zinc-700 text-zinc-700 dark:text-zinc-400 hover:bg-zinc-50 dark:hover:bg-zinc-800'
+                  }`}
+                >
+                  <Network size={12} />
+                  Graph View
+                </button>
 
                 {/* History Toggle */}
                 {(
                   <button
-                    onClick={() => setShowHistory(!showHistory)}
+                    onClick={() => {
+                      setShowHistory(!showHistory);
+                      setShowGraphView(false);
+                    }}
                     className={`flex items-center gap-2 text-xs px-3 py-1.5 rounded border transition-colors font-medium ${
                       showHistory
                         ? 'bg-blue-50 dark:bg-blue-950/30 border-blue-300 dark:border-blue-900 text-blue-700 dark:text-blue-400'
@@ -581,8 +600,30 @@ function AppContent() {
         </header>
 
         {/* Content Area */}
-          <div className="flex-1 overflow-y-auto p-6 bg-zinc-50 dark:bg-black/50">
-            {showHistory ? (
+          <div className={`flex-1 ${showGraphView ? 'overflow-hidden' : 'overflow-y-auto'} ${showGraphView ? '' : 'p-6'} bg-zinc-50 dark:bg-black/50`}>
+            {showGraphView ? (
+              <div className="h-full w-full">
+                <GraphView
+                  sessions={sessions}
+                  theme={theme}
+                  loadImage={(role, id, filename) => StorageService.loadImage(role, id, filename)}
+                  onGenerateFromNode={async (prompt, config, controlImages, referenceImages) => {
+                    // Handle generation from graph node
+                    setPrompt(prompt);
+                    setConfig(config);
+                    if (controlImages) {
+                      setControlImagesData(controlImages.map(data => ({ data })));
+                    }
+                    if (referenceImages) {
+                      setReferenceImagesData(referenceImages.map(data => ({ data })));
+                    }
+                    // Switch to main view and trigger generation
+                    setShowGraphView(false);
+                    await handleGenerate();
+                  }}
+                />
+              </div>
+            ) : showHistory ? (
               <div className="max-w-7xl mx-auto h-full min-h-[calc(100vh-6rem)]">
                 <HistoryPanel
                   items={historyItems}
