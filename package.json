@@ -44,7 +44,10 @@
     "win": {
       "target": "nsis",
       "signingHashAlgorithms": [],
-      "sign": null
+      "sign": null,
+      "rceditOptions": {
+        "OriginalFilename": "AREA49-Nano-Banana-UI.exe"
+      }
     },
     "mac": {
       "target": "dmg"
