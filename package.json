@@ -48,12 +48,15 @@
     "extraMetadata": {
       "main": "electron-main.cjs"
     },
+    "copyright": "Copyright © 2025 Artin Lesani",
     "win": {
       "target": "nsis",
       "signingHashAlgorithms": [],
       "sign": null,
       "executableName": "AREA49-Nano-Banana-UI",
-      "artifactName": "AREA49-Nano-Banana-UI-${version}.${ext}"
+      "artifactName": "AREA49-Nano-Banana-UI-${version}.${ext}",
+      "publisherName": "Artin Lesani",
+      "legalTrademarks": "AREA49 - Nano Banana UI"
     },
     "mac": {
       "target": [
