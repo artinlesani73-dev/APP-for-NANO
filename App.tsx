@@ -8,10 +8,12 @@ import { HistoryPanel } from './components/HistoryPanel';
 import { SettingsModal } from './components/SettingsModal';
 import { LoginForm } from './components/LoginForm';
 import { UserProvider, useUser } from './components/UserContext';
+import { AdminLogs } from './components/AdminLogs';
 import { StorageService } from './services/newStorageService';
 import { GeminiService } from './services/geminiService';
+import { LoggerService } from './services/logger';
 import { Session, SessionGeneration, GenerationConfig } from './types';
-import { Zap, Database, Key, ExternalLink, History } from 'lucide-react';
+import { Zap, Database, Key, ExternalLink, History, ShieldCheck } from 'lucide-react';
 
 const DEFAULT_CONFIG: GenerationConfig = {
   temperature: 0.7,
@@ -47,11 +49,20 @@ function AppContent() {
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
   const [theme, setTheme] = useState<'dark' | 'light'>('dark');
+  const [isAdminLogsOpen, setIsAdminLogsOpen] = useState(false);
 
   // Get current session
   const currentSession = sessions.find(s => s.session_id === currentSessionId) || null;
 
   // --- EFFECTS ---
+  useEffect(() => {
+    LoggerService.init();
+  }, []);
+
+  useEffect(() => {
+    LoggerService.setCurrentUser(currentUser);
+  }, [currentUser]);
+
   useEffect(() => {
     // Load initial data
     const loadedSessions = StorageService.getSessions();
@@ -79,6 +90,8 @@ function AppContent() {
   // --- HANDLERS ---
   const handleLogin = (displayName: string) => {
     setCurrentUser({ displayName });
+    LoggerService.setCurrentUser({ displayName });
+    LoggerService.logLogin('User logged in', { displayName });
   };
 
   const toggleTheme = () => {
@@ -97,19 +110,21 @@ function AppContent() {
     setSessions([newSession, ...sessions]);
     setCurrentSessionId(newSession.session_id);
     resetInputs();
+    LoggerService.logAction('Created new session', { sessionId: newSession.session_id });
   };
 
   const handleDeleteSession = (id: string) => {
-      StorageService.deleteSession(id);
-      const remaining = sessions.filter(s => s.session_id !== id);
-      setSessions(remaining);
-      if (currentSessionId === id) {
-          if (remaining.length > 0) {
-              handleSelectSession(remaining[0].session_id);
-          } else {
-              handleNewSession();
-          }
+    StorageService.deleteSession(id);
+    const remaining = sessions.filter(s => s.session_id !== id);
+    setSessions(remaining);
+    LoggerService.logAction('Deleted session', { sessionId: id });
+    if (currentSessionId === id) {
+      if (remaining.length > 0) {
+        handleSelectSession(remaining[0].session_id);
+      } else {
+        handleNewSession();
       }
+    }
   };
 
   const handleRenameSession = (id: string, newTitle: string) => {
@@ -219,9 +234,13 @@ function AppContent() {
           await GeminiService.requestApiKey();
           const isConnected = await GeminiService.checkApiKey();
           setApiKeyConnected(isConnected);
+          if (isConnected) {
+            LoggerService.logAction('API key connected');
+          }
       } catch (e) {
           console.error("Failed to connect API Key", e);
           alert("Could not verify API Key selection.");
+          LoggerService.logError('API key connection failed', { error: (e as Error).message });
       }
   };
 
@@ -233,6 +252,12 @@ function AppContent() {
   const handleGenerate = async () => {
     if (!currentSessionId || !prompt) return;
     if (!currentUser) return;
+
+    LoggerService.logAction('Generation started', {
+      sessionId: currentSessionId,
+      model: config.model,
+      promptLength: prompt.length
+    });
 
     // 1. Ensure API Key ONLY if model requires it (Pro models)
     if (config.model === 'gemini-3-pro-image-preview' && !apiKeyConnected) {
@@ -296,6 +321,12 @@ function AppContent() {
         // Update sessions list to show new activity
         setSessions(StorageService.getSessions());
 
+        LoggerService.logAction('Generation completed', {
+          sessionId: currentSessionId,
+          generationId: gen.generation_id,
+          durationMs: duration
+        });
+
     } catch (error: any) {
         console.error("Generation failed:", error);
 
@@ -310,6 +341,12 @@ function AppContent() {
         }
 
         StorageService.failGeneration(currentSessionId, gen.generation_id, errorMessage);
+
+        LoggerService.logError('Generation failed', {
+          sessionId: currentSessionId,
+          generationId: gen.generation_id,
+          error: errorMessage
+        });
 
         // Reload generation with error
         const updatedSession = StorageService.loadSession(currentSessionId);
@@ -384,6 +421,14 @@ function AppContent() {
                     History ({currentSession?.generations.length || 0})
                   </button>
                 )}
+
+                <button
+                  onClick={() => setIsAdminLogsOpen(true)}
+                  className="flex items-center gap-2 text-xs px-3 py-1.5 rounded border bg-white dark:bg-zinc-800/50 border-zinc-300 dark:border-zinc-700 text-zinc-700 dark:text-zinc-300 hover:bg-zinc-50 dark:hover:bg-zinc-800 transition-colors"
+                >
+                  <ShieldCheck size={12} />
+                  Admin Logs
+                </button>
 
                 {config.model === 'gemini-3-pro-image-preview' && (
                     <a
@@ -529,6 +574,10 @@ function AppContent() {
         theme={theme}
         toggleTheme={toggleTheme}
         onApiKeyUpdate={handleApiKeyUpdate}
+      />
+      <AdminLogs
+        isOpen={isAdminLogsOpen}
+        onClose={() => setIsAdminLogsOpen(false)}
       />
     </div>
   );

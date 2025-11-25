@@ -44,6 +44,28 @@ const getDataPath = () => {
     return appDir;
 };
 
+const getLogFilePath = () => path.join(getDataPath(), 'logs.json');
+
+const readLogs = () => {
+    const logPath = getLogFilePath();
+    if (!fs.existsSync(logPath)) {
+        return [];
+    }
+    try {
+        const content = fs.readFileSync(logPath, 'utf-8');
+        return JSON.parse(content);
+    } catch (e) {
+        console.error('Failed to read logs', e);
+        return [];
+    }
+};
+
+const appendLog = (entry) => {
+    const logs = readLogs();
+    logs.push(entry);
+    fs.writeFileSync(getLogFilePath(), JSON.stringify(logs, null, 2));
+};
+
 // IPC Handlers for synchronous file operations
 ipcMain.on('save-sync', (event, filename, content) => {
     try {
@@ -98,6 +120,20 @@ ipcMain.on('list-files-sync', (event, prefix) => {
     } catch (e) {
         event.returnValue = [];
     }
+});
+
+ipcMain.on('log-event', (event, entry) => {
+    try {
+        appendLog(entry);
+        event.returnValue = true;
+    } catch (e) {
+        console.error('Failed to write log entry', e);
+        event.returnValue = false;
+    }
+});
+
+ipcMain.handle('fetch-logs', async () => {
+    return readLogs();
 });
 
 // Save image file to specific folder

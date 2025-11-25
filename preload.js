@@ -4,5 +4,7 @@ contextBridge.exposeInMainWorld('electron', {
   saveSync: (filename, content) => ipcRenderer.sendSync('save-sync', filename, content),
   loadSync: (filename) => ipcRenderer.sendSync('load-sync', filename),
   deleteSync: (filename) => ipcRenderer.sendSync('delete-sync', filename),
-  listFilesSync: (prefix) => ipcRenderer.sendSync('list-files-sync', prefix)
+  listFilesSync: (prefix) => ipcRenderer.sendSync('list-files-sync', prefix),
+  logEvent: (entry) => ipcRenderer.sendSync('log-event', entry),
+  fetchLogs: () => ipcRenderer.invoke('fetch-logs')
 });
