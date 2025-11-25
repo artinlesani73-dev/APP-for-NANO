@@ -1,4 +1,4 @@
-import { Session, SessionGeneration, ImageRole, GenerationConfig } from '../types';
+import { Session, SessionGeneration, ImageRole, GenerationConfig, GraphNode, GraphEdge } from '../types';
 
 // Detect Electron
 const isElectron = () => {
@@ -17,6 +17,13 @@ const generateImageFilename = (role: ImageRole, id: string): string => {
   return `${role}_${timestamp}_${id}.${ext}`;
 };
 
+const ensureGraphState = (session: Session): Session => {
+  if (!session.graph) {
+    session.graph = { nodes: [], edges: [] };
+  }
+  return session;
+};
+
 export const StorageService = {
   isElectron: isElectron,
 
@@ -31,7 +38,8 @@ export const StorageService = {
       title,
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
-      generations: []
+      generations: [],
+      graph: { nodes: [], edges: [] }
     };
 
     StorageService.saveSession(session);
@@ -41,6 +49,7 @@ export const StorageService = {
   // Save session to storage
   saveSession: (session: Session) => {
     session.updated_at = new Date().toISOString();
+    ensureGraphState(session);
 
     if (isElectron()) {
       // @ts-ignore
@@ -55,10 +64,11 @@ export const StorageService = {
   loadSession: (sessionId: string): Session | null => {
     if (isElectron()) {
       // @ts-ignore
-      return window.electron.loadSessionSync(sessionId);
+      const loaded = window.electron.loadSessionSync(sessionId);
+      return loaded ? ensureGraphState(loaded) : null;
     } else {
       const data = localStorage.getItem(`session_${sessionId}`);
-      return data ? JSON.parse(data) : null;
+      return data ? ensureGraphState(JSON.parse(data)) : null;
     }
   },
 
@@ -67,6 +77,7 @@ export const StorageService = {
     if (isElectron()) {
       // @ts-ignore
       const sessions = window.electron.listSessionsSync();
+      sessions.forEach((session: Session) => ensureGraphState(session));
       return sessions.sort((a: Session, b: Session) =>
         new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime()
       );
@@ -76,7 +87,7 @@ export const StorageService = {
         const key = localStorage.key(i);
         if (key && key.startsWith('session_')) {
           const data = localStorage.getItem(key);
-          if (data) sessions.push(JSON.parse(data));
+          if (data) sessions.push(ensureGraphState(JSON.parse(data)));
         }
       }
       return sessions.sort((a, b) =>
@@ -102,6 +113,15 @@ export const StorageService = {
     } else {
       localStorage.removeItem(`session_${sessionId}`);
     }
+  },
+
+  // Persist graph state for a session
+  updateSessionGraph: (sessionId: string, nodes: GraphNode[], edges: GraphEdge[]) => {
+    const session = StorageService.loadSession(sessionId);
+    if (!session) return;
+
+    session.graph = { nodes, edges };
+    StorageService.saveSession(session);
   },
 
   // =======================

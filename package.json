@@ -44,7 +44,9 @@
     "win": {
       "target": "nsis",
       "signingHashAlgorithms": [],
-      "sign": null
+      "sign": null,
+      "executableName": "AREA49-Nano-Banana-UI",
+      "artifactName": "AREA49-Nano-Banana-UI-${version}.${ext}"
     },
     "mac": {
       "target": "dmg"
