@@ -1,5 +1,6 @@
 {
   "name": "Image Provenance Studio",
   "description": "A professional image generation tool with complete provenance tracking, utilizing Google Gemini models.",
-  "requestFramePermissions": []
+  "requestFramePermissions": [],
+  "sharedApiKey": ""
 }

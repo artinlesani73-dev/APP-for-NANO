@@ -6,6 +6,8 @@ import { ParametersPanel } from './components/ParametersPanel';
 import { ResultPanel } from './components/ResultPanel';
 import { HistoryPanel } from './components/HistoryPanel';
 import { SettingsModal } from './components/SettingsModal';
+import { LoginForm } from './components/LoginForm';
+import { UserProvider, useUser } from './components/UserContext';
 import { StorageService } from './services/newStorageService';
 import { GeminiService } from './services/geminiService';
 import { Session, SessionGeneration, GenerationConfig } from './types';
@@ -20,10 +22,11 @@ const DEFAULT_CONFIG: GenerationConfig = {
   model: 'gemini-2.5-flash-image'
 };
 
-export default function App() {
+function AppContent() {
   // --- STATE ---
   const [sessions, setSessions] = useState<Session[]>([]);
   const [currentSessionId, setCurrentSessionId] = useState<string | null>(null);
+  const { currentUser, setCurrentUser } = useUser();
 
   // Active Generation Inputs
   const [prompt, setPrompt] = useState<string>('');
@@ -74,6 +77,10 @@ export default function App() {
   }, []);
 
   // --- HANDLERS ---
+  const handleLogin = (displayName: string) => {
+    setCurrentUser({ displayName });
+  };
+
   const toggleTheme = () => {
     const newTheme = theme === 'dark' ? 'light' : 'dark';
     setTheme(newTheme);
@@ -225,6 +232,7 @@ export default function App() {
 
   const handleGenerate = async () => {
     if (!currentSessionId || !prompt) return;
+    if (!currentUser) return;
 
     // 1. Ensure API Key ONLY if model requires it (Pro models)
     if (config.model === 'gemini-3-pro-image-preview' && !apiKeyConnected) {
@@ -258,7 +266,8 @@ export default function App() {
             prompt,
             config,
             controlImagesData.length > 0 ? controlImagesData : undefined,
-            referenceImagesData.length > 0 ? referenceImagesData : undefined
+            referenceImagesData.length > 0 ? referenceImagesData : undefined,
+            currentUser.displayName
         );
 
         const duration = Date.now() - startTime;
@@ -312,6 +321,14 @@ export default function App() {
         setIsGenerating(false);
     }
   };
+
+  if (!currentUser) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-zinc-900 via-black to-zinc-900">
+        <LoginForm onLogin={handleLogin} />
+      </div>
+    );
+  }
 
   return (
     <div className={`flex h-screen w-screen overflow-hidden font-sans selection:bg-blue-500/30 transition-colors duration-200 ${theme === 'dark' ? 'bg-black text-zinc-100' : 'bg-white text-zinc-900'}`}>
@@ -514,5 +531,13 @@ export default function App() {
         onApiKeyUpdate={handleApiKeyUpdate}
       />
     </div>
+  );
+}
+
+export default function App() {
+  return (
+    <UserProvider>
+      <AppContent />
+    </UserProvider>
   );
 }

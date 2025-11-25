@@ -1,5 +1,6 @@
 import { GoogleGenAI, Part } from "@google/genai";
 import { GenerationConfig } from "../types";
+import { AppConfig } from "./config";
 
 // Helper to remove data URL prefix for API
 const stripBase64Header = (dataUrl: string) => {
@@ -25,7 +26,10 @@ export const GeminiService = {
         // @ts-ignore
         return await window.aistudio.hasSelectedApiKey();
     }
-    return false;
+
+    // Otherwise fall back to shared configuration
+    const sharedKey = AppConfig.getSharedApiKey();
+    return !!sharedKey;
   },
 
   requestApiKey: async () => {
@@ -47,7 +51,8 @@ export const GeminiService = {
     prompt: string,
     config: GenerationConfig,
     controlImageBase64?: string[] | string,
-    referenceImageBase64?: string[] | string
+    referenceImageBase64?: string[] | string,
+    userName?: string
   ): Promise<string> => {
 
     // Get API key based on environment
@@ -69,8 +74,10 @@ export const GeminiService = {
           throw new Error("API Key not selected. Please connect to Google AI Studio to use the Pro model.");
         }
       }
-      // @ts-ignore - In AI Studio, the SDK picks up the key from process.env
-      apiKey = process.env.API_KEY;
+      apiKey = AppConfig.getSharedApiKey();
+      if (!apiKey) {
+        throw new Error("Shared API key not configured. Please add VITE_SHARED_API_KEY or metadata.sharedApiKey.");
+      }
     }
 
     // Create AI instance with the API key
@@ -134,6 +141,14 @@ export const GeminiService = {
     // Use selected model, default to flash image if none specified
     const modelName = config.model || 'gemini-2.5-flash-image';
 
+    const requestOptions = userName
+      ? {
+          headers: {
+            'X-User-Name': userName
+          }
+        }
+      : undefined;
+
     const response = await ai.models.generateContent({
       model: modelName,
       contents: { parts },
@@ -142,6 +157,8 @@ export const GeminiService = {
         imageConfig: imageConfig
         // safetySettings could be added here
       },
+      // @ts-expect-error Request options are allowed at runtime for transport metadata
+      requestOptions
     });
 
     // Extract image
