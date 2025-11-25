@@ -63,14 +63,27 @@ function AppContent() {
       .flatMap(session =>
         session.generations.flatMap((generation) => {
           const outputs = generation.output_images || (generation.output_image ? [generation.output_image] : []);
+          const texts = generation.output_texts || [];
 
-          return outputs.map((output, idx) => ({
+          const imageItems: HistoryGalleryItem[] = outputs.map((output, idx) => ({
+            kind: 'image',
             sessionId: session.session_id,
             sessionTitle: session.title,
             generation,
             output,
             outputIndex: idx
           }));
+
+          const textItems: HistoryGalleryItem[] = texts.map((text, idx) => ({
+            kind: 'text',
+            sessionId: session.session_id,
+            sessionTitle: session.title,
+            generation,
+            text,
+            textIndex: idx
+          }));
+
+          return [...imageItems, ...textItems];
         })
       )
       .sort((a, b) => new Date(b.generation.timestamp).getTime() - new Date(a.generation.timestamp).getTime());

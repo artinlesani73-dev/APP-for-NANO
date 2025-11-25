@@ -1,14 +1,24 @@
 import React from 'react';
 import { SessionGeneration, StoredImageMeta } from '../types';
-import { Clock, Image, Download, TextQuote } from 'lucide-react';
+import { Clock, Image, Download, TextQuote, FileText } from 'lucide-react';
 
-export interface HistoryGalleryItem {
-  sessionId: string;
-  sessionTitle: string;
-  generation: SessionGeneration;
-  output: StoredImageMeta;
-  outputIndex: number;
-}
+export type HistoryGalleryItem =
+  | {
+      kind: 'image';
+      sessionId: string;
+      sessionTitle: string;
+      generation: SessionGeneration;
+      output: StoredImageMeta;
+      outputIndex: number;
+    }
+  | {
+      kind: 'text';
+      sessionId: string;
+      sessionTitle: string;
+      generation: SessionGeneration;
+      text: string;
+      textIndex: number;
+    };
 
 interface HistoryPanelProps {
   items: HistoryGalleryItem[];
@@ -43,12 +53,19 @@ export const HistoryPanel: React.FC<HistoryPanelProps> = ({
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
         {items.map((item) => {
           const isSelected = item.generation.generation_id === selectedGenerationId;
-          const outputDataUri = loadImage('output', item.output.id, item.output.filename);
+          const outputDataUri =
+            item.kind === 'image'
+              ? loadImage('output', item.output.id, item.output.filename)
+              : null;
           const hasText = item.generation.output_texts && item.generation.output_texts.length > 0;
 
           return (
             <div
-              key={`${item.generation.generation_id}-${item.output.id}`}
+              key={
+                item.kind === 'image'
+                  ? `${item.generation.generation_id}-${item.output.id}`
+                  : `${item.generation.generation_id}-text-${item.textIndex}`
+              }
               onClick={() => onSelectGeneration(item.sessionId, item.generation)}
               className={`group border rounded-lg overflow-hidden cursor-pointer transition-all backdrop-blur-sm ${
                 isSelected
@@ -57,15 +74,26 @@ export const HistoryPanel: React.FC<HistoryPanelProps> = ({
               }`}
             >
               <div className="relative bg-zinc-100 dark:bg-zinc-900 aspect-square">
-                {outputDataUri ? (
-                  <img
-                    src={outputDataUri}
-                    alt="Output"
-                    className="w-full h-full object-cover"
-                  />
+                {item.kind === 'image' ? (
+                  outputDataUri ? (
+                    <img
+                      src={outputDataUri}
+                      alt="Output"
+                      className="w-full h-full object-cover"
+                    />
+                  ) : (
+                    <div className="h-full w-full flex items-center justify-center text-zinc-400">
+                      <Image size={32} />
+                    </div>
+                  )
                 ) : (
-                  <div className="h-full w-full flex items-center justify-center text-zinc-400">
-                    <Image size={32} />
+                  <div className="h-full w-full flex flex-col items-center justify-center text-center px-4 text-zinc-500 dark:text-zinc-400">
+                    <div className="w-12 h-12 rounded-full bg-zinc-200 dark:bg-zinc-800 flex items-center justify-center mb-3">
+                      <FileText size={20} />
+                    </div>
+                    <p className="text-xs leading-relaxed line-clamp-4">
+                      {item.text}
+                    </p>
                   </div>
                 )}
 
@@ -79,9 +107,15 @@ export const HistoryPanel: React.FC<HistoryPanelProps> = ({
                       {item.generation.output_texts?.length}
                     </span>
                   )}
-                  {item.outputIndex > 0 && (
+                  {item.kind === 'image' && item.outputIndex > 0 && (
                     <span className="px-2 py-0.5 rounded-full bg-zinc-50 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-300 border border-zinc-200 dark:border-zinc-700">
                       Output {item.outputIndex + 1}
+                    </span>
+                  )}
+                  {item.kind === 'text' && (
+                    <span className="px-2 py-0.5 rounded-full bg-amber-100 dark:bg-amber-900/50 text-amber-700 dark:text-amber-200 border border-amber-200 dark:border-amber-800 flex items-center gap-1">
+                      <TextQuote size={12} />
+                      Text {item.textIndex + 1}
                     </span>
                   )}
                 </div>
@@ -91,7 +125,7 @@ export const HistoryPanel: React.FC<HistoryPanelProps> = ({
                   <span>{new Date(item.generation.timestamp).toLocaleString()}</span>
                 </div>
 
-                {outputDataUri && (
+                {item.kind === 'image' && outputDataUri && (
                   <button
                     onClick={(e) => {
                       e.stopPropagation();
