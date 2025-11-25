@@ -1,10 +1,10 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { Sidebar } from './components/Sidebar';
 import { PromptPanel } from './components/PromptPanel';
 import { MultiImageUploadPanel } from './components/MultiImageUploadPanel';
 import { ParametersPanel } from './components/ParametersPanel';
 import { ResultPanel } from './components/ResultPanel';
-import { HistoryPanel } from './components/HistoryPanel';
+import { HistoryPanel, HistoryGalleryItem } from './components/HistoryPanel';
 import { SettingsModal } from './components/SettingsModal';
 import { LoginForm } from './components/LoginForm';
 import { UserProvider, useUser } from './components/UserContext';
@@ -57,6 +57,24 @@ function AppContent() {
     if (typeof window === 'undefined') return false;
     return sessionStorage.getItem('admin_authorized') === 'true';
   });
+
+  const historyItems = useMemo<HistoryGalleryItem[]>(() => {
+    return sessions
+      .flatMap(session =>
+        session.generations.flatMap((generation) => {
+          const outputs = generation.output_images || (generation.output_image ? [generation.output_image] : []);
+
+          return outputs.map((output, idx) => ({
+            sessionId: session.session_id,
+            sessionTitle: session.title,
+            generation,
+            output,
+            outputIndex: idx
+          }));
+        })
+      )
+      .sort((a, b) => new Date(b.generation.timestamp).getTime() - new Date(a.generation.timestamp).getTime());
+  }, [sessions]);
 
   // Get current session
   const currentSession = sessions.find(s => s.session_id === currentSessionId) || null;
@@ -177,7 +195,11 @@ function AppContent() {
     }
   };
 
-  const handleSelectGeneration = (gen: SessionGeneration) => {
+  const handleSelectGeneration = (sessionId: string, gen: SessionGeneration) => {
+    if (sessionId !== currentSessionId) {
+      setCurrentSessionId(sessionId);
+    }
+
     loadGenerationIntoView(gen);
   };
 
@@ -461,7 +483,7 @@ function AppContent() {
                     }`}
                   >
                     <History size={12} />
-                    History ({currentSession?.generations.length || 0})
+                    History ({historyItems.length})
                   </button>
                 )}
 
@@ -550,9 +572,9 @@ function AppContent() {
 
                     {/* Output Area or History */}
                     <div className="h-[500px]">
-                        {showHistory && currentSession ? (
+                        {showHistory ? (
                             <HistoryPanel
-                                generations={currentSession.generations}
+                                items={historyItems}
                                 onSelectGeneration={handleSelectGeneration}
                                 selectedGenerationId={currentGeneration?.generation_id}
                                 onExportImage={handleExportImage}
