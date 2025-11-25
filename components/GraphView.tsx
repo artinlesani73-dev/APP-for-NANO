@@ -93,11 +93,6 @@ const GraphView: React.FC<GraphViewProps> = ({ sessions, theme, loadImage, onGen
     return () => svg.removeEventListener('wheel', handleWheel);
   }, []);
 
-  // Helper function to create a unique key for workflow grouping
-  const getWorkflowKey = (params: GenerationConfig, userName: string) => {
-    return JSON.stringify({ ...params, user: userName });
-  };
-
   // Helper function to get image key for deduplication
   const getImageKey = (role: 'control' | 'reference' | 'output', id: string, filename: string) => {
     return `${role}-${id}-${filename}`;
@@ -136,7 +131,6 @@ const GraphView: React.FC<GraphViewProps> = ({ sessions, theme, loadImage, onGen
 
     // Maps for grouping
     const promptGroups = new Map<string, string>(); // prompt text -> node id
-    const workflowGroups = new Map<string, string>(); // workflow key -> node id
     const imageGroups = new Map<string, string>(); // image key -> node id
 
     let yOffset = BASE_Y;
@@ -216,25 +210,19 @@ const GraphView: React.FC<GraphViewProps> = ({ sessions, theme, loadImage, onGen
         referenceImageIds.push(imageNodeId);
       });
 
-      // 4. Handle Workflow Node (group by parameters + user)
-      const workflowKey = getWorkflowKey(generation.parameters, userName);
-      let workflowNodeId = workflowGroups.get(workflowKey);
+      // 4. Handle Workflow Node (create one for each generation, no grouping)
+      const workflowNodeId = `workflow-${session.session_id}-${generation.generation_id}`;
 
-      if (!workflowNodeId) {
-        workflowNodeId = `workflow-${genIndex}`;
-        workflowGroups.set(workflowKey, workflowNodeId);
-
-        newNodes.push({
-          id: workflowNodeId,
-          type: 'workflow',
-          label: 'Workflow',
-          x: BASE_X + COLUMN_SPACING * 2,
-          y: yOffset,
-          width: NODE_WIDTH,
-          height: WORKFLOW_NODE_HEIGHT,
-          data: { parameters: generation.parameters, userName }
-        });
-      }
+      newNodes.push({
+        id: workflowNodeId,
+        type: 'workflow',
+        label: 'Workflow',
+        x: BASE_X + COLUMN_SPACING * 2,
+        y: yOffset,
+        width: NODE_WIDTH,
+        height: WORKFLOW_NODE_HEIGHT,
+        data: { parameters: generation.parameters, userName }
+      });
 
       // 5. Create edges from prompt to workflow
       const promptEdge = {
@@ -315,7 +303,7 @@ const GraphView: React.FC<GraphViewProps> = ({ sessions, theme, loadImage, onGen
     setGraphLoaded(true);
   };
 
-  const getHandlePosition = (node: Node, handle?: 'prompt' | 'control' | 'reference') => {
+  const getInputHandlePosition = (node: Node, handle?: 'prompt' | 'control' | 'reference') => {
     if (node.type === 'workflow' && handle) {
       const handleSpacing = node.height / 4;
       const handleYOffsets = {
@@ -328,17 +316,27 @@ const GraphView: React.FC<GraphViewProps> = ({ sessions, theme, loadImage, onGen
         y: node.y + handleYOffsets[handle]
       };
     }
+    // For all other nodes, input handle is on the left center
     return {
-      x: node.x + node.width / 2,
+      x: node.x,
+      y: node.y + node.height / 2
+    };
+  };
+
+  const getOutputHandlePosition = (node: Node) => {
+    // All nodes have output handle on the right center
+    return {
+      x: node.x + node.width,
       y: node.y + node.height / 2
     };
   };
 
   const generateCurvePath = (from: Node, to: Node, toHandle?: 'prompt' | 'control' | 'reference') => {
-    const fromX = from.x + from.width;
-    const fromY = from.y + from.height / 2;
+    const fromPos = getOutputHandlePosition(from);
+    const fromX = fromPos.x;
+    const fromY = fromPos.y;
 
-    const toPos = getHandlePosition(to, toHandle);
+    const toPos = getInputHandlePosition(to, toHandle);
     const toX = toPos.x;
     const toY = toPos.y;
 
