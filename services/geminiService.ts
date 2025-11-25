@@ -46,8 +46,8 @@ export const GeminiService = {
   generateImage: async (
     prompt: string,
     config: GenerationConfig,
-    controlImageBase64?: string,
-    referenceImageBase64?: string
+    controlImageBase64?: string[] | string,
+    referenceImageBase64?: string[] | string
   ): Promise<string> => {
 
     // Get API key based on environment
@@ -78,28 +78,46 @@ export const GeminiService = {
     
     const parts: Part[] = [];
     
+    const controlImages = controlImageBase64
+      ? Array.isArray(controlImageBase64)
+        ? controlImageBase64
+        : [controlImageBase64]
+      : [];
+
+    const referenceImages = referenceImageBase64
+      ? Array.isArray(referenceImageBase64)
+        ? referenceImageBase64
+        : [referenceImageBase64]
+      : [];
+
     // Add images to parts if they exist
-    // Note: Gemini 'generateContent' takes context images. 
+    // Note: Gemini 'generateContent' takes context images.
     // We treat Control/Reference as multimodal inputs.
-    if (controlImageBase64) {
+    controlImages.forEach((image, idx) => {
       parts.push({
         inlineData: {
           mimeType: 'image/png', // Assuming PNG for simplicity in this demo, actual app would preserve mime
-          data: stripBase64Header(controlImageBase64)
+          data: stripBase64Header(image)
         }
       });
-      prompt += "\n\n(Use the first image as a structural control/composition reference.)";
-    }
 
-    if (referenceImageBase64) {
+      if (idx === 0) {
+        prompt += "\n\n(Use the first image as a structural control/composition reference.)";
+      }
+    });
+
+    referenceImages.forEach((image, idx) => {
       parts.push({
         inlineData: {
           mimeType: 'image/png',
-          data: stripBase64Header(referenceImageBase64)
+          data: stripBase64Header(image)
         }
       });
-      prompt += "\n\n(Use the second image as a style reference.)";
-    }
+
+      if (idx === 0) {
+        prompt += "\n\n(Use the second image as a style reference.)";
+      }
+    });
 
     parts.push({ text: prompt });
 

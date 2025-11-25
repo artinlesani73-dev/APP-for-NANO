@@ -34,8 +34,9 @@ export const HistoryPanel: React.FC<HistoryPanelProps> = ({
     <div className="h-full overflow-y-auto space-y-3 p-4">
           {generations.slice().reverse().map((gen) => {
         const isSelected = gen.generation_id === selectedGenerationId;
-        const outputDataUri = gen.output_image
-          ? loadImage('output', gen.output_image.id, gen.output_image.filename)
+        const outputs = gen.output_images || (gen.output_image ? [gen.output_image] : []);
+        const outputDataUri = outputs.length > 0
+          ? loadImage('output', outputs[0].id, outputs[0].filename)
           : null;
 
         return (
@@ -99,6 +100,11 @@ export const HistoryPanel: React.FC<HistoryPanelProps> = ({
                     Reference ({gen.reference_images.length})
                   </span>
                 )}
+                {gen.output_texts && gen.output_texts.length > 0 && (
+                  <span className="bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 px-2 py-0.5 rounded">
+                    Text ({gen.output_texts.length})
+                  </span>
+                )}
               </div>
               {gen.generation_time_ms && (
                 <span>{gen.generation_time_ms}ms</span>
@@ -106,11 +112,11 @@ export const HistoryPanel: React.FC<HistoryPanelProps> = ({
             </div>
 
             {/* Export Button */}
-            {gen.output_image && gen.status === 'completed' && (
+            {outputs.length > 0 && gen.status === 'completed' && (
               <button
                 onClick={(e) => {
                   e.stopPropagation();
-                  onExportImage(gen.output_image!.filename);
+                  onExportImage(outputs[0].filename);
                 }}
                 className="mt-2 w-full flex items-center justify-center gap-2 px-3 py-1.5 text-xs font-medium rounded bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 transition-colors"
               >

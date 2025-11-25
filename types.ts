@@ -32,6 +32,11 @@ export interface SessionGeneration {
     id: string;
     filename: string;
   };
+  output_images?: Array<{
+    id: string;
+    filename: string;
+  }>;
+  output_texts?: string[];
   generation_time_ms?: number;
   error?: string;
 }
