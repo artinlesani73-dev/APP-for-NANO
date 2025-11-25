@@ -1,9 +1,12 @@
-const { app, BrowserWindow, ipcMain } = require('electron');
+const { app, BrowserWindow, dialog, ipcMain } = require('electron');
+const { autoUpdater } = require('electron-updater');
 const path = require('path');
 const fs = require('fs');
 
+let mainWindow;
+
 function createWindow() {
-  const win = new BrowserWindow({
+  mainWindow = new BrowserWindow({
     width: 1280,
     height: 800,
     webPreferences: {
@@ -21,8 +24,14 @@ function createWindow() {
   });
 
   // Load from the 'dist' directory created by Vite build
-  win.loadFile(path.join(__dirname, 'dist', 'index.html'));
+  mainWindow.loadFile(path.join(__dirname, 'dist', 'index.html'));
 }
+
+const sendUpdateStatus = (channel, payload) => {
+  if (mainWindow && mainWindow.webContents) {
+    mainWindow.webContents.send(channel, payload);
+  }
+};
 
 // Ensure data directory exists
 const getDataPath = () => {
@@ -111,6 +120,39 @@ ipcMain.handle('fetch-logs', async () => {
     return readLogs();
 });
 
+ipcMain.handle('check-for-updates', async () => {
+  const result = await autoUpdater.checkForUpdates();
+  return result;
+});
+
+autoUpdater.on('update-available', (info) => {
+  sendUpdateStatus('update-available', info);
+});
+
+autoUpdater.on('download-progress', (progress) => {
+  sendUpdateStatus('update-download-progress', progress);
+});
+
+autoUpdater.on('update-downloaded', (info) => {
+  sendUpdateStatus('update-downloaded', info);
+  dialog.showMessageBox(mainWindow, {
+    type: 'info',
+    buttons: ['Restart and Install', 'Later'],
+    defaultId: 0,
+    cancelId: 1,
+    title: 'Update Ready',
+    message: 'A new version has been downloaded. Restart to apply the update?',
+  }).then(({ response }) => {
+    if (response === 0) {
+      autoUpdater.quitAndInstall();
+    }
+  });
+});
+
+autoUpdater.on('error', (error) => {
+  sendUpdateStatus('update-error', error?.message ?? String(error));
+});
+
 ipcMain.on('list-files-sync', (event, prefix) => {
     try {
         const dir = getDataPath();
@@ -131,6 +173,7 @@ ipcMain.on('list-files-sync', (event, prefix) => {
 
 app.whenReady().then(() => {
   createWindow();
+  autoUpdater.checkForUpdatesAndNotify();
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) {

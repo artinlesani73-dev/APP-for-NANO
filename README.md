@@ -83,6 +83,13 @@ This will:
 
 The distributable will be available in the `dist-electron/` directory.
 
+### Installers & Updates
+
+- **Download installers** from the GitHub Releases page for your platform (Windows `.exe`, macOS `.dmg`/`.pkg`, Linux `.AppImage`/`.deb`).
+- **First launch** installs the app in your OS-standard location; subsequent launches reuse the installed version.
+- **Auto-updates**: the app checks for updates on startup via GitHub Releases and notifies you when a new version is downloading and ready to install.
+- **Manual check**: from within the app, you can trigger `window.electron.checkForUpdates()` (exposed through the preload bridge) to immediately re-check the release feed if you need to verify you are on the latest version.
+
 ## Usage
 
 ### Getting Started
@@ -185,6 +192,16 @@ The project uses Electron Builder for packaging:
 - **macOS**: DMG disk image (`.dmg`)
 
 Build configuration is in `package.json` under the `build` key.
+
+## Release
+
+Maintainers can cut a new release with the following steps:
+
+1. **Bump the version** in `package.json` to the new release number.
+2. **Build the renderer**: `npm run build`.
+3. **Package installers** for all targets: `npx electron-builder -mwl`. Artifacts are written to `dist-electron/`.
+4. **Publish assets**: upload the generated artifacts to the GitHub Releases draft created by Electron Builder (configured via the `publish` section). Promoting the release will make updates available to clients.
+5. **Verify auto-updates** by launching the packaged app; it will check GitHub for the new version and prompt to install when ready.
 
 ## Troubleshooting
 
