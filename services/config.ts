@@ -4,27 +4,41 @@ const USER_STORAGE_KEY = 'nano_user_display_name';
 const SHARED_API_KEY_STORAGE_KEY = 'shared_api_key';
 const ADMIN_PASSPHRASE_KEY = 'nano_admin_passphrase';
 
+const getBridgeEnv = () => {
+  if (typeof window === 'undefined') return undefined;
+  return (window as any).env as
+    | {
+        sharedApiKey?: string;
+        logEndpoint?: string;
+        adminPassphrase?: string;
+      }
+    | undefined;
+};
+
 const readLogEndpoint = () => {
+  const bridged = getBridgeEnv()?.logEndpoint;
   const envEndpoint = (import.meta as any).env?.VITE_LOG_ENDPOINT;
   // @ts-ignore Optional process env for non-Vite runtimes
   const processEndpoint = typeof process !== 'undefined' ? process.env?.VITE_LOG_ENDPOINT : undefined;
   const metadataEndpoint = (metadata as any).logEndpoint as string | undefined;
-  return envEndpoint || processEndpoint || metadataEndpoint || undefined;
+  return bridged || envEndpoint || processEndpoint || metadataEndpoint || undefined;
 };
 
 const readAdminPassphrase = () => {
+  const bridged = getBridgeEnv()?.adminPassphrase;
   const envPassphrase = (import.meta as any).env?.VITE_ADMIN_PASSPHRASE;
   // @ts-ignore Optional process env for non-Vite runtimes
   const processPassphrase = typeof process !== 'undefined' ? process.env?.VITE_ADMIN_PASSPHRASE : undefined;
   const metadataPassphrase = (metadata as any).adminPassphrase as string | undefined;
-  return envPassphrase || processPassphrase || metadataPassphrase || undefined;
+  return bridged || envPassphrase || processPassphrase || metadataPassphrase || undefined;
 };
 
 const readEnvKey = () => {
+  const bridged = getBridgeEnv()?.sharedApiKey;
   const envApiKey = (import.meta as any).env?.VITE_SHARED_API_KEY || (import.meta as any).env?.API_KEY;
   // @ts-ignore Optional process env for non-Vite runtimes
   const processApiKey = typeof process !== 'undefined' ? (process.env?.VITE_SHARED_API_KEY || process.env?.API_KEY) : undefined;
-  return envApiKey || processApiKey;
+  return bridged || envApiKey || processApiKey;
 };
 
 export const AppConfig = {

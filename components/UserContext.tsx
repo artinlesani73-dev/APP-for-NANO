@@ -7,7 +7,7 @@ type User = {
 
 type UserContextValue = {
   currentUser: User | null;
-  setCurrentUser: (user: User) => void;
+  setCurrentUser: (user: User, persist?: boolean) => void;
   logout: () => void;
 };
 
@@ -23,9 +23,13 @@ export const UserProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   }, []);
 
-  const setCurrentUser = (user: User) => {
+  const setCurrentUser = (user: User, persist = true) => {
     setCurrentUserState(user);
-    localStorage.setItem(AppConfig.userStorageKey, user.displayName);
+    if (persist) {
+      localStorage.setItem(AppConfig.userStorageKey, user.displayName);
+    } else {
+      localStorage.removeItem(AppConfig.userStorageKey);
+    }
   };
 
   const logout = () => {
