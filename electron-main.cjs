@@ -25,6 +25,23 @@ loadDotEnv();
 
 let mainWindow;
 let adminWindow;
+let currentUserContext = { displayName: 'anonymous', id: 'anonymous' };
+
+const DEFAULT_SHARE_PATH = '\\\\192.168.1.2\\area49\\AREA49 AI UI\\';
+
+const sanitizeSegment = (segment = '') =>
+  segment
+    .replace(/[<>:"|?*]/g, '_')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .replace(/\s+/g, '_')
+    || 'anonymous';
+
+const getUserFolderName = () => {
+  const name = sanitizeSegment(currentUserContext.displayName);
+  const id = sanitizeSegment(currentUserContext.id);
+  return `${name}_${id}`;
+};
 
 const isAdminEnabled = () => Boolean(process.env.VITE_ADMIN_PASSPHRASE || process.env.ADMIN_ENABLED === 'true');
 
@@ -91,7 +108,17 @@ const sendUpdateStatus = (channel, payload) => {
   }
 };
 
-// Ensure data directory exists
+const ensureSubdirectories = (basePath) => {
+    const subDirs = ['outputs', 'inputs', 'controls', 'references', 'sessions'];
+    subDirs.forEach(dir => {
+        const dirPath = path.join(basePath, dir);
+        if (!fs.existsSync(dirPath)) {
+            fs.mkdirSync(dirPath, { recursive: true });
+        }
+    });
+};
+
+// Ensure data directory exists (local, user-scoped)
 const getDataPath = () => {
     const userDataPath = app.getPath('documents');
     const appDir = path.join(userDataPath, 'ImageProvenanceStudio');
@@ -99,48 +126,77 @@ const getDataPath = () => {
         fs.mkdirSync(appDir, { recursive: true });
     }
 
-    // Create image subdirectories
-    const imageDirs = ['outputs', 'inputs', 'controls', 'references', 'sessions'];
-    imageDirs.forEach(dir => {
-        const dirPath = path.join(appDir, dir);
-        if (!fs.existsSync(dirPath)) {
-            fs.mkdirSync(dirPath, { recursive: true });
-        }
-    });
+    const userDir = path.join(appDir, 'users', getUserFolderName());
+    if (!fs.existsSync(userDir)) {
+        fs.mkdirSync(userDir, { recursive: true });
+    }
 
-    return appDir;
+    ensureSubdirectories(userDir);
+    return userDir;
 };
 
-const getLogDirectory = () => {
-    const sharedLogDir = process.env.LOG_SHARE_PATH || process.env.VITE_LOG_SHARE_PATH;
-    if (sharedLogDir) {
-        const normalized = path.isAbsolute(sharedLogDir)
-          ? sharedLogDir
-          : path.resolve(sharedLogDir);
+const getSharedDataPath = () => {
+    const configured = process.env.LOG_SHARE_PATH || process.env.VITE_LOG_SHARE_PATH || DEFAULT_SHARE_PATH;
+    const normalized = path.isAbsolute(configured) ? configured : path.resolve(configured);
+
+    try {
+        if (!fs.existsSync(normalized)) {
+            fs.mkdirSync(normalized, { recursive: true });
+        }
+
+        const userDir = path.join(normalized, getUserFolderName());
+        if (!fs.existsSync(userDir)) {
+            fs.mkdirSync(userDir, { recursive: true });
+        }
+
+        ensureSubdirectories(userDir);
+        return userDir;
+    } catch (e) {
+        console.error('Shared data path unavailable; continuing with local storage only', e);
+        return null;
+    }
+};
+
+const getScopedPath = (relativePath) => {
+    const localBase = getDataPath();
+    const sharedBase = getSharedDataPath();
+
+    return {
+        local: path.join(localBase, relativePath),
+        shared: sharedBase ? path.join(sharedBase, relativePath) : null
+    };
+};
+
+const writeFileBoth = (relativePath, data, options = undefined) => {
+    const { local, shared } = getScopedPath(relativePath);
+    const localDir = path.dirname(local);
+    if (!fs.existsSync(localDir)) fs.mkdirSync(localDir, { recursive: true });
+    fs.writeFileSync(local, data, options);
+
+    if (shared) {
         try {
-            if (!fs.existsSync(normalized)) {
-                fs.mkdirSync(normalized, { recursive: true });
-            }
-            return normalized;
+            const sharedDir = path.dirname(shared);
+            if (!fs.existsSync(sharedDir)) fs.mkdirSync(sharedDir, { recursive: true });
+            fs.writeFileSync(shared, data, options);
         } catch (e) {
-            console.error('Falling back to local log storage because shared log directory is unavailable', e);
+            console.error('Failed to write to shared storage', e);
         }
     }
 
-    return getDataPath();
+    return local;
 };
 
-const getLogFilePath = () => path.join(getLogDirectory(), 'logs.json');
+const getLogFilePaths = () => getScopedPath('logs.json');
 
-const getInputLogFilePath = () => path.join(getDataPath(), 'input-image-log.json');
+const getInputLogFilePath = () => getScopedPath('input-image-log.json');
 
 const readInputLog = () => {
-    const logPath = getInputLogFilePath();
-    if (!fs.existsSync(logPath)) {
+    const { local } = getInputLogFilePath();
+    if (!fs.existsSync(local)) {
         return [];
     }
     try {
-        const content = fs.readFileSync(logPath, 'utf-8');
+        const content = fs.readFileSync(local, 'utf-8');
         return JSON.parse(content);
     } catch (e) {
         console.error('Failed to read input image log', e);
@@ -149,16 +205,16 @@ const readInputLog = () => {
 };
 
 const writeInputLog = (entries) => {
-    fs.writeFileSync(getInputLogFilePath(), JSON.stringify(entries, null, 2));
+    writeFileBoth('input-image-log.json', JSON.stringify(entries, null, 2));
 };
 
 const readLogs = () => {
-    const logPath = getLogFilePath();
-    if (!fs.existsSync(logPath)) {
+    const { local } = getLogFilePaths();
+    if (!fs.existsSync(local)) {
         return [];
     }
     try {
-        const content = fs.readFileSync(logPath, 'utf-8');
+        const content = fs.readFileSync(local, 'utf-8');
         return JSON.parse(content);
     } catch (e) {
         console.error('Failed to read logs', e);
@@ -169,14 +225,13 @@ const readLogs = () => {
 const appendLog = (entry) => {
     const logs = readLogs();
     logs.push(entry);
-    fs.writeFileSync(getLogFilePath(), JSON.stringify(logs, null, 2));
+    writeFileBoth('logs.json', JSON.stringify(logs, null, 2));
 };
 
 // IPC Handlers for synchronous file operations
 ipcMain.on('save-sync', (event, filename, content) => {
     try {
-        const filePath = path.join(getDataPath(), `${filename}.json`);
-        fs.writeFileSync(filePath, content, 'utf-8');
+        writeFileBoth(`${filename}.json`, content, 'utf-8');
         event.returnValue = true;
     } catch (e) {
         console.error("Save failed", e);
@@ -236,6 +291,13 @@ ipcMain.on('log-event', (event, entry) => {
         console.error('Failed to write log entry', e);
         event.returnValue = false;
     }
+});
+
+ipcMain.on('set-user-context', (_event, user) => {
+    currentUserContext = {
+        displayName: user?.displayName || 'anonymous',
+        id: user?.id || 'anonymous'
+    };
 });
 
 ipcMain.handle('fetch-logs', async () => {
@@ -340,7 +402,7 @@ ipcMain.on('save-input-image-sync', (event, originalName, sizeBytes, base64Data)
             const existingPath = path.join(inputsDir, existing.filename);
             if (!fs.existsSync(existingPath)) {
                 const buffer = Buffer.from(rawBase64, 'base64');
-                fs.writeFileSync(existingPath, buffer);
+                writeFileBoth(path.join('inputs', existing.filename), buffer);
             }
             event.returnValue = { success: true, ...existing };
             return;
@@ -349,7 +411,7 @@ ipcMain.on('save-input-image-sync', (event, originalName, sizeBytes, base64Data)
         const id = crypto.randomUUID();
         const filename = `${baseName}_${id}${ext}`;
         const buffer = Buffer.from(rawBase64, 'base64');
-        fs.writeFileSync(path.join(inputsDir, filename), buffer);
+        writeFileBoth(path.join('inputs', filename), buffer);
 
         const record = {
             id,
@@ -378,7 +440,7 @@ ipcMain.on('save-image-sync', (event, folder, filename, base64Data) => {
         const base64 = base64Data.replace(/^data:image\/\w+;base64,/, '');
         const buffer = Buffer.from(base64, 'base64');
 
-        fs.writeFileSync(imagePath, buffer);
+        writeFileBoth(path.join(folder, filename), buffer);
         event.returnValue = { success: true, path: imagePath };
     } catch (e) {
         console.error("Save image failed", e);
@@ -466,9 +528,7 @@ ipcMain.on('list-sessions-sync', (event) => {
 // Save session file
 ipcMain.on('save-session-sync', (event, sessionId, sessionData) => {
     try {
-        const dataPath = getDataPath();
-        const sessionPath = path.join(dataPath, 'sessions', `${sessionId}.json`);
-        fs.writeFileSync(sessionPath, JSON.stringify(sessionData, null, 2), 'utf-8');
+        writeFileBoth(path.join('sessions', `${sessionId}.json`), JSON.stringify(sessionData, null, 2));
         event.returnValue = { success: true };
     } catch (e) {
         console.error("Save session failed", e);
@@ -502,6 +562,14 @@ ipcMain.on('delete-session-sync', (event, sessionId) => {
 
         if (fs.existsSync(sessionPath)) {
             fs.unlinkSync(sessionPath);
+        }
+
+        const sharedBase = getSharedDataPath();
+        if (sharedBase) {
+            const sharedSessionPath = path.join(sharedBase, 'sessions', `${sessionId}.json`);
+            if (fs.existsSync(sharedSessionPath)) {
+                fs.unlinkSync(sharedSessionPath);
+            }
         }
         event.returnValue = { success: true };
     } catch (e) {

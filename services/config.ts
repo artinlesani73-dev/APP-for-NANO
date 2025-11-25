@@ -1,6 +1,7 @@
 import metadata from '../metadata.json';
 
 const USER_STORAGE_KEY = 'nano_user_display_name';
+const USER_ID_STORAGE_KEY = 'nano_user_id';
 const SHARED_API_KEY_STORAGE_KEY = 'shared_api_key';
 const ADMIN_PASSPHRASE_KEY = 'nano_admin_passphrase';
 
@@ -43,6 +44,7 @@ const readEnvKey = () => {
 
 export const AppConfig = {
   userStorageKey: USER_STORAGE_KEY,
+  userIdStorageKey: USER_ID_STORAGE_KEY,
   sharedApiKeyStorageKey: SHARED_API_KEY_STORAGE_KEY,
   getSharedApiKey: (): string | undefined => {
     const envKey = readEnvKey();

@@ -27,6 +27,7 @@ contextBridge.exposeInMainWorld('electron', {
   // Logging
   logEvent: (entry) => ipcRenderer.sendSync('log-event', entry),
   fetchLogs: () => ipcRenderer.invoke('fetch-logs'),
+  setUserContext: (user) => ipcRenderer.send('set-user-context', user),
   verifyAdminPassphrase: (passphrase) => ipcRenderer.invoke('verify-admin-passphrase', passphrase),
   openAdminWindow: (verified) => ipcRenderer.invoke('open-admin-window', verified),
   getAdminMetrics: () => ipcRenderer.invoke('get-admin-metrics'),
