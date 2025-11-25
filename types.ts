@@ -5,6 +5,7 @@ export interface Session {
   created_at: string;
   updated_at: string;
   generations: SessionGeneration[];
+  graph?: GraphState;
 }
 
 // Generation data embedded in session (not separated)
@@ -82,6 +83,31 @@ export interface GenerationConfig {
   image_size: string;
   safety_filter: string;
   model: string;
+}
+
+export interface GraphNode {
+  id: string;
+  generationId?: string;
+  type: 'prompt' | 'workflow' | 'control-image' | 'reference-image' | 'output-image' | 'output-text';
+  label: string;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  data?: any;
+  isStandalone?: boolean;
+}
+
+export interface GraphEdge {
+  from: string;
+  to: string;
+  toHandle?: 'prompt' | 'control' | 'reference';
+  color: string;
+}
+
+export interface GraphState {
+  nodes: GraphNode[];
+  edges: GraphEdge[];
 }
 
 export interface Generation {
