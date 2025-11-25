@@ -325,7 +325,7 @@ function AppContent() {
 
     try {
         // 3. API Call (send all control/reference images when provided)
-        const base64Output = await GeminiService.generateImage(
+        const output = await GeminiService.generateImage(
             prompt,
             config,
             controlImagesData.length > 0 ? controlImagesData.map(img => img.data) : undefined,
@@ -336,8 +336,14 @@ function AppContent() {
         const duration = Date.now() - startTime;
 
         // 4. Complete Generation and Save Output
-        const outputDataUri = `data:image/png;base64,${base64Output}`;
-        StorageService.completeGeneration(currentSessionId, gen.generation_id, outputDataUri, duration);
+        const outputDataUris = output.images.map(img => `data:image/png;base64,${img}`);
+        StorageService.completeGeneration(
+          currentSessionId,
+          gen.generation_id,
+          outputDataUris,
+          duration,
+          output.texts
+        );
 
         // 5. Reload session and update UI
         const updatedSession = StorageService.loadSession(currentSessionId);

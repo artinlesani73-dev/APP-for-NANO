@@ -53,7 +53,7 @@ export const GeminiService = {
     controlImageBase64?: string[] | string,
     referenceImageBase64?: string[] | string,
     userName?: string
-  ): Promise<string> => {
+  ): Promise<{ images: string[]; texts: string[] }> => {
 
     // Get API key based on environment
     let apiKey: string | undefined;
@@ -164,14 +164,25 @@ export const GeminiService = {
     // Extract image
     // The response structure for image generation often contains the image in inlineData of the first candidate part
     // Iterate to find image part
-    if (response.candidates && response.candidates[0].content && response.candidates[0].content.parts) {
-        for (const part of response.candidates[0].content.parts) {
-            if (part.inlineData && part.inlineData.data) {
-                return part.inlineData.data;
-            }
+    const images: string[] = [];
+    const texts: string[] = [];
+
+    // Gather all parts from all candidates to capture multiple images/text chunks
+    response.candidates?.forEach(candidate => {
+      candidate.content?.parts?.forEach(part => {
+        if (part.inlineData?.data) {
+          images.push(part.inlineData.data);
         }
+        if (typeof part.text === 'string' && part.text.trim().length > 0) {
+          texts.push(part.text);
+        }
+      });
+    });
+
+    if (images.length === 0 && texts.length === 0) {
+      throw new Error("No output data found in response");
     }
 
-    throw new Error("No image data found in response");
+    return { images, texts };
   }
 };
