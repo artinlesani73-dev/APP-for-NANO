@@ -426,6 +426,83 @@ export default function App() {
                 session={currentSession}
                 theme={theme}
                 loadImage={(role, id, filename) => StorageService.loadImage(role, id, filename)}
+                onGenerateFromNode={async (prompt, config, controlImages, referenceImages) => {
+                  // Similar to handleGenerate but using provided parameters
+                  if (!currentSessionId) return;
+
+                  // Check API key if needed
+                  if (config.model === 'gemini-3-pro-image-preview' && !apiKeyConnected) {
+                    await handleConnectApiKey();
+                    const isConnected = await GeminiService.checkApiKey();
+                    if (!isConnected) return;
+                    setApiKeyConnected(true);
+                  }
+
+                  setIsGenerating(true);
+
+                  // Create generation record
+                  const gen = StorageService.createGeneration(
+                    currentSessionId,
+                    prompt,
+                    config,
+                    controlImages,
+                    referenceImages
+                  );
+
+                  const startTime = Date.now();
+
+                  try {
+                    // API Call
+                    const base64Output = await GeminiService.generateImage(
+                      prompt,
+                      config,
+                      controlImages?.[0],
+                      referenceImages?.[0]
+                    );
+
+                    const duration = Date.now() - startTime;
+
+                    // Complete generation
+                    const outputDataUri = `data:image/png;base64,${base64Output}`;
+                    StorageService.completeGeneration(currentSessionId, gen.generation_id, outputDataUri, duration);
+
+                    // Update UI
+                    const updatedSession = StorageService.loadSession(currentSessionId);
+                    if (updatedSession) {
+                      const completedGen = updatedSession.generations.find(g => g.generation_id === gen.generation_id);
+                      if (completedGen) {
+                        setCurrentGeneration(completedGen);
+                        if (completedGen.output_image) {
+                          const outputData = StorageService.loadImage('output', completedGen.output_image.id, completedGen.output_image.filename);
+                          setOutputImageData(outputData);
+                        }
+                      }
+                    }
+
+                    setSessions(StorageService.getSessions());
+                  } catch (error: any) {
+                    console.error("Generation failed:", error);
+                    const errorMessage = error.message || error.toString();
+
+                    if (errorMessage.includes("Requested entity was not found")) {
+                      setApiKeyConnected(false);
+                      alert("The selected API Key is no longer valid. Please select a valid key.");
+                      if (config.model === 'gemini-3-pro-image-preview') {
+                        await handleConnectApiKey();
+                      }
+                    }
+
+                    StorageService.failGeneration(currentSessionId, gen.generation_id, errorMessage);
+
+                    const updatedSession = StorageService.loadSession(currentSessionId);
+                    if (updatedSession) {
+                      const failedGen = updatedSession.generations.find(g => g.generation_id === gen.generation_id);
+                      if (failedGen) setCurrentGeneration(failedGen);
+                    }
+                  } finally {
+                    setIsGenerating(false);
+                  }
+                }}
               />
             ) : (
               <div className="h-full flex items-center justify-center bg-zinc-50 dark:bg-zinc-900">
