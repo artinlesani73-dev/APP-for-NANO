@@ -1,10 +1,10 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { Sidebar } from './components/Sidebar';
 import { PromptPanel } from './components/PromptPanel';
 import { MultiImageUploadPanel } from './components/MultiImageUploadPanel';
 import { ParametersPanel } from './components/ParametersPanel';
 import { ResultPanel } from './components/ResultPanel';
-import { HistoryPanel } from './components/HistoryPanel';
+import { HistoryPanel, HistoryGalleryItem } from './components/HistoryPanel';
 import { SettingsModal } from './components/SettingsModal';
 import { LoginForm } from './components/LoginForm';
 import { UserProvider, useUser } from './components/UserContext';
@@ -57,6 +57,41 @@ function AppContent() {
     if (typeof window === 'undefined') return false;
     return sessionStorage.getItem('admin_authorized') === 'true';
   });
+
+  const historyItems = useMemo<HistoryGalleryItem[]>(() => {
+    return sessions
+      .flatMap(session =>
+        session.generations.flatMap<HistoryGalleryItem>((generation) => {
+          const outputs = generation.output_images || (generation.output_image ? [generation.output_image] : []);
+          const texts = generation.output_texts || [];
+
+          if (outputs.length === 0) {
+            const textItem: HistoryGalleryItem = {
+              kind: 'text',
+              sessionId: session.session_id,
+              sessionTitle: session.title,
+              generation,
+              texts
+            };
+
+            return [textItem];
+          }
+
+          const imageItems: HistoryGalleryItem[] = outputs.map((output, idx) => ({
+            kind: 'image',
+            sessionId: session.session_id,
+            sessionTitle: session.title,
+            generation,
+            output,
+            outputIndex: idx,
+            texts
+          }));
+
+          return imageItems;
+        })
+      )
+      .sort((a, b) => new Date(b.generation.timestamp).getTime() - new Date(a.generation.timestamp).getTime());
+  }, [sessions]);
 
   // Get current session
   const currentSession = sessions.find(s => s.session_id === currentSessionId) || null;
@@ -177,7 +212,11 @@ function AppContent() {
     }
   };
 
-  const handleSelectGeneration = (gen: SessionGeneration) => {
+  const handleSelectGeneration = (sessionId: string, gen: SessionGeneration) => {
+    if (sessionId !== currentSessionId) {
+      setCurrentSessionId(sessionId);
+    }
+
     loadGenerationIntoView(gen);
   };
 
@@ -325,7 +364,7 @@ function AppContent() {
 
     try {
         // 3. API Call (send all control/reference images when provided)
-        const base64Output = await GeminiService.generateImage(
+        const output = await GeminiService.generateImage(
             prompt,
             config,
             controlImagesData.length > 0 ? controlImagesData.map(img => img.data) : undefined,
@@ -336,8 +375,14 @@ function AppContent() {
         const duration = Date.now() - startTime;
 
         // 4. Complete Generation and Save Output
-        const outputDataUri = `data:image/png;base64,${base64Output}`;
-        StorageService.completeGeneration(currentSessionId, gen.generation_id, outputDataUri, duration);
+        const outputDataUris = output.images.map(img => `data:image/png;base64,${img}`);
+        StorageService.completeGeneration(
+          currentSessionId,
+          gen.generation_id,
+          outputDataUris,
+          duration,
+          output.texts
+        );
 
         // 5. Reload session and update UI
         const updatedSession = StorageService.loadSession(currentSessionId);
@@ -455,7 +500,7 @@ function AppContent() {
                     }`}
                   >
                     <History size={12} />
-                    History ({currentSession?.generations.length || 0})
+                    History ({historyItems.length})
                   </button>
                 )}
 
@@ -511,10 +556,20 @@ function AppContent() {
             </div>
         </header>
 
-        {/* Content Area - Graph View Deactivated */}
-        {/* Result View - Original Layout */}
+        {/* Content Area */}
           <div className="flex-1 overflow-y-auto p-6 bg-zinc-50 dark:bg-black/50">
-            <div className="max-w-6xl mx-auto grid grid-cols-12 gap-6">
+            {showHistory ? (
+              <div className="max-w-7xl mx-auto h-full min-h-[calc(100vh-6rem)]">
+                <HistoryPanel
+                  items={historyItems}
+                  onSelectGeneration={handleSelectGeneration}
+                  selectedGenerationId={currentGeneration?.generation_id}
+                  onExportImage={handleExportImage}
+                  loadImage={(role, id, filename) => StorageService.loadImage(role, id, filename)}
+                />
+              </div>
+            ) : (
+              <div className="max-w-6xl mx-auto grid grid-cols-12 gap-6">
 
                 {/* Left Column: Inputs (8/12) */}
                 <div className="col-span-12 lg:col-span-8 space-y-6">
@@ -542,29 +597,19 @@ function AppContent() {
                         />
                     </div>
 
-                    {/* Output Area or History */}
+                    {/* Output Area */}
                     <div className="h-[500px]">
-                        {showHistory && currentSession ? (
-                            <HistoryPanel
-                                generations={currentSession.generations}
-                                onSelectGeneration={handleSelectGeneration}
-                                selectedGenerationId={currentGeneration?.generation_id}
-                                onExportImage={handleExportImage}
-                                loadImage={(role, id, filename) => StorageService.loadImage(role, id, filename)}
-                            />
-                        ) : (
-                            <ResultPanel
-                                isGenerating={isGenerating}
-                                generation={currentGeneration}
-                                outputImages={(currentGeneration
-                                  ? currentGeneration.output_images || (currentGeneration.output_image ? [currentGeneration.output_image] : [])
-                                  : []
-                                )
-                                  .map((meta, idx) => ({ dataUri: outputImagesData[idx], filename: meta.filename }))
-                                  .filter(img => !!img.dataUri)}
-                                outputTexts={outputTexts}
-                            />
-                        )}
+                        <ResultPanel
+                            isGenerating={isGenerating}
+                            generation={currentGeneration}
+                            outputImages={(currentGeneration
+                              ? currentGeneration.output_images || (currentGeneration.output_image ? [currentGeneration.output_image] : [])
+                              : []
+                            )
+                              .map((meta, idx) => ({ dataUri: outputImagesData[idx], filename: meta.filename }))
+                              .filter(img => !!img.dataUri)}
+                            outputTexts={outputTexts}
+                        />
                     </div>
                 </div>
 
@@ -610,7 +655,8 @@ function AppContent() {
                     )}
                 </div>
 
-            </div>
+              </div>
+            )}
           </div>
       </div>
 
