@@ -4,7 +4,7 @@ import { FileText, Settings, Image as ImageIcon, ZoomIn, ZoomOut, Maximize2, Pla
 import { StorageService } from '../services/newStorageService';
 
 interface GraphViewProps {
-  session: Session;
+  sessions: Session[];
   theme: 'dark' | 'light';
   loadImage: (role: 'control' | 'reference' | 'output', id: string, filename: string) => string | null;
   onGenerateFromNode?: (prompt: string, config: GenerationConfig, controlImages?: string[], referenceImages?: string[]) => Promise<void>;
@@ -40,7 +40,7 @@ const BASE_Y = 160;
 const COLUMN_SPACING = 320;
 const GENERATION_SPACING = 420;
 
-const GraphView: React.FC<GraphViewProps> = ({ session, theme, loadImage, onGenerateFromNode }) => {
+const GraphView: React.FC<GraphViewProps> = ({ sessions, theme, loadImage, onGenerateFromNode }) => {
   const svgRef = useRef<SVGSVGElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const [nodes, setNodes] = useState<Node[]>([]);
@@ -58,61 +58,25 @@ const GraphView: React.FC<GraphViewProps> = ({ session, theme, loadImage, onGene
   const [connectionPreview, setConnectionPreview] = useState<{ x: number; y: number } | null>(null);
   const [isDraggingNode, setIsDraggingNode] = useState(false);
   const [graphLoaded, setGraphLoaded] = useState(false);
+  const [selectedSessionId, setSelectedSessionId] = useState<string | 'all'>('all');
 
-  const lastSessionId = useRef<string | null>(null);
-
-  useEffect(() => {
-    if (session.session_id === lastSessionId.current) return;
-
-    lastSessionId.current = session.session_id;
-    setGraphLoaded(false);
-    generateGraphLayout();
-  }, [session.session_id]);
+  const lastSessionsLength = useRef<number>(0);
 
   useEffect(() => {
-    if (!graphLoaded || session.generations.length === 0) return;
-
-    const existingWorkflowIds = new Set(nodes.filter(n => n.type === 'workflow').map(n => n.id));
-    const pendingNodes: Node[] = [];
-    const pendingEdges: Edge[] = [];
-
-    session.generations.forEach((generation, genIndex) => {
-      const workflowNodeId = `session-${session.session_id}-workflow-${generation.generation_id}`;
-      if (existingWorkflowIds.has(workflowNodeId)) return;
-
-      const { nodes: generationNodes, edges: generationEdges } = buildGenerationGraph(generation, genIndex);
-
-      generationNodes.forEach(node => {
-        if (!nodes.some(n => n.id === node.id) && !pendingNodes.some(n => n.id === node.id)) {
-          pendingNodes.push(node);
-        }
-      });
-
-      generationEdges.forEach(edge => {
-        const duplicate = edges.some(
-          e => e.from === edge.from && e.to === edge.to && e.toHandle === edge.toHandle
-        ) || pendingEdges.some(
-          e => e.from === edge.from && e.to === edge.to && e.toHandle === edge.toHandle
-        );
-
-        if (!duplicate) pendingEdges.push(edge);
-      });
-    });
-
-    if (pendingNodes.length > 0) setNodes(prev => [...prev, ...pendingNodes]);
-    if (pendingEdges.length > 0) setEdges(prev => [...prev, ...pendingEdges]);
-  }, [session.generations, session.session_id, graphLoaded, nodes, edges]);
+    // Regenerate graph when sessions change
+    const totalGenerations = sessions.reduce((sum, s) => sum + s.generations.length, 0);
+    if (totalGenerations !== lastSessionsLength.current) {
+      lastSessionsLength.current = totalGenerations;
+      setGraphLoaded(false);
+      generateGraphLayout();
+    }
+  }, [sessions, selectedSessionId]);
 
   useEffect(() => {
-    if (!graphLoaded) return;
-    StorageService.updateSessionGraph(session.session_id, nodes, edges);
-  }, [nodes, edges, session.session_id, graphLoaded]);
-
-  useEffect(() => {
-    if (session.generations.length > 0 && editingNode) {
+    if (editingNode && nodes.length > 0) {
       setEditingNode(null);
     }
-  }, [session.generations.length, editingNode]);
+  }, [nodes.length]);
 
   // Handle wheel events with non-passive listener
   useEffect(() => {
@@ -129,179 +93,50 @@ const GraphView: React.FC<GraphViewProps> = ({ session, theme, loadImage, onGene
     return () => svg.removeEventListener('wheel', handleWheel);
   }, []);
 
-  const buildGenerationGraph = (generation: SessionGeneration, genIndex: number) => {
-    const generationNodes: Node[] = [];
-    const generationEdges: Edge[] = [];
-    const yOffset = BASE_Y + genIndex * GENERATION_SPACING;
-    const workflowNodeId = `session-${session.session_id}-workflow-${generation.generation_id}`;
-    const promptNodeId = `session-${session.session_id}-prompt-${generation.generation_id}`;
-
-    const parameters = generation.parameters || DEFAULT_CONFIG;
-
-    generationNodes.push({
-      id: promptNodeId,
-      generationId: generation.generation_id,
-      type: 'prompt',
-      label: 'Prompt',
-      x: BASE_X,
-      y: yOffset + 100,
-      width: NODE_WIDTH,
-      height: NODE_HEIGHT,
-      data: { text: generation.prompt || 'Add a prompt to generate', status: generation.status }
+  // Helper function to create a unique key for workflow grouping
+  const getWorkflowGroupKey = (
+    promptText: string,
+    params: GenerationConfig,
+    userName: string,
+    controlImageIds: string[],
+    referenceImageIds: string[]
+  ) => {
+    return JSON.stringify({
+      prompt: promptText,
+      params,
+      user: userName,
+      control: controlImageIds.sort(),
+      reference: referenceImageIds.sort()
     });
+  };
 
-    const latestControl = generation.control_images || [];
-    const latestReference = generation.reference_images || [];
-    const totalImages = latestControl.length + latestReference.length || 1;
-    const imageColumnStartY = yOffset - ((totalImages - 1) * 250) / 2;
-    let currentImageY = imageColumnStartY;
-
-    latestControl.forEach((img, idx) => {
-      const nodeId = `session-${session.session_id}-control-${generation.generation_id}-${idx}`;
-      const imageData = loadImage('control', img.id, img.filename);
-
-      generationNodes.push({
-        id: nodeId,
-        generationId: generation.generation_id,
-        type: 'control-image',
-        label: `Control ${idx + 1}`,
-        x: BASE_X + COLUMN_SPACING,
-        y: currentImageY,
-        width: NODE_WIDTH,
-        height: IMAGE_NODE_HEIGHT,
-        data: { image: img, imageData }
-      });
-
-      generationEdges.push({
-        from: nodeId,
-        to: workflowNodeId,
-        toHandle: 'control',
-        color: '#10b981'
-      });
-
-      currentImageY += 250;
-    });
-
-    latestReference.forEach((img, idx) => {
-      const nodeId = `session-${session.session_id}-reference-${generation.generation_id}-${idx}`;
-      const imageData = loadImage('reference', img.id, img.filename);
-
-      generationNodes.push({
-        id: nodeId,
-        generationId: generation.generation_id,
-        type: 'reference-image',
-        label: `Reference ${idx + 1}`,
-        x: BASE_X + COLUMN_SPACING,
-        y: currentImageY,
-        width: NODE_WIDTH,
-        height: IMAGE_NODE_HEIGHT,
-        data: { image: img, imageData }
-      });
-
-      generationEdges.push({
-        from: nodeId,
-        to: workflowNodeId,
-        toHandle: 'reference',
-        color: '#3b82f6'
-      });
-
-      currentImageY += 250;
-    });
-
-    const workflowY = yOffset + 40;
-    generationNodes.push({
-      id: workflowNodeId,
-      generationId: generation.generation_id,
-      type: 'workflow',
-      label: 'Workflow',
-      x: BASE_X + COLUMN_SPACING * 2,
-      y: workflowY,
-      width: NODE_WIDTH,
-      height: WORKFLOW_NODE_HEIGHT,
-      data: { parameters }
-    });
-
-    generationEdges.push({
-      from: promptNodeId,
-      to: workflowNodeId,
-      toHandle: 'prompt',
-      color: '#8b5cf6'
-    });
-
-    const outputImages = generation.output_images || (generation.output_image ? [generation.output_image] : []);
-    const outputTexts = [...(generation.output_texts || [])];
-    const totalOutputs = (outputImages.length || 0) + outputTexts.length || 1;
-    const outputSpacing = 340;
-    const outputStartY = yOffset - ((totalOutputs - 1) * outputSpacing) / 2;
-
-    let outputIndex = 0;
-
-    outputImages.forEach((image, idx) => {
-      const imageData = loadImage('output', image.id, image.filename);
-      const attachedText = outputTexts.shift();
-      const nodeId = `session-${session.session_id}-output-${generation.generation_id}-${idx}`;
-
-      generationNodes.push({
-        id: nodeId,
-        generationId: generation.generation_id,
-        type: 'output-image',
-        label: `Output ${idx + 1}`,
-        x: BASE_X + COLUMN_SPACING * 3,
-        y: outputStartY + outputIndex * outputSpacing,
-        width: NODE_WIDTH,
-        height: OUTPUT_IMAGE_HEIGHT,
-        data: { image, imageData, text: attachedText }
-      });
-
-      generationEdges.push({
-        from: workflowNodeId,
-        to: nodeId,
-        color: '#f59e0b'
-      });
-
-      outputIndex += 1;
-    });
-
-    outputTexts.forEach((text, idx) => {
-      const nodeId = `session-${session.session_id}-text-${generation.generation_id}-${idx}`;
-
-      generationNodes.push({
-        id: nodeId,
-        generationId: generation.generation_id,
-        type: 'output-text',
-        label: `Text ${outputIndex + 1}`,
-        x: BASE_X + COLUMN_SPACING * 3,
-        y: outputStartY + outputIndex * outputSpacing,
-        width: NODE_WIDTH,
-        height: NODE_HEIGHT,
-        data: { text }
-      });
-
-      generationEdges.push({
-        from: workflowNodeId,
-        to: nodeId,
-        color: '#f59e0b'
-      });
-
-      outputIndex += 1;
-    });
-
-    return { nodes: generationNodes, edges: generationEdges };
+  // Helper function to get image key for deduplication
+  const getImageKey = (role: 'control' | 'reference' | 'output', id: string, filename: string) => {
+    return `${role}-${id}-${filename}`;
   };
 
   const generateGraphLayout = () => {
-    const savedGraph = session.graph;
-    const hasSavedGraph =
-      savedGraph && ((savedGraph.nodes && savedGraph.nodes.length > 0) || (savedGraph.edges && savedGraph.edges.length > 0));
+    // Filter sessions based on selection
+    const filteredSessions = selectedSessionId === 'all'
+      ? sessions
+      : sessions.filter(s => s.session_id === selectedSessionId);
 
-    if (hasSavedGraph) {
-      setNodes(savedGraph.nodes || []);
-      setEdges(savedGraph.edges || []);
+    if (filteredSessions.length === 0) {
+      setNodes([]);
+      setEdges([]);
       setGraphLoaded(true);
       return;
     }
 
-    if (session.generations.length === 0) {
+    // Collect all generations
+    const allGenerations: Array<{ session: Session; generation: SessionGeneration }> = [];
+    filteredSessions.forEach(session => {
+      session.generations.forEach(generation => {
+        allGenerations.push({ session, generation });
+      });
+    });
+
+    if (allGenerations.length === 0) {
       setNodes([]);
       setEdges([]);
       setGraphLoaded(true);
@@ -311,10 +146,186 @@ const GraphView: React.FC<GraphViewProps> = ({ session, theme, loadImage, onGene
     const newNodes: Node[] = [];
     const newEdges: Edge[] = [];
 
-    session.generations.forEach((generation, genIndex) => {
-      const { nodes: generationNodes, edges: generationEdges } = buildGenerationGraph(generation, genIndex);
-      newNodes.push(...generationNodes);
-      newEdges.push(...generationEdges);
+    // Maps for grouping
+    const promptGroups = new Map<string, string>(); // prompt text -> node id
+    const workflowGroups = new Map<string, string>(); // workflow key -> node id
+    const imageGroups = new Map<string, string>(); // image key -> node id
+
+    let yOffset = BASE_Y;
+
+    allGenerations.forEach(({ session, generation }, genIndex) => {
+      const userName = 'User'; // We'll use a default user name for now
+
+      // 1. Handle Prompt Node (group by exact text)
+      const promptText = generation.prompt || 'Empty prompt';
+      let promptNodeId = promptGroups.get(promptText);
+
+      if (!promptNodeId) {
+        promptNodeId = `prompt-${promptText.substring(0, 20).replace(/\s+/g, '-')}-${genIndex}`;
+        promptGroups.set(promptText, promptNodeId);
+
+        newNodes.push({
+          id: promptNodeId,
+          type: 'prompt',
+          label: 'Prompt',
+          x: BASE_X,
+          y: yOffset,
+          width: NODE_WIDTH,
+          height: NODE_HEIGHT,
+          data: { text: promptText, status: generation.status }
+        });
+      }
+
+      // 2. Handle Control Images (deduplicate)
+      const controlImageIds: string[] = [];
+      (generation.control_images || []).forEach((img, idx) => {
+        const imageKey = getImageKey('control', img.id, img.filename);
+        let imageNodeId = imageGroups.get(imageKey);
+
+        if (!imageNodeId) {
+          imageNodeId = `control-${img.id}`;
+          imageGroups.set(imageKey, imageNodeId);
+          const imageData = loadImage('control', img.id, img.filename);
+
+          newNodes.push({
+            id: imageNodeId,
+            type: 'control-image',
+            label: `Control`,
+            x: BASE_X + COLUMN_SPACING,
+            y: yOffset + idx * 250,
+            width: NODE_WIDTH,
+            height: IMAGE_NODE_HEIGHT,
+            data: { image: img, imageData }
+          });
+        }
+
+        controlImageIds.push(imageNodeId);
+      });
+
+      // 3. Handle Reference Images (deduplicate)
+      const referenceImageIds: string[] = [];
+      (generation.reference_images || []).forEach((img, idx) => {
+        const imageKey = getImageKey('reference', img.id, img.filename);
+        let imageNodeId = imageGroups.get(imageKey);
+
+        if (!imageNodeId) {
+          imageNodeId = `reference-${img.id}`;
+          imageGroups.set(imageKey, imageNodeId);
+          const imageData = loadImage('reference', img.id, img.filename);
+
+          newNodes.push({
+            id: imageNodeId,
+            type: 'reference-image',
+            label: `Reference`,
+            x: BASE_X + COLUMN_SPACING,
+            y: yOffset + (controlImageIds.length + idx) * 250,
+            width: NODE_WIDTH,
+            height: IMAGE_NODE_HEIGHT,
+            data: { image: img, imageData }
+          });
+        }
+
+        referenceImageIds.push(imageNodeId);
+      });
+
+      // 4. Handle Workflow Node (group by exact match of all inputs)
+      const workflowGroupKey = getWorkflowGroupKey(
+        promptText,
+        generation.parameters,
+        userName,
+        controlImageIds,
+        referenceImageIds
+      );
+      let workflowNodeId = workflowGroups.get(workflowGroupKey);
+
+      if (!workflowNodeId) {
+        workflowNodeId = `workflow-${genIndex}`;
+        workflowGroups.set(workflowGroupKey, workflowNodeId);
+
+        newNodes.push({
+          id: workflowNodeId,
+          type: 'workflow',
+          label: 'Workflow',
+          x: BASE_X + COLUMN_SPACING * 2,
+          y: yOffset,
+          width: NODE_WIDTH,
+          height: WORKFLOW_NODE_HEIGHT,
+          data: { parameters: generation.parameters, userName }
+        });
+      }
+
+      // 5. Create edges from prompt to workflow
+      const promptEdge = {
+        from: promptNodeId,
+        to: workflowNodeId,
+        toHandle: 'prompt' as const,
+        color: '#8b5cf6'
+      };
+      if (!newEdges.some(e => e.from === promptEdge.from && e.to === promptEdge.to && e.toHandle === promptEdge.toHandle)) {
+        newEdges.push(promptEdge);
+      }
+
+      // 6. Create edges from control images to workflow
+      controlImageIds.forEach(imageId => {
+        const edge = {
+          from: imageId,
+          to: workflowNodeId,
+          toHandle: 'control' as const,
+          color: '#10b981'
+        };
+        if (!newEdges.some(e => e.from === edge.from && e.to === edge.to && e.toHandle === edge.toHandle)) {
+          newEdges.push(edge);
+        }
+      });
+
+      // 7. Create edges from reference images to workflow
+      referenceImageIds.forEach(imageId => {
+        const edge = {
+          from: imageId,
+          to: workflowNodeId,
+          toHandle: 'reference' as const,
+          color: '#3b82f6'
+        };
+        if (!newEdges.some(e => e.from === edge.from && e.to === edge.to && e.toHandle === edge.toHandle)) {
+          newEdges.push(edge);
+        }
+      });
+
+      // 8. Handle Output Images (deduplicate)
+      const outputImages = generation.output_images || (generation.output_image ? [generation.output_image] : []);
+      outputImages.forEach((img, idx) => {
+        const imageKey = getImageKey('output', img.id, img.filename);
+        let imageNodeId = imageGroups.get(imageKey);
+
+        if (!imageNodeId) {
+          imageNodeId = `output-${img.id}`;
+          imageGroups.set(imageKey, imageNodeId);
+          const imageData = loadImage('output', img.id, img.filename);
+
+          newNodes.push({
+            id: imageNodeId,
+            type: 'output-image',
+            label: `Output`,
+            x: BASE_X + COLUMN_SPACING * 3,
+            y: yOffset + idx * 340,
+            width: NODE_WIDTH,
+            height: OUTPUT_IMAGE_HEIGHT,
+            data: { image: img, imageData, text: generation.output_texts?.[idx] }
+          });
+        }
+
+        // Create edge from workflow to output
+        const edge = {
+          from: workflowNodeId,
+          to: imageNodeId,
+          color: '#f59e0b'
+        };
+        if (!newEdges.some(e => e.from === edge.from && e.to === edge.to)) {
+          newEdges.push(edge);
+        }
+      });
+
+      yOffset += GENERATION_SPACING;
     });
 
     setNodes(newNodes);
@@ -322,7 +333,7 @@ const GraphView: React.FC<GraphViewProps> = ({ session, theme, loadImage, onGene
     setGraphLoaded(true);
   };
 
-  const getHandlePosition = (node: Node, handle?: 'prompt' | 'control' | 'reference') => {
+  const getInputHandlePosition = (node: Node, handle?: 'prompt' | 'control' | 'reference') => {
     if (node.type === 'workflow' && handle) {
       const handleSpacing = node.height / 4;
       const handleYOffsets = {
@@ -335,17 +346,27 @@ const GraphView: React.FC<GraphViewProps> = ({ session, theme, loadImage, onGene
         y: node.y + handleYOffsets[handle]
       };
     }
+    // For all other nodes, input handle is on the left center
     return {
-      x: node.x + node.width / 2,
+      x: node.x,
+      y: node.y + node.height / 2
+    };
+  };
+
+  const getOutputHandlePosition = (node: Node) => {
+    // All nodes have output handle on the right center
+    return {
+      x: node.x + node.width,
       y: node.y + node.height / 2
     };
   };
 
   const generateCurvePath = (from: Node, to: Node, toHandle?: 'prompt' | 'control' | 'reference') => {
-    const fromX = from.x + from.width;
-    const fromY = from.y + from.height / 2;
+    const fromPos = getOutputHandlePosition(from);
+    const fromX = fromPos.x;
+    const fromY = fromPos.y;
 
-    const toPos = getHandlePosition(to, toHandle);
+    const toPos = getInputHandlePosition(to, toHandle);
     const toX = toPos.x;
     const toY = toPos.y;
 
@@ -732,7 +753,8 @@ const GraphView: React.FC<GraphViewProps> = ({ session, theme, loadImage, onGene
   const renderNode = (node: Node) => {
     const isImage = node.type.includes('image');
     const isDark = theme === 'dark';
-    const workflowEditingEnabled = session.generations.length === 0;
+    // Disable workflow editing in graph view since we're viewing across sessions
+    const workflowEditingEnabled = false;
     const isWorkflowEditing = workflowEditingEnabled && editingNode === node.id;
 
     return (
@@ -826,23 +848,12 @@ const GraphView: React.FC<GraphViewProps> = ({ session, theme, loadImage, onGene
             )}
             {node.type === 'workflow' && (
               <div className="p-2 space-y-2">
-                {/* Play button for workflow nodes */}
-                {onGenerateFromNode && (
-                  <button
-                    className={`w-full flex items-center justify-center gap-2 py-2 mb-2 rounded transition-colors ${
-                      isDark
-                        ? 'bg-green-600 hover:bg-green-500 text-white'
-                        : 'bg-green-500 hover:bg-green-400 text-white'
-                    }`}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      handleGenerateFromWorkflow(node.id);
-                    }}
-                    onMouseDown={(e) => e.stopPropagation()}
-                  >
-                    <Play size={14} fill="currentColor" />
-                    Generate
-                  </button>
+                {/* User name if available */}
+                {node.data?.userName && (
+                  <div className={`flex justify-between py-1 border-b ${isDark ? 'border-gray-700' : 'border-gray-200'}`}>
+                    <span className={isDark ? 'text-gray-500' : 'text-gray-600'}>User:</span>
+                    <span className="font-medium">{node.data.userName}</span>
+                  </div>
                 )}
 
                 <div className={`flex justify-between py-1 border-b ${isDark ? 'border-gray-700' : 'border-gray-200'}`}>
@@ -1257,10 +1268,37 @@ const GraphView: React.FC<GraphViewProps> = ({ session, theme, loadImage, onGene
         </g>
       </svg>
 
+      {/* Session Filter */}
+      <div className={`absolute top-20 left-4 rounded-lg p-3 space-y-2 ${isDark ? 'bg-gray-800' : 'bg-white'} shadow-lg`}>
+        <div className="font-semibold text-sm mb-2">Filter by Session</div>
+        <select
+          value={selectedSessionId}
+          onChange={(e) => setSelectedSessionId(e.target.value as string)}
+          className={`w-full px-3 py-2 text-sm rounded border ${
+            isDark
+              ? 'bg-gray-700 border-gray-600 text-gray-200'
+              : 'bg-white border-gray-300 text-gray-700'
+          }`}
+        >
+          <option value="all">All Sessions ({sessions.length})</option>
+          {sessions.map(session => (
+            <option key={session.session_id} value={session.session_id}>
+              {session.title} ({session.generations.length})
+            </option>
+          ))}
+        </select>
+      </div>
+
       {/* Legend */}
       <div className={`absolute bottom-4 left-4 rounded-lg p-3 space-y-1 text-xs ${isDark ? 'bg-gray-800' : 'bg-white'} shadow-lg`}>
-        <div className="font-semibold mb-2">Session: {session.title}</div>
-        <div className="text-xs text-gray-500 mb-2">{session.generations.length} generation(s)</div>
+        <div className="font-semibold mb-2">
+          {selectedSessionId === 'all'
+            ? `All Sessions (${sessions.length})`
+            : sessions.find(s => s.session_id === selectedSessionId)?.title || 'Session'}
+        </div>
+        <div className="text-xs text-gray-500 mb-2">
+          {nodes.length} nodes, {edges.length} edges
+        </div>
         <div className="flex items-center gap-2">
           <div className="w-4 h-1 bg-purple-600 rounded"></div>
           <span>Prompt Flow</span>
