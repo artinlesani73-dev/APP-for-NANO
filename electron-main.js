@@ -2,6 +2,7 @@ const { app, BrowserWindow, dialog, ipcMain } = require('electron');
 const { autoUpdater } = require('electron-updater');
 const path = require('path');
 const fs = require('fs');
+const os = require('os');
 
 const loadDotEnv = () => {
   const envPath = path.join(__dirname, '.env');
@@ -22,6 +23,9 @@ const loadDotEnv = () => {
 loadDotEnv();
 
 let mainWindow;
+let adminWindow;
+
+const isAdminEnabled = () => Boolean(process.env.VITE_ADMIN_PASSPHRASE || process.env.ADMIN_ENABLED === 'true');
 
 function createWindow() {
   mainWindow = new BrowserWindow({
@@ -43,6 +47,41 @@ function createWindow() {
 
   // Load from the 'dist' directory created by Vite build
   mainWindow.loadFile(path.join(__dirname, 'dist', 'index.html'));
+}
+
+function createAdminWindow() {
+  if (adminWindow && !adminWindow.isDestroyed()) {
+    adminWindow.focus();
+    return adminWindow;
+  }
+
+  adminWindow = new BrowserWindow({
+    width: 1200,
+    height: 800,
+    webPreferences: {
+      nodeIntegration: false,
+      contextIsolation: true,
+      preload: path.join(__dirname, 'preload.js')
+    },
+    autoHideMenuBar: true,
+    title: 'Admin Dashboard',
+    titleBarStyle: 'hidden',
+    titleBarOverlay: {
+      color: '#0b1120',
+      symbolColor: '#e4e4e7',
+      height: 40
+    }
+  });
+
+  adminWindow.loadFile(path.join(__dirname, 'dist', 'index.html'), {
+    query: { admin: '1' }
+  });
+
+  adminWindow.on('closed', () => {
+    adminWindow = undefined;
+  });
+
+  return adminWindow;
 }
 
 const sendUpdateStatus = (channel, payload) => {
@@ -141,6 +180,52 @@ ipcMain.handle('fetch-logs', async () => {
 ipcMain.handle('check-for-updates', async () => {
   const result = await autoUpdater.checkForUpdates();
   return result;
+});
+
+ipcMain.handle('verify-admin-passphrase', async (_event, candidate) => {
+  if (!isAdminEnabled()) return false;
+  const expected = process.env.VITE_ADMIN_PASSPHRASE || '';
+  return expected.length > 0 && candidate === expected;
+});
+
+ipcMain.handle('open-admin-window', async (_event, verified) => {
+  if (!verified || !isAdminEnabled()) return false;
+  createAdminWindow();
+  return true;
+});
+
+ipcMain.handle('get-admin-metrics', async () => {
+  const totalMem = os.totalmem();
+  const freeMem = os.freemem();
+  const usedMem = totalMem - freeMem;
+  const uptimeSeconds = os.uptime();
+  const load = os.loadavg();
+  const cpus = os.cpus();
+  const cpuUsage = load[0] / cpus.length;
+
+  const sessionsDir = path.join(getDataPath(), 'sessions');
+  const sessionCount = fs.existsSync(sessionsDir)
+    ? fs.readdirSync(sessionsDir).filter(file => file.endsWith('.json')).length
+    : 0;
+
+  return {
+    platform: os.platform(),
+    arch: os.arch(),
+    uptimeSeconds,
+    memory: {
+      total: totalMem,
+      used: usedMem,
+      free: freeMem,
+      percentUsed: totalMem > 0 ? usedMem / totalMem : 0
+    },
+    cpu: {
+      cores: cpus.length,
+      load: cpuUsage,
+      model: cpus[0]?.model ?? 'unknown'
+    },
+    sessions: sessionCount,
+    timestamp: new Date().toISOString()
+  };
 });
 
 autoUpdater.on('update-available', (info) => {

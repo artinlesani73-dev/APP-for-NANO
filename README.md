@@ -125,6 +125,21 @@ The distributable will be available in the `dist-electron/` directory.
 2. Click the **download icon** on any generated image
 3. Choose save location in the file dialog
 
+## Admin Dashboard
+
+The desktop build ships with a read-only admin dashboard for operational monitoring.
+
+- **Enable access**: set `VITE_ADMIN_PASSPHRASE` (or `ADMIN_ENABLED=true` with a passphrase) in `.env` next to `electron-main.*`.
+- **Open the view**: click **Admin Dashboard** in the top bar. The app prompts for the passphrase and opens a dedicated Electron window with `contextIsolation` enabled.
+- **Data sources**: metrics are pulled locally via `os` (CPU, memory, uptime) and session counts from the `sessions` directory. Activity logs reuse the same on-device audit log.
+- **Navigation**: use the same button to re-open the dashboard window. Deep-linking `?admin=1` will auto-open the dashboard on launch.
+
+### Admin QA Checklist
+- Unlock the dashboard with the configured passphrase (expected failure on wrong input).
+- Verify live metrics refresh (CPU, memory, uptime update every 5 seconds or on manual refresh).
+- Confirm activity feed matches recent actions in the main app.
+- On macOS/Windows/Linux, open and close the admin window and return to the main app without crashes.
+
 ## Project Structure
 
 ```
