@@ -113,15 +113,6 @@ function AppContent() {
   }, []);
 
   useEffect(() => {
-    // Load initial data
-    const loadedSessions = StorageService.getSessions();
-    setSessions(loadedSessions);
-    if (loadedSessions.length > 0) {
-      handleSelectSession(loadedSessions[0].session_id);
-    } else {
-      handleNewSession();
-    }
-
     // Check API Key Status
     GeminiService.checkApiKey().then(setApiKeyConnected);
 
@@ -135,6 +126,39 @@ function AppContent() {
         document.documentElement.classList.add('dark'); // Default
     }
   }, []);
+
+  useEffect(() => {
+    if (!currentUser) {
+      setSessions([]);
+      setCurrentSessionId(null);
+      return;
+    }
+
+    let cancelled = false;
+
+    const hydrateSessions = async () => {
+      try {
+        await StorageService.syncUserData?.();
+      } catch (err) {
+        console.error('Failed to sync user data to shared storage', err);
+      }
+
+      const loadedSessions = StorageService.getSessions();
+      if (cancelled) return;
+      setSessions(loadedSessions);
+      if (loadedSessions.length > 0) {
+        handleSelectSession(loadedSessions[0].session_id);
+      } else {
+        handleNewSession();
+      }
+    };
+
+    hydrateSessions();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [currentUser]);
 
   // --- HANDLERS ---
   const handleLogin = (user: { displayName: string; id: string }, persist = true) => {
@@ -187,7 +211,7 @@ function AppContent() {
 
   const handleNewSession = () => {
     const newSession = StorageService.createSession();
-    setSessions([newSession, ...sessions]);
+    setSessions(prev => [newSession, ...prev]);
     setCurrentSessionId(newSession.session_id);
     resetInputs();
     LoggerService.logAction('Created new session', { sessionId: newSession.session_id });

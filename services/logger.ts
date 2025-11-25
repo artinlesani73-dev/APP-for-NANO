@@ -40,6 +40,7 @@ declare global {
       saveSessionSync?: (sessionId: string, sessionData: any) => { success: boolean; error?: string };
       loadSessionSync?: (sessionId: string) => any;
       deleteSessionSync?: (sessionId: string) => { success: boolean; error?: string };
+      syncUserData?: () => Promise<{ success: boolean; error?: string; sharedPath?: string }>;
       logEvent?: (entry: LogEntry) => void;
       fetchLogs?: () => Promise<LogEntry[]>;
       setUserContext?: (user: { displayName: string; id?: string } | null) => void;
