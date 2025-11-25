@@ -150,3 +150,14 @@ export interface AppState {
   chats: Chat[];
   activeGeneration: Generation | null;
 }
+
+export type LogEventType = 'login' | 'action' | 'error';
+
+export interface LogEntry {
+  id: string;
+  timestamp: string;
+  user: string;
+  type: LogEventType;
+  message: string;
+  context?: Record<string, unknown>;
+}
