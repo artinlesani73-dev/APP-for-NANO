@@ -10,14 +10,14 @@ export type HistoryGalleryItem =
       generation: SessionGeneration;
       output: StoredImageMeta;
       outputIndex: number;
+      texts: string[];
     }
   | {
       kind: 'text';
       sessionId: string;
       sessionTitle: string;
       generation: SessionGeneration;
-      text: string;
-      textIndex: number;
+      texts: string[];
     };
 
 interface HistoryPanelProps {
@@ -57,15 +57,13 @@ export const HistoryPanel: React.FC<HistoryPanelProps> = ({
             item.kind === 'image'
               ? loadImage('output', item.output.id, item.output.filename)
               : null;
-          const hasText = item.generation.output_texts && item.generation.output_texts.length > 0;
+          const hasText = item.texts.length > 0;
+          const textPreview = hasText ? item.texts.join('\n').slice(0, 180) : '';
+          const textCount = item.texts.length;
 
           return (
             <div
-              key={
-                item.kind === 'image'
-                  ? `${item.generation.generation_id}-${item.output.id}`
-                  : `${item.generation.generation_id}-text-${item.textIndex}`
-              }
+              key={`${item.generation.generation_id}-${item.kind === 'image' ? item.output.id : 'text'}`}
               onClick={() => onSelectGeneration(item.sessionId, item.generation)}
               className={`group border rounded-lg overflow-hidden cursor-pointer transition-all backdrop-blur-sm ${
                 isSelected
@@ -92,7 +90,7 @@ export const HistoryPanel: React.FC<HistoryPanelProps> = ({
                       <FileText size={20} />
                     </div>
                     <p className="text-xs leading-relaxed line-clamp-4">
-                      {item.text}
+                      {textPreview}
                     </p>
                   </div>
                 )}
@@ -104,18 +102,12 @@ export const HistoryPanel: React.FC<HistoryPanelProps> = ({
                   {hasText && (
                     <span className="px-2 py-0.5 rounded-full bg-blue-100 dark:bg-blue-900/50 text-blue-700 dark:text-blue-200 border border-blue-200 dark:border-blue-800 flex items-center gap-1">
                       <TextQuote size={12} />
-                      {item.generation.output_texts?.length}
+                      {textCount}
                     </span>
                   )}
                   {item.kind === 'image' && item.outputIndex > 0 && (
                     <span className="px-2 py-0.5 rounded-full bg-zinc-50 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-300 border border-zinc-200 dark:border-zinc-700">
                       Output {item.outputIndex + 1}
-                    </span>
-                  )}
-                  {item.kind === 'text' && (
-                    <span className="px-2 py-0.5 rounded-full bg-amber-100 dark:bg-amber-900/50 text-amber-700 dark:text-amber-200 border border-amber-200 dark:border-amber-800 flex items-center gap-1">
-                      <TextQuote size={12} />
-                      Text {item.textIndex + 1}
                     </span>
                   )}
                 </div>
@@ -149,6 +141,15 @@ export const HistoryPanel: React.FC<HistoryPanelProps> = ({
                     <span>{item.generation.generation_time_ms}ms</span>
                   )}
                 </div>
+                {hasText && (
+                  <div className="text-[11px] text-zinc-600 dark:text-zinc-300 bg-zinc-100/70 dark:bg-zinc-800/60 rounded p-2 border border-zinc-200 dark:border-zinc-700">
+                    <p className="font-semibold text-xs mb-1 flex items-center gap-1">
+                      <TextQuote size={12} />
+                      {textCount === 1 ? 'Text output' : `${textCount} text outputs`}
+                    </p>
+                    <p className="line-clamp-3 leading-relaxed text-xs">{textPreview}</p>
+                  </div>
+                )}
               </div>
             </div>
           );

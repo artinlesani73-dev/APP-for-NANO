@@ -61,9 +61,21 @@ function AppContent() {
   const historyItems = useMemo<HistoryGalleryItem[]>(() => {
     return sessions
       .flatMap(session =>
-        session.generations.flatMap((generation) => {
+        session.generations.flatMap<HistoryGalleryItem>((generation) => {
           const outputs = generation.output_images || (generation.output_image ? [generation.output_image] : []);
           const texts = generation.output_texts || [];
+
+          if (outputs.length === 0) {
+            const textItem: HistoryGalleryItem = {
+              kind: 'text',
+              sessionId: session.session_id,
+              sessionTitle: session.title,
+              generation,
+              texts
+            };
+
+            return [textItem];
+          }
 
           const imageItems: HistoryGalleryItem[] = outputs.map((output, idx) => ({
             kind: 'image',
@@ -71,19 +83,11 @@ function AppContent() {
             sessionTitle: session.title,
             generation,
             output,
-            outputIndex: idx
+            outputIndex: idx,
+            texts
           }));
 
-          const textItems: HistoryGalleryItem[] = texts.map((text, idx) => ({
-            kind: 'text',
-            sessionId: session.session_id,
-            sessionTitle: session.title,
-            generation,
-            text,
-            textIndex: idx
-          }));
-
-          return [...imageItems, ...textItems];
+          return imageItems;
         })
       )
       .sort((a, b) => new Date(b.generation.timestamp).getTime() - new Date(a.generation.timestamp).getTime());
@@ -552,10 +556,20 @@ function AppContent() {
             </div>
         </header>
 
-        {/* Content Area - Graph View Deactivated */}
-        {/* Result View - Original Layout */}
+        {/* Content Area */}
           <div className="flex-1 overflow-y-auto p-6 bg-zinc-50 dark:bg-black/50">
-            <div className="max-w-6xl mx-auto grid grid-cols-12 gap-6">
+            {showHistory ? (
+              <div className="max-w-7xl mx-auto h-full min-h-[calc(100vh-6rem)]">
+                <HistoryPanel
+                  items={historyItems}
+                  onSelectGeneration={handleSelectGeneration}
+                  selectedGenerationId={currentGeneration?.generation_id}
+                  onExportImage={handleExportImage}
+                  loadImage={(role, id, filename) => StorageService.loadImage(role, id, filename)}
+                />
+              </div>
+            ) : (
+              <div className="max-w-6xl mx-auto grid grid-cols-12 gap-6">
 
                 {/* Left Column: Inputs (8/12) */}
                 <div className="col-span-12 lg:col-span-8 space-y-6">
@@ -583,29 +597,19 @@ function AppContent() {
                         />
                     </div>
 
-                    {/* Output Area or History */}
+                    {/* Output Area */}
                     <div className="h-[500px]">
-                        {showHistory ? (
-                            <HistoryPanel
-                                items={historyItems}
-                                onSelectGeneration={handleSelectGeneration}
-                                selectedGenerationId={currentGeneration?.generation_id}
-                                onExportImage={handleExportImage}
-                                loadImage={(role, id, filename) => StorageService.loadImage(role, id, filename)}
-                            />
-                        ) : (
-                            <ResultPanel
-                                isGenerating={isGenerating}
-                                generation={currentGeneration}
-                                outputImages={(currentGeneration
-                                  ? currentGeneration.output_images || (currentGeneration.output_image ? [currentGeneration.output_image] : [])
-                                  : []
-                                )
-                                  .map((meta, idx) => ({ dataUri: outputImagesData[idx], filename: meta.filename }))
-                                  .filter(img => !!img.dataUri)}
-                                outputTexts={outputTexts}
-                            />
-                        )}
+                        <ResultPanel
+                            isGenerating={isGenerating}
+                            generation={currentGeneration}
+                            outputImages={(currentGeneration
+                              ? currentGeneration.output_images || (currentGeneration.output_image ? [currentGeneration.output_image] : [])
+                              : []
+                            )
+                              .map((meta, idx) => ({ dataUri: outputImagesData[idx], filename: meta.filename }))
+                              .filter(img => !!img.dataUri)}
+                            outputTexts={outputTexts}
+                        />
                     </div>
                 </div>
 
@@ -651,7 +655,8 @@ function AppContent() {
                     )}
                 </div>
 
-            </div>
+              </div>
+            )}
           </div>
       </div>
 
