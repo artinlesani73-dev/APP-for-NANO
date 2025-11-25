@@ -93,6 +93,23 @@ const GraphView: React.FC<GraphViewProps> = ({ sessions, theme, loadImage, onGen
     return () => svg.removeEventListener('wheel', handleWheel);
   }, []);
 
+  // Helper function to create a unique key for workflow grouping
+  const getWorkflowGroupKey = (
+    promptText: string,
+    params: GenerationConfig,
+    userName: string,
+    controlImageIds: string[],
+    referenceImageIds: string[]
+  ) => {
+    return JSON.stringify({
+      prompt: promptText,
+      params,
+      user: userName,
+      control: controlImageIds.sort(),
+      reference: referenceImageIds.sort()
+    });
+  };
+
   // Helper function to get image key for deduplication
   const getImageKey = (role: 'control' | 'reference' | 'output', id: string, filename: string) => {
     return `${role}-${id}-${filename}`;
@@ -131,6 +148,7 @@ const GraphView: React.FC<GraphViewProps> = ({ sessions, theme, loadImage, onGen
 
     // Maps for grouping
     const promptGroups = new Map<string, string>(); // prompt text -> node id
+    const workflowGroups = new Map<string, string>(); // workflow key -> node id
     const imageGroups = new Map<string, string>(); // image key -> node id
 
     let yOffset = BASE_Y;
@@ -210,19 +228,31 @@ const GraphView: React.FC<GraphViewProps> = ({ sessions, theme, loadImage, onGen
         referenceImageIds.push(imageNodeId);
       });
 
-      // 4. Handle Workflow Node (create one for each generation, no grouping)
-      const workflowNodeId = `workflow-${session.session_id}-${generation.generation_id}`;
+      // 4. Handle Workflow Node (group by exact match of all inputs)
+      const workflowGroupKey = getWorkflowGroupKey(
+        promptText,
+        generation.parameters,
+        userName,
+        controlImageIds,
+        referenceImageIds
+      );
+      let workflowNodeId = workflowGroups.get(workflowGroupKey);
 
-      newNodes.push({
-        id: workflowNodeId,
-        type: 'workflow',
-        label: 'Workflow',
-        x: BASE_X + COLUMN_SPACING * 2,
-        y: yOffset,
-        width: NODE_WIDTH,
-        height: WORKFLOW_NODE_HEIGHT,
-        data: { parameters: generation.parameters, userName }
-      });
+      if (!workflowNodeId) {
+        workflowNodeId = `workflow-${genIndex}`;
+        workflowGroups.set(workflowGroupKey, workflowNodeId);
+
+        newNodes.push({
+          id: workflowNodeId,
+          type: 'workflow',
+          label: 'Workflow',
+          x: BASE_X + COLUMN_SPACING * 2,
+          y: yOffset,
+          width: NODE_WIDTH,
+          height: WORKFLOW_NODE_HEIGHT,
+          data: { parameters: generation.parameters, userName }
+        });
+      }
 
       // 5. Create edges from prompt to workflow
       const promptEdge = {
@@ -824,25 +854,6 @@ const GraphView: React.FC<GraphViewProps> = ({ sessions, theme, loadImage, onGen
                     <span className={isDark ? 'text-gray-500' : 'text-gray-600'}>User:</span>
                     <span className="font-medium">{node.data.userName}</span>
                   </div>
-                )}
-
-                {/* Play button for workflow nodes */}
-                {onGenerateFromNode && (
-                  <button
-                    className={`w-full flex items-center justify-center gap-2 py-2 mb-2 rounded transition-colors ${
-                      isDark
-                        ? 'bg-green-600 hover:bg-green-500 text-white'
-                        : 'bg-green-500 hover:bg-green-400 text-white'
-                    }`}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      handleGenerateFromWorkflow(node.id);
-                    }}
-                    onMouseDown={(e) => e.stopPropagation()}
-                  >
-                    <Play size={14} fill="currentColor" />
-                    Generate
-                  </button>
                 )}
 
                 <div className={`flex justify-between py-1 border-b ${isDark ? 'border-gray-700' : 'border-gray-200'}`}>
