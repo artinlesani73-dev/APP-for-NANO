@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Sidebar } from './components/Sidebar';
 import { PromptPanel } from './components/PromptPanel';
 import { MultiImageUploadPanel } from './components/MultiImageUploadPanel';
@@ -35,7 +35,8 @@ export default function App() {
   // Output State
   const [isGenerating, setIsGenerating] = useState(false);
   const [currentGeneration, setCurrentGeneration] = useState<SessionGeneration | null>(null);
-  const [outputImageData, setOutputImageData] = useState<string | null>(null);
+  const [outputImagesData, setOutputImagesData] = useState<string[]>([]);
+  const [outputTexts, setOutputTexts] = useState<string[]>([]);
 
   // API Key State
   const [apiKeyConnected, setApiKeyConnected] = useState(false);
@@ -154,13 +155,18 @@ export default function App() {
       setReferenceImagesData([]);
     }
 
-    // Load output image
-    if (gen.output_image) {
-      const imageData = StorageService.loadImage('output', gen.output_image.id, gen.output_image.filename);
-      setOutputImageData(imageData);
+    // Load output image(s)
+    const outputs = gen.output_images || (gen.output_image ? [gen.output_image] : []);
+    if (outputs.length > 0) {
+      const imageData = outputs
+        .map(img => StorageService.loadImage('output', img.id, img.filename))
+        .filter(data => data !== null) as string[];
+      setOutputImagesData(imageData);
     } else {
-      setOutputImageData(null);
+      setOutputImagesData([]);
     }
+
+    setOutputTexts(gen.output_texts || []);
   };
 
   const resetInputs = () => {
@@ -169,7 +175,8 @@ export default function App() {
     setReferenceImagesData([]);
     setConfig(DEFAULT_CONFIG);
     setCurrentGeneration(null);
-    setOutputImageData(null);
+    setOutputImagesData([]);
+    setOutputTexts([]);
   };
 
   const handleImageUpload = async (file: File, role: 'control' | 'reference') => {
@@ -232,7 +239,8 @@ export default function App() {
 
     setIsGenerating(true);
     setCurrentGeneration(null);
-    setOutputImageData(null);
+    setOutputImagesData([]);
+    setOutputTexts([]);
 
     // 2. Create Generation Record
     const gen = StorageService.createGeneration(
@@ -267,10 +275,14 @@ export default function App() {
           const completedGen = updatedSession.generations.find(g => g.generation_id === gen.generation_id);
           if (completedGen) {
             setCurrentGeneration(completedGen);
-            if (completedGen.output_image) {
-              const outputData = StorageService.loadImage('output', completedGen.output_image.id, completedGen.output_image.filename);
-              setOutputImageData(outputData);
+            const outputs = completedGen.output_images || (completedGen.output_image ? [completedGen.output_image] : []);
+            if (outputs.length > 0) {
+              const outputData = outputs
+                .map(img => StorageService.loadImage('output', img.id, img.filename))
+                .filter(data => data !== null) as string[];
+              setOutputImagesData(outputData);
             }
+            setOutputTexts(completedGen.output_texts || []);
           }
         }
 
@@ -472,10 +484,14 @@ export default function App() {
                       const completedGen = updatedSession.generations.find(g => g.generation_id === gen.generation_id);
                       if (completedGen) {
                         setCurrentGeneration(completedGen);
-                        if (completedGen.output_image) {
-                          const outputData = StorageService.loadImage('output', completedGen.output_image.id, completedGen.output_image.filename);
-                          setOutputImageData(outputData);
+                        const outputs = completedGen.output_images || (completedGen.output_image ? [completedGen.output_image] : []);
+                        if (outputs.length > 0) {
+                          const outputData = outputs
+                            .map(img => StorageService.loadImage('output', img.id, img.filename))
+                            .filter(data => data !== null) as string[];
+                          setOutputImagesData(outputData);
                         }
+                        setOutputTexts(completedGen.output_texts || []);
                       }
                     }
 
@@ -558,8 +574,14 @@ export default function App() {
                         ) : (
                             <ResultPanel
                                 isGenerating={isGenerating}
-                                generation={currentGeneration as any}
-                                outputImage={outputImageData ? { data_uri: outputImageData } as any : null}
+                                generation={currentGeneration}
+                                outputImages={(currentGeneration
+                                  ? currentGeneration.output_images || (currentGeneration.output_image ? [currentGeneration.output_image] : [])
+                                  : []
+                                )
+                                  .map((meta, idx) => ({ dataUri: outputImagesData[idx], filename: meta.filename }))
+                                  .filter(img => !!img.dataUri)}
+                                outputTexts={outputTexts}
                             />
                         )}
                     </div>

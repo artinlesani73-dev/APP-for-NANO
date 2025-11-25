@@ -212,8 +212,9 @@ export const StorageService = {
   completeGeneration: (
     sessionId: string,
     generationId: string,
-    outputImageData: string,
-    timeMs: number
+    outputImageData: string | string[] | null,
+    timeMs: number,
+    outputTextData?: string | string[]
   ) => {
     const session = StorageService.loadSession(sessionId);
     if (!session) return;
@@ -221,9 +222,22 @@ export const StorageService = {
     const generation = session.generations.find(g => g.generation_id === generationId);
     if (!generation) return;
 
-    // Save output image
-    const imageInfo = StorageService.saveImage(outputImageData, 'output');
-    generation.output_image = imageInfo;
+    const imageDataList = outputImageData === null
+      ? []
+      : Array.isArray(outputImageData)
+        ? outputImageData
+        : [outputImageData];
+
+    const imageInfos = imageDataList.map(image => StorageService.saveImage(image, 'output'));
+
+    if (imageInfos.length > 0) {
+      generation.output_image = imageInfos[0];
+      generation.output_images = imageInfos;
+    }
+
+    if (outputTextData) {
+      generation.output_texts = Array.isArray(outputTextData) ? outputTextData : [outputTextData];
+    }
     generation.generation_time_ms = timeMs;
     generation.status = 'completed';
 

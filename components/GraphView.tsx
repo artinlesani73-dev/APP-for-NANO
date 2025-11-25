@@ -12,7 +12,7 @@ interface GraphViewProps {
 interface Node {
   id: string;
   generationId?: string; // Optional for standalone nodes
-  type: 'prompt' | 'workflow' | 'control-image' | 'reference-image' | 'output-image';
+  type: 'prompt' | 'workflow' | 'control-image' | 'reference-image' | 'output-image' | 'output-text';
   label: string;
   x: number;
   y: number;
@@ -50,6 +50,7 @@ const GraphView: React.FC<GraphViewProps> = ({ session, theme, loadImage, onGene
   const containerRef = useRef<HTMLDivElement>(null);
   const [nodes, setNodes] = useState<Node[]>([]);
   const [edges, setEdges] = useState<Edge[]>([]);
+  const [sessionEdges, setSessionEdges] = useState<Edge[]>([]);
   const [pan, setPan] = useState({ x: 50, y: 50 });
   const [zoom, setZoom] = useState(0.7);
   const [isPanning, setIsPanning] = useState(false);
@@ -80,17 +81,8 @@ const GraphView: React.FC<GraphViewProps> = ({ session, theme, loadImage, onGene
 
   // Sync standalone edges
   useEffect(() => {
-    setEdges(prevEdges => {
-      // Keep session-generated edges, add standalone edges
-      const sessionEdges = prevEdges.filter(e => {
-        // Session edges connect session nodes
-        const fromNode = nodes.find(n => n.id === e.from);
-        const toNode = nodes.find(n => n.id === e.to);
-        return fromNode && toNode && !fromNode.isStandalone && !toNode.isStandalone;
-      });
-      return [...sessionEdges, ...standaloneEdges];
-    });
-  }, [standaloneEdges]);
+    setEdges([...sessionEdges, ...standaloneEdges]);
+  }, [standaloneEdges, sessionEdges]);
 
   // Handle wheel events with non-passive listener
   useEffect(() => {
@@ -250,34 +242,69 @@ const GraphView: React.FC<GraphViewProps> = ({ session, theme, loadImage, onGene
 
       currentX += columnSpacing;
 
-      // Column 3: Output Image
-      if (generation.output_image) {
-        const outputNodeId = `gen${genIndex}-output`;
-        const outputY = centerY - imageNodeHeight / 2 + nodeHeight / 2;
-        const imageData = loadImage('output', generation.output_image.id, generation.output_image.filename);
+      // Column 3: Output Image/Text
+      const outputImages = generation.output_images || (generation.output_image ? [generation.output_image] : []);
+      const outputTexts = generation.output_texts || [];
+      const totalOutputs = outputImages.length + outputTexts.length;
 
-        newNodes.push({
-          id: outputNodeId,
-          generationId: generation.generation_id,
-          type: 'output-image',
-          label: `Output #${genIndex + 1}`,
-          x: currentX,
-          y: outputY,
-          width: nodeWidth,
-          height: imageNodeHeight,
-          data: { image: generation.output_image, imageData }
+      if (totalOutputs > 0) {
+        const outputSpacing = 250;
+        const outputStartY = centerY - ((totalOutputs - 1) * outputSpacing) / 2;
+        let currentOutputY = outputStartY;
+
+        outputImages.forEach((image, idx) => {
+          const outputNodeId = `gen${genIndex}-output-${idx}`;
+          const imageData = loadImage('output', image.id, image.filename);
+
+          newNodes.push({
+            id: outputNodeId,
+            generationId: generation.generation_id,
+            type: 'output-image',
+            label: `Output ${idx + 1}`,
+            x: currentX,
+            y: currentOutputY,
+            width: nodeWidth,
+            height: imageNodeHeight,
+            data: { image, imageData }
+          });
+
+          newEdges.push({
+            from: workflowNodeId,
+            to: outputNodeId,
+            color: '#f59e0b' // amber
+          });
+
+          currentOutputY += outputSpacing;
         });
 
-        newEdges.push({
-          from: workflowNodeId,
-          to: outputNodeId,
-          color: '#f59e0b' // amber
+        outputTexts.forEach((text, idx) => {
+          const textNodeId = `gen${genIndex}-output-text-${idx}`;
+          newNodes.push({
+            id: textNodeId,
+            generationId: generation.generation_id,
+            type: 'output-text',
+            label: `Text ${idx + 1}`,
+            x: currentX,
+            y: currentOutputY,
+            width: nodeWidth,
+            height: nodeHeight,
+            data: { text }
+          });
+
+          newEdges.push({
+            from: workflowNodeId,
+            to: textNodeId,
+            color: '#f59e0b'
+          });
+
+          currentOutputY += outputSpacing;
         });
       }
     });
 
     setNodes(newNodes);
-    setEdges(newEdges);
+    setSessionEdges(newEdges);
+    setEdges([...newEdges, ...standaloneEdges]);
   };
 
   const getHandlePosition = (node: Node, handle?: 'prompt' | 'control' | 'reference') => {
@@ -596,6 +623,12 @@ const GraphView: React.FC<GraphViewProps> = ({ session, theme, loadImage, onGene
         node.id === nodeId ? { ...node, data: { ...node.data, ...newData } } : node
       )
     );
+
+    setNodes(prev =>
+      prev.map(node =>
+        node.id === nodeId ? { ...node, data: { ...node.data, ...newData } } : node
+      )
+    );
   };
 
   // Handle connection start from a handle
@@ -748,7 +781,7 @@ const GraphView: React.FC<GraphViewProps> = ({ session, theme, loadImage, onGene
             {node.type === 'prompt' && (
               node.isStandalone && editingNode === node.id ? (
                 <textarea
-                  className={`w-full h-full p-2 text-xs resize-none rounded ${
+                  className={`w-full h-full p-2 text-xs resize-none rounded select-text ${
                     isDark ? 'bg-gray-700 text-gray-300' : 'bg-gray-100 text-gray-700'
                   }`}
                   value={node.data.text}
@@ -796,7 +829,7 @@ const GraphView: React.FC<GraphViewProps> = ({ session, theme, loadImage, onGene
 
                 <div className={`flex justify-between py-1 border-b ${isDark ? 'border-gray-700' : 'border-gray-200'}`}>
                   <span className={isDark ? 'text-gray-500' : 'text-gray-600'}>Model:</span>
-                  {node.isStandalone && editingNode === node.id ? (
+                  {editingNode === node.id ? (
                     <select
                       className={`text-xs px-1 rounded ${isDark ? 'bg-gray-700' : 'bg-gray-100'}`}
                       value={node.data.parameters.model}
@@ -816,7 +849,7 @@ const GraphView: React.FC<GraphViewProps> = ({ session, theme, loadImage, onGene
                 </div>
                 <div className={`flex justify-between py-1 border-b ${isDark ? 'border-gray-700' : 'border-gray-200'}`}>
                   <span className={isDark ? 'text-gray-500' : 'text-gray-600'}>Temperature:</span>
-                  {node.isStandalone && editingNode === node.id ? (
+                  {editingNode === node.id ? (
                     <input
                       type="number"
                       step="0.1"
@@ -837,7 +870,7 @@ const GraphView: React.FC<GraphViewProps> = ({ session, theme, loadImage, onGene
                 </div>
                 <div className={`flex justify-between py-1 border-b ${isDark ? 'border-gray-700' : 'border-gray-200'}`}>
                   <span className={isDark ? 'text-gray-500' : 'text-gray-600'}>Top-p:</span>
-                  {node.isStandalone && editingNode === node.id ? (
+                  {editingNode === node.id ? (
                     <input
                       type="number"
                       step="0.05"
@@ -858,7 +891,7 @@ const GraphView: React.FC<GraphViewProps> = ({ session, theme, loadImage, onGene
                 </div>
                 <div className={`flex justify-between py-1 border-b ${isDark ? 'border-gray-700' : 'border-gray-200'}`}>
                   <span className={isDark ? 'text-gray-500' : 'text-gray-600'}>Aspect Ratio:</span>
-                  {node.isStandalone && editingNode === node.id ? (
+                  {editingNode === node.id ? (
                     <select
                       className={`text-xs px-1 rounded ${isDark ? 'bg-gray-700' : 'bg-gray-100'}`}
                       value={node.data.parameters.aspect_ratio}
@@ -881,7 +914,7 @@ const GraphView: React.FC<GraphViewProps> = ({ session, theme, loadImage, onGene
                 </div>
                 <div className={`flex justify-between py-1 border-b ${isDark ? 'border-gray-700' : 'border-gray-200'}`}>
                   <span className={isDark ? 'text-gray-500' : 'text-gray-600'}>Image Size:</span>
-                  {node.isStandalone && editingNode === node.id ? (
+                  {editingNode === node.id ? (
                     <select
                       className={`text-xs px-1 rounded ${isDark ? 'bg-gray-700' : 'bg-gray-100'}`}
                       value={node.data.parameters.image_size}
@@ -901,7 +934,7 @@ const GraphView: React.FC<GraphViewProps> = ({ session, theme, loadImage, onGene
                 </div>
                 <div className={`flex justify-between py-1`}>
                   <span className={isDark ? 'text-gray-500' : 'text-gray-600'}>Safety:</span>
-                  {node.isStandalone && editingNode === node.id ? (
+                  {editingNode === node.id ? (
                     <select
                       className={`text-xs px-1 rounded ${isDark ? 'bg-gray-700' : 'bg-gray-100'}`}
                       value={node.data.parameters.safety_filter}
@@ -922,7 +955,7 @@ const GraphView: React.FC<GraphViewProps> = ({ session, theme, loadImage, onGene
                 </div>
 
                 {/* Edit button for standalone workflow nodes */}
-                {node.isStandalone && !editingNode && (
+                {editingNode !== node.id && (
                   <button
                     className={`w-full py-1 mt-2 text-xs rounded transition-colors ${
                       isDark
@@ -938,7 +971,7 @@ const GraphView: React.FC<GraphViewProps> = ({ session, theme, loadImage, onGene
                     Edit Parameters
                   </button>
                 )}
-                {node.isStandalone && editingNode === node.id && (
+                {editingNode === node.id && (
                   <button
                     className={`w-full py-1 mt-2 text-xs rounded transition-colors ${
                       isDark
@@ -963,6 +996,7 @@ const GraphView: React.FC<GraphViewProps> = ({ session, theme, loadImage, onGene
                     src={node.data.imageData}
                     alt={node.label}
                     className="w-full h-36 object-cover rounded"
+                    draggable={false}
                   />
                 ) : (
                   <div className={`w-full h-36 flex items-center justify-center rounded ${isDark ? 'bg-gray-700' : 'bg-gray-100'}`}>
@@ -972,6 +1006,15 @@ const GraphView: React.FC<GraphViewProps> = ({ session, theme, loadImage, onGene
                 <p className={`text-xs mt-2 ${isDark ? 'text-gray-400' : 'text-gray-600'} truncate`}>
                   {node.data.image?.filename || 'No image'}
                 </p>
+              </div>
+            )}
+            {node.type === 'output-text' && (
+              <div className="h-full flex flex-col">
+                <div className={`w-full h-full p-2 rounded ${isDark ? 'bg-gray-800 text-gray-200' : 'bg-gray-50 text-gray-700'}`}>
+                  <p className="text-sm leading-relaxed whitespace-pre-wrap break-words max-h-32 overflow-y-auto">
+                    {node.data.text || 'Text output'}
+                  </p>
+                </div>
               </div>
             )}
           </div>
@@ -1119,7 +1162,7 @@ const GraphView: React.FC<GraphViewProps> = ({ session, theme, loadImage, onGene
   return (
     <div
       ref={containerRef}
-      className={`w-full h-full relative ${isDark ? 'bg-gray-900' : 'bg-gray-50'}`}
+      className={`w-full h-full relative ${isDark ? 'bg-gray-900' : 'bg-gray-50'} select-none`}
     >
       {/* Controls */}
       <div className={`absolute top-4 right-4 z-10 rounded-lg p-2 space-y-2 ${isDark ? 'bg-gray-800' : 'bg-white'} shadow-lg`}>
