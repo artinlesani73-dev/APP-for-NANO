@@ -34,6 +34,7 @@ interface ContextMenu {
   y: number;
   svgX: number;
   svgY: number;
+  nodeId?: string;
 }
 
 const DEFAULT_CONFIG: GenerationConfig = {
@@ -50,6 +51,7 @@ const GraphView: React.FC<GraphViewProps> = ({ session, theme, loadImage, onGene
   const containerRef = useRef<HTMLDivElement>(null);
   const [nodes, setNodes] = useState<Node[]>([]);
   const [edges, setEdges] = useState<Edge[]>([]);
+  const [sessionNodes, setSessionNodes] = useState<Node[]>([]);
   const [sessionEdges, setSessionEdges] = useState<Edge[]>([]);
   const [pan, setPan] = useState({ x: 50, y: 50 });
   const [zoom, setZoom] = useState(0.7);
@@ -70,19 +72,15 @@ const GraphView: React.FC<GraphViewProps> = ({ session, theme, loadImage, onGene
     generateGraphLayout();
   }, [session]);
 
-  // Sync standalone nodes into the main nodes array without regenerating layout
-  useEffect(() => {
-    setNodes(prevNodes => {
-      // Keep session-generated nodes, update standalone nodes
-      const sessionNodes = prevNodes.filter(n => !n.isStandalone);
-      return [...sessionNodes, ...standaloneNodes];
-    });
-  }, [standaloneNodes]);
-
   // Sync standalone edges
   useEffect(() => {
     setEdges([...sessionEdges, ...standaloneEdges]);
   }, [standaloneEdges, sessionEdges]);
+
+  // Combine session and standalone nodes for rendering
+  useEffect(() => {
+    setNodes([...sessionNodes, ...standaloneNodes]);
+  }, [sessionNodes, standaloneNodes]);
 
   // Handle wheel events with non-passive listener
   useEffect(() => {
@@ -106,9 +104,10 @@ const GraphView: React.FC<GraphViewProps> = ({ session, theme, loadImage, onGene
     const nodeWidth = 220;
     const nodeHeight = 160;
     const imageNodeHeight = 220;
+    const outputImageHeight = 300;
     const workflowNodeHeight = 280;
     const generationSpacingX = 1200; // Horizontal spacing between generations
-    const generationSpacingY = 800; // Vertical spacing between generations
+    const generationSpacingY = 1100; // Vertical spacing between generations
     const columnSpacing = 300;
 
     let currentGenX = 100;
@@ -245,16 +244,18 @@ const GraphView: React.FC<GraphViewProps> = ({ session, theme, loadImage, onGene
       // Column 3: Output Image/Text
       const outputImages = generation.output_images || (generation.output_image ? [generation.output_image] : []);
       const outputTexts = generation.output_texts || [];
+      const textsQueue = [...outputTexts];
       const totalOutputs = outputImages.length + outputTexts.length;
 
       if (totalOutputs > 0) {
-        const outputSpacing = 250;
+        const outputSpacing = 320;
         const outputStartY = centerY - ((totalOutputs - 1) * outputSpacing) / 2;
         let currentOutputY = outputStartY;
 
         outputImages.forEach((image, idx) => {
           const outputNodeId = `gen${genIndex}-output-${idx}`;
           const imageData = loadImage('output', image.id, image.filename);
+          const attachedText = textsQueue.shift();
 
           newNodes.push({
             id: outputNodeId,
@@ -264,8 +265,8 @@ const GraphView: React.FC<GraphViewProps> = ({ session, theme, loadImage, onGene
             x: currentX,
             y: currentOutputY,
             width: nodeWidth,
-            height: imageNodeHeight,
-            data: { image, imageData }
+            height: outputImageHeight,
+            data: { image, imageData, text: attachedText }
           });
 
           newEdges.push({
@@ -277,7 +278,7 @@ const GraphView: React.FC<GraphViewProps> = ({ session, theme, loadImage, onGene
           currentOutputY += outputSpacing;
         });
 
-        outputTexts.forEach((text, idx) => {
+        textsQueue.forEach((text, idx) => {
           const textNodeId = `gen${genIndex}-output-text-${idx}`;
           newNodes.push({
             id: textNodeId,
@@ -302,7 +303,7 @@ const GraphView: React.FC<GraphViewProps> = ({ session, theme, loadImage, onGene
       }
     });
 
-    setNodes(newNodes);
+    setSessionNodes(newNodes);
     setSessionEdges(newEdges);
     setEdges([...newEdges, ...standaloneEdges]);
   };
@@ -419,7 +420,7 @@ const GraphView: React.FC<GraphViewProps> = ({ session, theme, loadImage, onGene
   };
 
   // Context menu handlers
-  const handleContextMenu = (e: React.MouseEvent) => {
+  const handleContextMenu = (e: React.MouseEvent, nodeId?: string) => {
     e.preventDefault();
     const rect = svgRef.current?.getBoundingClientRect();
     if (rect) {
@@ -429,13 +430,26 @@ const GraphView: React.FC<GraphViewProps> = ({ session, theme, loadImage, onGene
         x: e.clientX,
         y: e.clientY,
         svgX,
-        svgY
+        svgY,
+        nodeId
       });
     }
   };
 
   const closeContextMenu = () => {
     setContextMenu(null);
+  };
+
+  const canDeleteNode = (nodeId: string) => {
+    return !edges.some(edge => edge.from === nodeId || edge.to === nodeId);
+  };
+
+  const deleteNode = (nodeId: string) => {
+    setStandaloneNodes(prev => prev.filter(node => node.id !== nodeId));
+    setSessionNodes(prev => prev.filter(node => node.id !== nodeId));
+    setStandaloneEdges(prev => prev.filter(edge => edge.from !== nodeId && edge.to !== nodeId));
+    setSessionEdges(prev => prev.filter(edge => edge.from !== nodeId && edge.to !== nodeId));
+    closeContextMenu();
   };
 
   // Helper to check if position overlaps with existing nodes
@@ -445,7 +459,7 @@ const GraphView: React.FC<GraphViewProps> = ({ session, theme, loadImage, onGene
     const offset = 30; // Offset to apply if overlap detected
 
     // Check against all current nodes
-    const allNodes = [...nodes, ...standaloneNodes];
+    const allNodes = nodes;
     let hasOverlap = true;
     let attempts = 0;
     const maxAttempts = 20;
@@ -624,6 +638,12 @@ const GraphView: React.FC<GraphViewProps> = ({ session, theme, loadImage, onGene
       )
     );
 
+    setSessionNodes(prev =>
+      prev.map(node =>
+        node.id === nodeId ? { ...node, data: { ...node.data, ...newData } } : node
+      )
+    );
+
     setNodes(prev =>
       prev.map(node =>
         node.id === nodeId ? { ...node, data: { ...node.data, ...newData } } : node
@@ -729,6 +749,10 @@ const GraphView: React.FC<GraphViewProps> = ({ session, theme, loadImage, onGene
           e.stopPropagation();
           handleMouseDown(e, node.id);
         }}
+        onContextMenu={(e) => {
+          e.stopPropagation();
+          handleContextMenu(e, node.id);
+        }}
         style={{ cursor: 'move' }}
       >
         {/* Node background */}
@@ -808,8 +832,8 @@ const GraphView: React.FC<GraphViewProps> = ({ session, theme, loadImage, onGene
             )}
             {node.type === 'workflow' && (
               <div className="p-2 space-y-2">
-                {/* Play button for standalone workflow nodes */}
-                {node.isStandalone && onGenerateFromNode && (
+                {/* Play button for workflow nodes */}
+                {onGenerateFromNode && (
                   <button
                     className={`w-full flex items-center justify-center gap-2 py-2 mb-2 rounded transition-colors ${
                       isDark
@@ -990,22 +1014,31 @@ const GraphView: React.FC<GraphViewProps> = ({ session, theme, loadImage, onGene
               </div>
             )}
             {isImage && (
-              <div className="h-full flex flex-col">
-                {node.data.imageData ? (
-                  <img
-                    src={node.data.imageData}
-                    alt={node.label}
-                    className="w-full h-36 object-cover rounded"
-                    draggable={false}
-                  />
-                ) : (
-                  <div className={`w-full h-36 flex items-center justify-center rounded ${isDark ? 'bg-gray-700' : 'bg-gray-100'}`}>
-                    <ImageIcon className={isDark ? 'text-gray-500' : 'text-gray-400'} size={32} />
+              <div className="h-full flex flex-col gap-2">
+                <div className="flex-1 flex flex-col">
+                  {node.data.imageData ? (
+                    <img
+                      src={node.data.imageData}
+                      alt={node.label}
+                      className="w-full h-40 object-cover rounded"
+                      draggable={false}
+                    />
+                  ) : (
+                    <div className={`w-full h-40 flex items-center justify-center rounded ${isDark ? 'bg-gray-700' : 'bg-gray-100'}`}>
+                      <ImageIcon className={isDark ? 'text-gray-500' : 'text-gray-400'} size={32} />
+                    </div>
+                  )}
+                  <p className={`text-xs mt-2 ${isDark ? 'text-gray-400' : 'text-gray-600'} truncate`}>
+                    {node.data.image?.filename || 'No image'}
+                  </p>
+                </div>
+                {node.type === 'output-image' && (
+                  <div className={`p-2 rounded border ${isDark ? 'border-gray-700 bg-gray-800 text-gray-200' : 'border-gray-200 bg-gray-50 text-gray-700'}`}>
+                    <p className="text-[11px] leading-relaxed max-h-20 overflow-y-auto whitespace-pre-wrap">
+                      {node.data.text || 'Text output will appear here'}
+                    </p>
                   </div>
                 )}
-                <p className={`text-xs mt-2 ${isDark ? 'text-gray-400' : 'text-gray-600'} truncate`}>
-                  {node.data.image?.filename || 'No image'}
-                </p>
               </div>
             )}
             {node.type === 'output-text' && (
@@ -1292,8 +1325,19 @@ const GraphView: React.FC<GraphViewProps> = ({ session, theme, loadImage, onGene
             }`}
             style={{ left: contextMenu.x, top: contextMenu.y }}
           >
+            {contextMenu.nodeId && canDeleteNode(contextMenu.nodeId) && (
+              <button
+                className={`w-full px-4 py-2 text-left text-sm flex items-center gap-2 hover:bg-red-50 dark:hover:bg-red-900/30 transition-colors rounded-t-lg ${
+                  isDark ? 'text-red-300' : 'text-red-600'
+                }`}
+                onClick={() => deleteNode(contextMenu.nodeId!)}
+              >
+                <span className="text-lg">🗑️</span>
+                Delete Node
+              </button>
+            )}
             <button
-              className={`w-full px-4 py-2 text-left text-sm flex items-center gap-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-t-lg transition-colors ${
+              className={`w-full px-4 py-2 text-left text-sm flex items-center gap-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-t-lg ${
                 isDark ? 'text-gray-300' : 'text-gray-700'
               }`}
               onClick={() => addPromptNode(contextMenu.svgX, contextMenu.svgY)}
