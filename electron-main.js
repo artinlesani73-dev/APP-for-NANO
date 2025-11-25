@@ -100,9 +100,28 @@ const getDataPath = () => {
     return appDir;
 };
 
+const getLogDirectory = () => {
+    const sharedLogDir = process.env.LOG_SHARE_PATH || process.env.VITE_LOG_SHARE_PATH;
+    if (sharedLogDir) {
+        const normalized = path.isAbsolute(sharedLogDir)
+          ? sharedLogDir
+          : path.resolve(sharedLogDir);
+        try {
+            if (!fs.existsSync(normalized)) {
+                fs.mkdirSync(normalized, { recursive: true });
+            }
+            return normalized;
+        } catch (e) {
+            console.error('Falling back to local log storage because shared log directory is unavailable', e);
+        }
+    }
+
+    return getDataPath();
+};
+
 const getLogFilePath = () => {
-    const dataDir = getDataPath();
-    return path.join(dataDir, 'logs.json');
+    const logDir = getLogDirectory();
+    return path.join(logDir, 'logs.json');
 };
 
 const readLogs = () => {
