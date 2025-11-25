@@ -59,10 +59,15 @@ const GraphView: React.FC<GraphViewProps> = ({ session, theme, loadImage, onGene
   const [isDraggingNode, setIsDraggingNode] = useState(false);
   const [graphLoaded, setGraphLoaded] = useState(false);
 
+  const lastSessionId = useRef<string | null>(null);
+
   useEffect(() => {
+    if (session.session_id === lastSessionId.current) return;
+
+    lastSessionId.current = session.session_id;
     setGraphLoaded(false);
     generateGraphLayout();
-  }, [session]);
+  }, [session.session_id]);
 
   useEffect(() => {
     if (!graphLoaded || session.generations.length === 0) return;
@@ -286,7 +291,10 @@ const GraphView: React.FC<GraphViewProps> = ({ session, theme, loadImage, onGene
 
   const generateGraphLayout = () => {
     const savedGraph = session.graph;
-    if (savedGraph) {
+    const hasSavedGraph =
+      savedGraph && ((savedGraph.nodes && savedGraph.nodes.length > 0) || (savedGraph.edges && savedGraph.edges.length > 0));
+
+    if (hasSavedGraph) {
       setNodes(savedGraph.nodes || []);
       setEdges(savedGraph.edges || []);
       setGraphLoaded(true);
