@@ -1,5 +1,11 @@
 const { contextBridge, ipcRenderer } = require('electron');
 
+const safeEnv = {
+  sharedApiKey: process.env.VITE_SHARED_API_KEY || process.env.GEMINI_API_KEY || process.env.API_KEY,
+  logEndpoint: process.env.VITE_LOG_ENDPOINT,
+  adminPassphrase: process.env.VITE_ADMIN_PASSPHRASE
+};
+
 contextBridge.exposeInMainWorld('electron', {
   saveSync: (filename, content) => ipcRenderer.sendSync('save-sync', filename, content),
   loadSync: (filename) => ipcRenderer.sendSync('load-sync', filename),
@@ -13,3 +19,5 @@ contextBridge.exposeInMainWorld('electron', {
   onUpdateDownloaded: (callback) => ipcRenderer.on('update-downloaded', (_event, info) => callback(info)),
   onUpdateError: (callback) => ipcRenderer.on('update-error', (_event, error) => callback(error)),
 });
+
+contextBridge.exposeInMainWorld('env', safeEnv);

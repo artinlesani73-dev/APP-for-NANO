@@ -3,6 +3,24 @@ const { autoUpdater } = require('electron-updater');
 const path = require('path');
 const fs = require('fs');
 
+const loadDotEnv = () => {
+  const envPath = path.join(__dirname, '.env');
+  if (!fs.existsSync(envPath)) return;
+
+  const lines = fs.readFileSync(envPath, 'utf-8').split(/\r?\n/);
+  lines.forEach(line => {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith('#')) return;
+    const [key, ...rest] = trimmed.split('=');
+    const value = rest.join('=');
+    if (key && !(key in process.env)) {
+      process.env[key] = value;
+    }
+  });
+};
+
+loadDotEnv();
+
 let mainWindow;
 
 function createWindow() {

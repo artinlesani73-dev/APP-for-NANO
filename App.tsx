@@ -88,8 +88,8 @@ function AppContent() {
   }, []);
 
   // --- HANDLERS ---
-  const handleLogin = (displayName: string) => {
-    setCurrentUser({ displayName });
+  const handleLogin = (displayName: string, persist = true) => {
+    setCurrentUser({ displayName }, persist);
     LoggerService.setCurrentUser({ displayName });
     LoggerService.logLogin('User logged in', { displayName });
   };
