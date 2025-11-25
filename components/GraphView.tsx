@@ -74,12 +74,21 @@ const GraphView: React.FC<GraphViewProps> = ({ session, theme, loadImage, onGene
 
   // Sync standalone edges
   useEffect(() => {
-    setEdges([...sessionEdges, ...standaloneEdges]);
+    // Merge edges while preventing accidental duplicates when state updates overlap
+    const mergedEdges = [...sessionEdges, ...standaloneEdges];
+    const uniqueEdges = mergedEdges.filter((edge, index, arr) =>
+      arr.findIndex(e => e.from === edge.from && e.to === edge.to && e.toHandle === edge.toHandle) === index
+    );
+    setEdges(uniqueEdges);
   }, [standaloneEdges, sessionEdges]);
 
-  // Combine session and standalone nodes for rendering
+  // Combine session and standalone nodes for rendering without duplicating existing nodes
   useEffect(() => {
-    setNodes([...sessionNodes, ...standaloneNodes]);
+    const mergedNodes = [...sessionNodes, ...standaloneNodes];
+    const uniqueNodes = mergedNodes.filter((node, index, arr) =>
+      arr.findIndex(n => n.id === node.id) === index
+    );
+    setNodes(uniqueNodes);
   }, [sessionNodes, standaloneNodes]);
 
   // Handle wheel events with non-passive listener
@@ -820,7 +829,7 @@ const GraphView: React.FC<GraphViewProps> = ({ session, theme, loadImage, onGene
                 />
               ) : (
                 <p
-                  className="line-clamp-6 p-2 leading-relaxed cursor-text"
+                  className="line-clamp-6 p-2 leading-relaxed cursor-text select-text"
                   onDoubleClick={(e) => {
                     e.stopPropagation();
                     if (node.isStandalone) setEditingNode(node.id);
@@ -1069,14 +1078,6 @@ const GraphView: React.FC<GraphViewProps> = ({ session, theme, loadImage, onGene
               onMouseUp={(e) => handleConnectionEnd(e, node.id, 'prompt')}
               style={{ cursor: 'crosshair' }}
             />
-            <text
-              x={-35}
-              y={node.height / 4 + 4}
-              className={`text-xs ${isDark ? 'fill-purple-400' : 'fill-purple-600'}`}
-              style={{ fontSize: '10px', pointerEvents: 'none' }}
-            >
-              Prompt
-            </text>
 
             {/* Control handle */}
             <circle
@@ -1091,14 +1092,6 @@ const GraphView: React.FC<GraphViewProps> = ({ session, theme, loadImage, onGene
               onMouseUp={(e) => handleConnectionEnd(e, node.id, 'control')}
               style={{ cursor: 'crosshair' }}
             />
-            <text
-              x={-35}
-              y={(node.height / 4) * 2 + 4}
-              className={`text-xs ${isDark ? 'fill-green-400' : 'fill-green-600'}`}
-              style={{ fontSize: '10px', pointerEvents: 'none' }}
-            >
-              Control
-            </text>
 
             {/* Reference handle */}
             <circle
@@ -1113,14 +1106,6 @@ const GraphView: React.FC<GraphViewProps> = ({ session, theme, loadImage, onGene
               onMouseUp={(e) => handleConnectionEnd(e, node.id, 'reference')}
               style={{ cursor: 'crosshair' }}
             />
-            <text
-              x={-42}
-              y={(node.height / 4) * 3 + 4}
-              className={`text-xs ${isDark ? 'fill-blue-400' : 'fill-blue-600'}`}
-              style={{ fontSize: '10px', pointerEvents: 'none' }}
-            >
-              Reference
-            </text>
 
             {/* Output handle */}
             <circle
