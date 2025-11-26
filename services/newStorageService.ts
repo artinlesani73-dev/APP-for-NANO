@@ -155,12 +155,14 @@ export const StorageService = {
       return;
     }
 
-    const sessions = StorageService.getSessions().filter(s => s.session_id !== sessionId);
-    StorageService.saveSessionsList(sessions);
-
-    // Clean up session from storage
+    // Remove session from storage
     if (isElectron()) {
-      localStorage.removeItem(`session_${sessionId}`);
+      // @ts-ignore - Electron API for deleting sessions
+      if (window.electron?.deleteSessionSync) {
+        window.electron.deleteSessionSync(sessionId);
+      } else {
+        console.warn('deleteSessionSync not available in Electron API');
+      }
     } else {
       localStorage.removeItem(`session_${sessionId}`);
     }
