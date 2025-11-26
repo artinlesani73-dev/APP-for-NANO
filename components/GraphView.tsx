@@ -749,28 +749,37 @@ const GraphView: React.FC<GraphViewProps> = ({ sessions, theme, loadImage, onGen
             {node.type === 'workflow' && (
               <div className="flex flex-col gap-2 py-1">
                 {node.data?.userName && (
-                  <div className="flex items-center justify-between text-[11px] text-zinc-400">
+                  <div className={`flex items-center justify-between text-[11px] ${isDark ? 'text-zinc-400' : 'text-zinc-500'}`}>
                     <span>User</span>
-                    <span className="text-zinc-100 font-medium">{node.data.userName}</span>
+                    <span className={`${isDark ? 'text-zinc-100' : 'text-zinc-800'} font-medium`}>{node.data.userName}</span>
                   </div>
                 )}
-                <div className="grid grid-cols-2 gap-y-1 text-[11px] text-zinc-400">
+                <div className={`grid grid-cols-2 gap-y-1 text-[11px] ${isDark ? 'text-zinc-400' : 'text-zinc-500'}`}>
                   <span>Model</span>
-                  <span className="text-right text-zinc-100 font-medium">{node.data.parameters.model.includes('flash') ? 'Flash' : 'Pro'}</span>
+                  <span className={`text-right ${isDark ? 'text-zinc-100' : 'text-zinc-800'} font-medium`}>
+                    {node.data.parameters.model.includes('flash') ? 'Flash' : 'Pro'}
+                  </span>
                   <span>Temperature</span>
-                  <span className="text-right text-zinc-100 font-medium">{node.data.parameters.temperature}</span>
+                  <span className={`text-right ${isDark ? 'text-zinc-100' : 'text-zinc-800'} font-medium`}>
+                    {node.data.parameters.temperature}
+                  </span>
                   <span>Top-p</span>
-                  <span className="text-right text-zinc-100 font-medium">{node.data.parameters.top_p}</span>
+                  <span className={`text-right ${isDark ? 'text-zinc-100' : 'text-zinc-800'} font-medium`}>
+                    {node.data.parameters.top_p}
+                  </span>
                   <span>Aspect</span>
-                  <span className="text-right text-zinc-100 font-medium">{node.data.parameters.aspect_ratio}</span>
+                  <span className={`text-right ${isDark ? 'text-zinc-100' : 'text-zinc-800'} font-medium`}>
+                    {node.data.parameters.aspect_ratio}
+                  </span>
                   <span>Size</span>
-                  <span className="text-right text-zinc-100 font-medium">{node.data.parameters.image_size}</span>
+                  <span className={`text-right ${isDark ? 'text-zinc-100' : 'text-zinc-800'} font-medium`}>
+                    {node.data.parameters.image_size}
+                  </span>
                   <span>Safety</span>
-                  <span className="text-right text-zinc-100 font-medium capitalize">{node.data.parameters.safety_filter}</span>
+                  <span className={`text-right ${isDark ? 'text-zinc-100' : 'text-zinc-800'} font-medium capitalize`}>
+                    {node.data.parameters.safety_filter}
+                  </span>
                 </div>
-                <p className={`text-[10px] ${isDark ? 'text-zinc-500' : 'text-zinc-500'}`}>
-                  Parameters lock after the first generation.
-                </p>
               </div>
             )}
 
