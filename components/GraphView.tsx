@@ -732,13 +732,22 @@ const GraphView: React.FC<GraphViewProps> = ({ sessions, theme, loadImage, onGen
           onChange={(e) => setSelectedSessionId(e.target.value as string)}
           className={`w-full px-3 py-2 text-sm rounded-xl border transition-all ${
             isDark
-              ? 'bg-black/30 border-white/10 text-zinc-100 hover:bg-white/5'
+              ? 'bg-[#0d0b14]/95 border-white/10 text-zinc-100 hover:bg-white/5'
               : 'bg-white border-zinc-200 text-zinc-700 hover:bg-zinc-50'
           }`}
         >
-          <option value="all">All Sessions ({sessions.length})</option>
+          <option
+            value="all"
+            style={{ backgroundColor: isDark ? '#0d0b14' : '#ffffff', color: isDark ? '#e5e7eb' : '#1f2937' }}
+          >
+            All Sessions ({sessions.length})
+          </option>
           {sessions.map(session => (
-            <option key={session.session_id} value={session.session_id}>
+            <option
+              key={session.session_id}
+              value={session.session_id}
+              style={{ backgroundColor: isDark ? '#0d0b14' : '#ffffff', color: isDark ? '#e5e7eb' : '#1f2937' }}
+            >
               {session.title} ({session.generations.length})
             </option>
           ))}
