@@ -78,23 +78,10 @@ const GraphView: React.FC<GraphViewProps> = ({ sessions, theme, loadImage, onGen
   const [draggingNode, setDraggingNode] = useState<string | null>(null);
   const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
   const [editingNode, setEditingNode] = useState<string | null>(null);
-  const [isDraggingOver, setIsDraggingOver] = useState(false);
-  const [connectingFrom, setConnectingFrom] = useState<{ nodeId: string; handle?: string } | null>(null);
-  const [connectionPreview, setConnectionPreview] = useState<{ x: number; y: number } | null>(null);
-  const [isDraggingNode, setIsDraggingNode] = useState(false);
-  const [graphLoaded, setGraphLoaded] = useState(false);
   const [selectedSessionId, setSelectedSessionId] = useState<string | 'all'>('all');
 
-  const lastSessionsLength = useRef<number>(0);
-
   useEffect(() => {
-    // Regenerate graph when sessions change
-    const totalGenerations = sessions.reduce((sum, s) => sum + s.generations.length, 0);
-    if (totalGenerations !== lastSessionsLength.current) {
-      lastSessionsLength.current = totalGenerations;
-      setGraphLoaded(false);
-      generateGraphLayout();
-    }
+    generateGraphLayout();
   }, [sessions, selectedSessionId]);
 
   useEffect(() => {
@@ -149,7 +136,6 @@ const GraphView: React.FC<GraphViewProps> = ({ sessions, theme, loadImage, onGen
     if (filteredSessions.length === 0) {
       setNodes([]);
       setEdges([]);
-      setGraphLoaded(true);
       return;
     }
 
@@ -164,7 +150,6 @@ const GraphView: React.FC<GraphViewProps> = ({ sessions, theme, loadImage, onGen
     if (allGenerations.length === 0) {
       setNodes([]);
       setEdges([]);
-      setGraphLoaded(true);
       return;
     }
 
@@ -355,7 +340,6 @@ const GraphView: React.FC<GraphViewProps> = ({ sessions, theme, loadImage, onGen
 
     setNodes(newNodes);
     setEdges(newEdges);
-    setGraphLoaded(true);
   };
 
   const getInputHandlePosition = (node: Node, handle?: 'prompt' | 'control' | 'reference') => {
@@ -406,7 +390,6 @@ const GraphView: React.FC<GraphViewProps> = ({ sessions, theme, loadImage, onGen
       const node = nodes.find(n => n.id === nodeId);
       if (node) {
         setDraggingNode(nodeId);
-        setIsDraggingNode(true);
         const rect = svgRef.current?.getBoundingClientRect();
         if (rect) {
           const svgX = (e.clientX - rect.left - pan.x) / zoom;
@@ -440,14 +423,6 @@ const GraphView: React.FC<GraphViewProps> = ({ sessions, theme, loadImage, onGen
           )
         );
       }
-    } else if (connectingFrom) {
-      // Update connection preview
-      const rect = svgRef.current?.getBoundingClientRect();
-      if (rect) {
-        const svgX = (e.clientX - rect.left - pan.x) / zoom;
-        const svgY = (e.clientY - rect.top - pan.y) / zoom;
-        setConnectionPreview({ x: svgX, y: svgY });
-      }
     } else if (isPanning) {
       // Pan the canvas
       setPan({
@@ -460,71 +435,6 @@ const GraphView: React.FC<GraphViewProps> = ({ sessions, theme, loadImage, onGen
   const handleMouseUp = () => {
     setIsPanning(false);
     setDraggingNode(null);
-    setIsDraggingNode(false);
-    setConnectingFrom(null);
-    setConnectionPreview(null);
-  };
-
-  // Drag and drop handlers for external images
-  const handleDragOver = (e: React.DragEvent) => {
-    // Only handle external file drags, not internal node drags
-    if (!isDraggingNode && e.dataTransfer.types.includes('Files')) {
-      e.preventDefault();
-      e.stopPropagation();
-      setIsDraggingOver(true);
-    }
-  };
-
-  const handleDragLeave = (e: React.DragEvent) => {
-    if (!isDraggingNode && e.dataTransfer.types.includes('Files')) {
-      e.preventDefault();
-      e.stopPropagation();
-      setIsDraggingOver(false);
-    }
-  };
-
-  const handleDrop = async (e: React.DragEvent) => {
-    // Only handle external file drops, not node drags
-    if (isDraggingNode || !e.dataTransfer.types.includes('Files')) return;
-
-    e.preventDefault();
-    e.stopPropagation();
-    setIsDraggingOver(false);
-
-    const files = Array.from(e.dataTransfer.files);
-    const imageFiles = files.filter(f => f.type.startsWith('image/'));
-
-    if (imageFiles.length === 0) return;
-
-    const rect = svgRef.current?.getBoundingClientRect();
-    if (!rect) return;
-
-    const svgX = (e.clientX - rect.left - pan.x) / zoom;
-    const svgY = (e.clientY - rect.top - pan.y) / zoom;
-
-    // Process each image
-    for (let i = 0; i < imageFiles.length; i++) {
-      const file = imageFiles[i];
-      const reader = new FileReader();
-
-      reader.onload = (event) => {
-        const base64 = event.target?.result as string;
-        const newNode: Node = {
-          id: `standalone-control-${Date.now()}-${i}`,
-          type: 'control-image',
-          label: file.name,
-          x: svgX + (i * 250),
-          y: svgY,
-          width: NODE_WIDTH,
-          height: IMAGE_NODE_HEIGHT,
-          isStandalone: true,
-          data: { image: { filename: file.name }, imageData: base64 }
-        };
-        setNodes(prev => [...prev, newNode]);
-      };
-
-      reader.readAsDataURL(file);
-    }
   };
 
   // Generate from workflow node
@@ -578,98 +488,6 @@ const GraphView: React.FC<GraphViewProps> = ({ sessions, theme, loadImage, onGen
         node.id === nodeId ? { ...node, data: { ...node.data, ...newData } } : node
       )
     );
-  };
-
-  // Handle connection start from a handle
-  const handleConnectionStart = (e: React.MouseEvent, nodeId: string, handle?: string) => {
-    e.stopPropagation();
-    setConnectingFrom({ nodeId, handle });
-    const rect = svgRef.current?.getBoundingClientRect();
-    if (rect) {
-      const svgX = (e.clientX - rect.left - pan.x) / zoom;
-      const svgY = (e.clientY - rect.top - pan.y) / zoom;
-      setConnectionPreview({ x: svgX, y: svgY });
-    }
-  };
-
-  // Handle connection end on a handle
-  const handleConnectionEnd = (e: React.MouseEvent, toNodeId: string, toHandle?: string) => {
-    e.stopPropagation();
-    if (connectingFrom && connectingFrom.nodeId !== toNodeId) {
-      const fromNode = nodes.find(n => n.id === connectingFrom.nodeId);
-      const toNode = nodes.find(n => n.id === toNodeId);
-
-      if (!fromNode || !toNode) {
-        setConnectingFrom(null);
-        setConnectionPreview(null);
-        return;
-      }
-
-      // Validation rules
-      let isValid = true;
-      let errorMessage = '';
-
-      // Rule 1: Workflow prompt handle only accepts prompt nodes (not images)
-      if (toNode.type === 'workflow' && toHandle === 'prompt') {
-        if (fromNode.type !== 'prompt') {
-          isValid = false;
-          errorMessage = 'Prompt handle only accepts prompt nodes';
-        }
-        // Check if already has a prompt connection
-        const existingPromptEdge = edges.find(
-          e => e.to === toNodeId && e.toHandle === 'prompt'
-        );
-        if (existingPromptEdge) {
-          isValid = false;
-          errorMessage = 'Workflow already has a prompt connected';
-        }
-      }
-
-      // Rule 2: Workflow control handle only accepts image nodes
-      if (toNode.type === 'workflow' && toHandle === 'control') {
-        if (!fromNode.type.includes('image')) {
-          isValid = false;
-          errorMessage = 'Control handle only accepts image nodes';
-        }
-      }
-
-      // Rule 3: Workflow reference handle only accepts image nodes
-      if (toNode.type === 'workflow' && toHandle === 'reference') {
-        if (!fromNode.type.includes('image')) {
-          isValid = false;
-          errorMessage = 'Reference handle only accepts image nodes';
-        }
-      }
-
-      if (!isValid) {
-        alert(errorMessage);
-        setConnectingFrom(null);
-        setConnectionPreview(null);
-        return;
-      }
-
-      // Determine edge color based on handle type
-      let color = '#8b5cf6'; // default purple
-      if (toHandle === 'control') color = '#10b981'; // green
-      else if (toHandle === 'reference') color = '#3b82f6'; // blue
-      else if (!toHandle) color = '#f59e0b'; // amber for output
-
-      const newEdge: Edge = {
-        from: connectingFrom.nodeId,
-        to: toNodeId,
-        toHandle: toHandle as 'prompt' | 'control' | 'reference' | undefined,
-        color
-      };
-      setEdges(prevEdges => {
-        const duplicate = prevEdges.some(
-          e => e.from === newEdge.from && e.to === newEdge.to && e.toHandle === newEdge.toHandle
-        );
-        if (duplicate) return prevEdges;
-        return [...prevEdges, newEdge];
-      });
-    }
-    setConnectingFrom(null);
-    setConnectionPreview(null);
   };
 
   const renderNode = (node: Node) => {
@@ -820,90 +638,6 @@ const GraphView: React.FC<GraphViewProps> = ({ sessions, theme, loadImage, onGen
           </div>
         </foreignObject>
 
-        {/* Workflow node handles */}
-        {node.type === 'workflow' && (
-          <>
-            {/* Prompt handle */}
-            <circle
-              cx={0}
-              cy={node.height / 4}
-              r={6}
-              className="fill-[#b977ff] stroke-[#e6d8ff] cursor-pointer"
-              strokeWidth={1.5}
-              onMouseDown={(e) => {
-                e.stopPropagation();
-              }}
-              onMouseUp={(e) => handleConnectionEnd(e, node.id, 'prompt')}
-              style={{ cursor: 'crosshair' }}
-            />
-
-            {/* Control handle */}
-            <circle
-              cx={0}
-              cy={(node.height / 4) * 2}
-              r={6}
-              className="fill-[#4ad8a4] stroke-[#cff7e5] cursor-pointer"
-              strokeWidth={1.5}
-              onMouseDown={(e) => {
-                e.stopPropagation();
-              }}
-              onMouseUp={(e) => handleConnectionEnd(e, node.id, 'control')}
-              style={{ cursor: 'crosshair' }}
-            />
-
-            {/* Reference handle */}
-            <circle
-              cx={0}
-              cy={(node.height / 4) * 3}
-              r={6}
-              className="fill-[#6bb2ff] stroke-[#d6e8ff] cursor-pointer"
-              strokeWidth={1.5}
-              onMouseDown={(e) => {
-                e.stopPropagation();
-              }}
-              onMouseUp={(e) => handleConnectionEnd(e, node.id, 'reference')}
-              style={{ cursor: 'crosshair' }}
-            />
-
-            {/* Output handle */}
-            <circle
-              cx={node.width}
-              cy={node.height / 2}
-              r={6}
-              className="fill-[#f5b454] stroke-[#ffe6ba] cursor-pointer"
-              strokeWidth={1.5}
-              onMouseDown={(e) => handleConnectionStart(e, node.id)}
-              style={{ cursor: 'crosshair' }}
-            />
-          </>
-        )}
-
-        {/* Standard connection points for other nodes */}
-        {node.type !== 'workflow' && (
-          <>
-            {/* Output handle (right side) */}
-            <circle
-              cx={node.width}
-              cy={node.height / 2}
-              r={4}
-              className={`${isDark ? 'fill-[#9f8ac7]' : 'fill-zinc-500'} cursor-pointer`}
-              onMouseDown={(e) => handleConnectionStart(e, node.id)}
-              style={{ cursor: 'crosshair' }}
-            />
-            {/* Input handle (left side) */}
-            <circle
-              cx={0}
-              cy={node.height / 2}
-              r={4}
-              className={`${isDark ? 'fill-[#9f8ac7]' : 'fill-zinc-500'} cursor-pointer`}
-              onMouseDown={(e) => {
-                e.stopPropagation();
-              }}
-              onMouseUp={(e) => handleConnectionEnd(e, node.id)}
-              style={{ cursor: 'crosshair' }}
-            />
-          </>
-        )}
       </g>
     );
   };
@@ -969,44 +703,15 @@ const GraphView: React.FC<GraphViewProps> = ({ sessions, theme, loadImage, onGen
       {/* Graph canvas */}
       <svg
         ref={svgRef}
-        className={`w-full h-full ${isPanning ? 'cursor-grabbing' : 'cursor-grab'} ${isDraggingOver ? 'ring-4 ring-blue-500' : ''}`}
+        className={`w-full h-full ${isPanning ? 'cursor-grabbing' : 'cursor-grab'}`}
         onMouseDown={handleMouseDown}
         onMouseMove={handleMouseMove}
         onMouseUp={handleMouseUp}
         onMouseLeave={handleMouseUp}
-        onDragOver={handleDragOver}
-        onDragLeave={handleDragLeave}
-        onDrop={handleDrop}
       >
         <g transform={`translate(${pan.x}, ${pan.y}) scale(${zoom})`}>
           {/* Render edges first (behind nodes) */}
           {edges.map((edge, index) => renderEdge(edge, index))}
-
-          {/* Render connection preview */}
-          {connectingFrom && connectionPreview && (() => {
-            const fromNode = nodes.find(n => n.id === connectingFrom.nodeId);
-            if (!fromNode) return null;
-
-            const fromX = fromNode.x + fromNode.width;
-            const fromY = fromNode.y + fromNode.height / 2;
-            const toX = connectionPreview.x;
-            const toY = connectionPreview.y;
-            const midX = (fromX + toX) / 2;
-
-            const path = `M ${fromX} ${fromY} C ${midX} ${fromY}, ${midX} ${toY}, ${toX} ${toY}`;
-
-            return (
-              <path
-                d={path}
-                stroke="#a855f7"
-                strokeWidth={2.5}
-                fill="none"
-                opacity={0.8}
-                strokeDasharray="8,4"
-                strokeLinecap="round"
-              />
-            );
-          })()}
 
           {/* Render nodes */}
           {nodes.map(renderNode)}
@@ -1060,21 +765,10 @@ const GraphView: React.FC<GraphViewProps> = ({ sessions, theme, loadImage, onGen
         </div>
         <div className={`mt-2 pt-3 border-t space-y-1.5 ${isDark ? 'border-white/5 text-zinc-500' : 'border-zinc-200 text-zinc-600'}`}>
           <div>💡 Drag nodes to reposition</div>
-          <div>🔗 Connect handles to link steps</div>
           <div>🖱️ Pan the canvas with drag</div>
           <div>🔍 Scroll to zoom</div>
-          <div>📁 Drop images onto canvas</div>
         </div>
       </div>
-
-      {/* Drag overlay */}
-      {isDraggingOver && (
-        <div className="absolute inset-0 z-30 pointer-events-none flex items-center justify-center bg-gradient-to-br from-blue-500/10 to-purple-500/10 backdrop-blur-sm">
-          <div className={`text-2xl font-bold px-6 py-4 rounded-2xl ${isDark ? 'text-blue-400 bg-zinc-900/50' : 'text-blue-600 bg-white/50'}`}>
-            Drop images here to add to canvas
-          </div>
-        </div>
-      )}
     </div>
   );
 };
