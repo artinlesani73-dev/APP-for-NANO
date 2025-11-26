@@ -30,31 +30,33 @@ const DEFAULT_CONFIG: GenerationConfig = {
   model: 'gemini-2.5-flash-image'
 };
 
-const NODE_WIDTH = 220;
-const NODE_HEIGHT = 160;
-const IMAGE_NODE_HEIGHT = 220;
-const OUTPUT_IMAGE_HEIGHT = 300;
-const WORKFLOW_NODE_HEIGHT = 280;
+const NODE_WIDTH = 230;
+const NODE_HEIGHT = 150;
+const IMAGE_NODE_HEIGHT = 320;
+const OUTPUT_IMAGE_HEIGHT = 420;
+const WORKFLOW_NODE_HEIGHT = 500;
+const WORKFLOW_NODE_WIDTH = 320;
+const OUTPUT_IMAGE_WIDTH = 260;
 const BASE_X = 100;
 const BASE_Y = 160;
-const COLUMN_SPACING = 320;
-const GENERATION_SPACING = 420;
+const COLUMN_SPACING = 360;
+const GENERATION_SPACING = 460;
 
 const themeTokens = {
   dark: {
-    background: 'radial-gradient(circle at 20% 20%, #1c1b2a 0%, rgba(12,12,18,0.8) 25%, #0a0a12 45%, #0c0c14 75%, #05050c 100%)',
-    card: '#0f1018',
-    cardMuted: '#0c0d14',
-    stroke: '#1f1f2b',
-    border: 'border-white/10',
+    background: '#0d0b14',
+    card: '#161021',
+    cardMuted: '#120d1b',
+    stroke: '#2c243c',
+    border: 'border-white/5',
     textPrimary: 'text-zinc-100',
     textMuted: 'text-zinc-400',
-    panel: 'bg-[#11111b]/80 border border-white/10 shadow-[0_15px_45px_rgba(0,0,0,0.45)]',
+    panel: 'bg-[#161021]/85 border border-white/5 shadow-[0_18px_48px_rgba(0,0,0,0.55)] backdrop-blur-lg',
   },
   light: {
-    background: 'radial-gradient(circle at 20% 20%, #f7f7fb 0%, #f4f4f9 25%, #eef1ff 45%, #f5f7ff 75%, #ffffff 100%)',
+    background: '#f5f7fd',
     card: '#ffffff',
-    cardMuted: '#f5f6fb',
+    cardMuted: '#f1f3fb',
     stroke: '#e5e7eb',
     border: 'border-zinc-200',
     textPrimary: 'text-zinc-900',
@@ -224,7 +226,7 @@ const GraphView: React.FC<GraphViewProps> = ({ sessions, theme, loadImage, onGen
             type: 'control-image',
             label: `Control`,
             x: BASE_X + COLUMN_SPACING,
-            y: yOffset + idx * 250,
+            y: yOffset + idx * (IMAGE_NODE_HEIGHT + 30),
             width: NODE_WIDTH,
             height: IMAGE_NODE_HEIGHT,
             data: { image: img, imageData }
@@ -250,7 +252,7 @@ const GraphView: React.FC<GraphViewProps> = ({ sessions, theme, loadImage, onGen
             type: 'reference-image',
             label: `Reference`,
             x: BASE_X + COLUMN_SPACING,
-            y: yOffset + (controlImageIds.length + idx) * 250,
+            y: yOffset + (controlImageIds.length + idx) * (IMAGE_NODE_HEIGHT + 30),
             width: NODE_WIDTH,
             height: IMAGE_NODE_HEIGHT,
             data: { image: img, imageData }
@@ -280,7 +282,7 @@ const GraphView: React.FC<GraphViewProps> = ({ sessions, theme, loadImage, onGen
           label: 'Workflow',
           x: BASE_X + COLUMN_SPACING * 2,
           y: yOffset,
-          width: NODE_WIDTH,
+          width: WORKFLOW_NODE_WIDTH,
           height: WORKFLOW_NODE_HEIGHT,
           data: { parameters: generation.parameters, userName }
         });
@@ -339,8 +341,8 @@ const GraphView: React.FC<GraphViewProps> = ({ sessions, theme, loadImage, onGen
             type: 'output-image',
             label: `Output`,
             x: BASE_X + COLUMN_SPACING * 3,
-            y: yOffset + idx * 340,
-            width: NODE_WIDTH,
+            y: yOffset + idx * (OUTPUT_IMAGE_HEIGHT + 40),
+            width: OUTPUT_IMAGE_WIDTH,
             height: OUTPUT_IMAGE_HEIGHT,
             data: { image: img, imageData, text: generation.output_texts?.[idx] }
           });
@@ -804,86 +806,50 @@ const GraphView: React.FC<GraphViewProps> = ({ sessions, theme, loadImage, onGen
         }}
         style={{ cursor: 'move' }}
       >
-        {/* Node background with shadow */}
-        <defs>
-          <filter id={`shadow-${node.id}`} x="-50%" y="-50%" width="200%" height="200%">
-            <feGaussianBlur in="SourceAlpha" stdDeviation="6"/>
-            <feOffset dx="0" dy="10" result="offsetblur"/>
-            <feComponentTransfer>
-              <feFuncA type="linear" slope={isDark ? '0.45' : '0.25'}/>
-            </feComponentTransfer>
-            <feMerge>
-              <feMergeNode/>
-              <feMergeNode in="SourceGraphic"/>
-            </feMerge>
-          </filter>
-          <linearGradient id={`grad-${node.id}`} x1="0%" y1="0%" x2="0%" y2="100%">
-            <stop offset="0%" stopColor={palette.card} />
-            <stop offset="100%" stopColor={palette.cardMuted} />
-          </linearGradient>
-        </defs>
         <rect
           width={node.width}
           height={node.height}
           rx={18}
-          fill={`url(#grad-${node.id})`}
+          fill={palette.card}
           stroke={palette.stroke}
           strokeWidth={1.2}
-          filter={`url(#shadow-${node.id})`}
-          style={{
-            boxShadow: isDark
-              ? '0 20px 50px rgba(0,0,0,0.45), 0 0 0 1px rgba(255,255,255,0.03)'
-              : '0 18px 40px rgba(0,0,0,0.12), 0 0 0 1px rgba(0,0,0,0.02)'
-          }}
+          style={{ filter: isDark ? 'drop-shadow(0 18px 40px rgba(0,0,0,0.55))' : 'drop-shadow(0 14px 28px rgba(0,0,0,0.14))' }}
         />
 
-        {/* Node header with gradient */}
-        <defs>
-          <linearGradient id={`header-grad-${node.id}`} x1="0%" y1="0%" x2="100%" y2="0%">
-            <stop offset="0%" stopColor={accent.soft} />
-            <stop offset="100%" stopColor={accent.solid} />
-          </linearGradient>
-        </defs>
+        {/* Node header */}
         <rect
           width={node.width}
-          height={40}
-          rx={12}
-          fill={`url(#header-grad-${node.id})`}
+          height={38}
+          rx={14}
+          fill={isDark ? '#1d172b' : palette.cardMuted}
+          stroke={isDark ? '#2c243c' : palette.stroke}
+          strokeWidth={1}
         />
 
         {/* Node icon and title */}
-        <g transform="translate(10, 10)">
-          <foreignObject width={node.width - 20} height={20}>
+        <g transform="translate(14, 10)">
+          <foreignObject width={node.width - 28} height={20}>
             <div
-              className="flex items-center gap-2"
+              className="flex items-center gap-2 text-[12px]"
               style={{ color: isDark ? '#f7f7fb' : '#0f172a' }}
             >
-              {node.type === 'prompt' && <FileText size={16} />}
-              {node.type === 'workflow' && <Settings size={16} />}
-              {node.type.includes('image') && <ImageIcon size={16} />}
-              <span className="text-sm font-semibold tracking-tight">{node.label}</span>
-              {node.type === 'prompt' && node.data.status && (
-                <span className={`text-[10px] px-2 py-0.5 rounded-full border ${
-                  node.data.status === 'completed' ? 'border-emerald-300 bg-emerald-500/15 text-emerald-100' :
-                  node.data.status === 'failed' ? 'border-red-300 bg-red-500/15 text-red-100' :
-                  'border-amber-300 bg-amber-500/15 text-amber-100'
-                }`}>
-                  {node.data.status}
-                </span>
-              )}
+              <span className="inline-flex h-6 w-6 items-center justify-center rounded-full" style={{ background: isDark ? accent.soft : '#eef2ff' }}>
+                {node.type === 'prompt' && <FileText size={14} color={accent.solid} />}
+                {node.type === 'workflow' && <Settings size={14} color={accent.solid} />}
+                {node.type.includes('image') && <ImageIcon size={14} color={accent.solid} />}
+              </span>
+              <span className="text-sm font-semibold tracking-tight" style={{ color: isDark ? '#f3f1ff' : '#0f172a' }}>{node.label}</span>
             </div>
           </foreignObject>
         </g>
 
         {/* Node content */}
-        <foreignObject x={10} y={50} width={node.width - 20} height={node.height - 60}>
-          <div className={`flex flex-col h-full gap-3 text-[13px] ${isDark ? 'text-zinc-200' : 'text-zinc-800'}`}>
+        <foreignObject x={14} y={52} width={node.width - 28} height={node.height - 64}>
+          <div className={`flex flex-col h-full gap-3 text-[12px] leading-[18px] ${isDark ? 'text-zinc-100' : 'text-zinc-800'}`}>
             {node.type === 'prompt' && (
               node.isStandalone && editingNode === node.id ? (
                 <textarea
-                  className={`w-full h-full p-3 text-sm leading-relaxed resize-none rounded-xl select-text border ${
-                    isDark ? 'bg-black/30 border-white/10 text-zinc-100' : 'bg-white border-zinc-200 text-zinc-800 shadow-inner'
-                  }`}
+                  className="w-full h-full bg-transparent text-[12px] leading-[18px] text-inherit resize-none outline-none"
                   value={node.data.text}
                   onChange={(e) => {
                     e.stopPropagation();
@@ -895,231 +861,90 @@ const GraphView: React.FC<GraphViewProps> = ({ sessions, theme, loadImage, onGen
                   onMouseDown={(e) => e.stopPropagation()}
                 />
               ) : (
-                <div
-                  className={`line-clamp-6 p-3 leading-relaxed cursor-text select-text rounded-xl border ${
-                    isDark ? 'bg-white/5 border-white/5 text-zinc-100' : 'bg-white border-zinc-200 shadow-sm'
-                  }`}
+                <p
+                  className="text-[12px] leading-[18px] whitespace-pre-wrap break-words cursor-text select-text"
                   onDoubleClick={(e) => {
                     e.stopPropagation();
                     if (node.isStandalone) setEditingNode(node.id);
                   }}
                 >
                   {node.data.text}
-                </div>
+                </p>
               )
             )}
+
             {node.type === 'workflow' && (
-              <div className="p-2 space-y-2">
-                {/* User name if available */}
+              <div className="flex flex-col gap-2 py-1">
                 {node.data?.userName && (
-                  <div className={`flex justify-between items-center px-2 py-1.5 rounded-lg ${isDark ? 'bg-white/5' : 'bg-zinc-50'}`}>
-                    <span className={isDark ? 'text-zinc-400' : 'text-zinc-500'}>User</span>
-                    <span className="font-semibold">{node.data.userName}</span>
+                  <div className="flex items-center justify-between text-[11px] text-zinc-400">
+                    <span>User</span>
+                    <span className="text-zinc-100 font-medium">{node.data.userName}</span>
                   </div>
                 )}
-
-                <div className={`flex justify-between items-center px-2 py-1.5 rounded-lg ${isDark ? 'bg-white/5' : 'bg-zinc-50'}`}>
-                  <span className={isDark ? 'text-zinc-400' : 'text-zinc-500'}>Model</span>
-                  {isWorkflowEditing ? (
-                    <select
-                      className={`text-xs px-2 py-1 rounded-lg border ${isDark ? 'bg-black/30 border-white/10' : 'bg-white border-zinc-200'}`}
-                      value={node.data.parameters.model}
-                      onChange={(e) => {
-                        e.stopPropagation();
-                        updateNodeData(node.id, { parameters: { ...node.data.parameters, model: e.target.value } });
-                      }}
-                      onClick={(e) => e.stopPropagation()}
-                      onMouseDown={(e) => e.stopPropagation()}
-                    >
-                      <option value="gemini-2.5-flash-image">Flash</option>
-                      <option value="gemini-3-pro-image-preview">Pro</option>
-                    </select>
-                  ) : (
-                    <span className="font-semibold">{node.data.parameters.model.includes('flash') ? 'Flash' : 'Pro'}</span>
-                  )}
+                <div className="grid grid-cols-2 gap-y-1 text-[11px] text-zinc-400">
+                  <span>Model</span>
+                  <span className="text-right text-zinc-100 font-medium">{node.data.parameters.model.includes('flash') ? 'Flash' : 'Pro'}</span>
+                  <span>Temperature</span>
+                  <span className="text-right text-zinc-100 font-medium">{node.data.parameters.temperature}</span>
+                  <span>Top-p</span>
+                  <span className="text-right text-zinc-100 font-medium">{node.data.parameters.top_p}</span>
+                  <span>Aspect</span>
+                  <span className="text-right text-zinc-100 font-medium">{node.data.parameters.aspect_ratio}</span>
+                  <span>Size</span>
+                  <span className="text-right text-zinc-100 font-medium">{node.data.parameters.image_size}</span>
+                  <span>Safety</span>
+                  <span className="text-right text-zinc-100 font-medium capitalize">{node.data.parameters.safety_filter}</span>
                 </div>
-                <div className={`flex justify-between items-center px-2 py-1.5 rounded-lg ${isDark ? 'bg-white/5' : 'bg-zinc-50'}`}>
-                  <span className={isDark ? 'text-zinc-400' : 'text-zinc-500'}>Temperature</span>
-                  {isWorkflowEditing ? (
-                    <input
-                      type="number"
-                      step="0.1"
-                      min="0"
-                      max="2"
-                      className={`w-16 text-xs px-2 py-1 rounded-lg border ${isDark ? 'bg-black/30 border-white/10' : 'bg-white border-zinc-200'}`}
-                      value={node.data.parameters.temperature}
-                      onChange={(e) => {
-                        e.stopPropagation();
-                        updateNodeData(node.id, { parameters: { ...node.data.parameters, temperature: parseFloat(e.target.value) } });
-                      }}
-                      onClick={(e) => e.stopPropagation()}
-                      onMouseDown={(e) => e.stopPropagation()}
-                    />
-                  ) : (
-                    <span className="font-semibold">{node.data.parameters.temperature}</span>
-                  )}
-                </div>
-                <div className={`flex justify-between items-center px-2 py-1.5 rounded-lg ${isDark ? 'bg-white/5' : 'bg-zinc-50'}`}>
-                  <span className={isDark ? 'text-zinc-400' : 'text-zinc-500'}>Top-p</span>
-                  {isWorkflowEditing ? (
-                    <input
-                      type="number"
-                      step="0.05"
-                      min="0"
-                      max="1"
-                      className={`w-16 text-xs px-2 py-1 rounded-lg border ${isDark ? 'bg-black/30 border-white/10' : 'bg-white border-zinc-200'}`}
-                      value={node.data.parameters.top_p}
-                      onChange={(e) => {
-                        e.stopPropagation();
-                        updateNodeData(node.id, { parameters: { ...node.data.parameters, top_p: parseFloat(e.target.value) } });
-                      }}
-                      onClick={(e) => e.stopPropagation()}
-                      onMouseDown={(e) => e.stopPropagation()}
-                    />
-                  ) : (
-                    <span className="font-semibold">{node.data.parameters.top_p}</span>
-                  )}
-                </div>
-                <div className={`flex justify-between items-center px-2 py-1.5 rounded-lg ${isDark ? 'bg-white/5' : 'bg-zinc-50'}`}>
-                  <span className={isDark ? 'text-zinc-400' : 'text-zinc-500'}>Aspect Ratio</span>
-                  {isWorkflowEditing ? (
-                    <select
-                      className={`text-xs px-2 py-1 rounded-lg border ${isDark ? 'bg-black/30 border-white/10' : 'bg-white border-zinc-200'}`}
-                      value={node.data.parameters.aspect_ratio}
-                      onChange={(e) => {
-                        e.stopPropagation();
-                        updateNodeData(node.id, { parameters: { ...node.data.parameters, aspect_ratio: e.target.value } });
-                      }}
-                      onClick={(e) => e.stopPropagation()}
-                      onMouseDown={(e) => e.stopPropagation()}
-                    >
-                      <option value="1:1">1:1</option>
-                      <option value="16:9">16:9</option>
-                      <option value="9:16">9:16</option>
-                      <option value="3:4">3:4</option>
-                      <option value="4:3">4:3</option>
-                    </select>
-                  ) : (
-                    <span className="font-semibold">{node.data.parameters.aspect_ratio}</span>
-                  )}
-                </div>
-                <div className={`flex justify-between items-center px-2 py-1.5 rounded-lg ${isDark ? 'bg-white/5' : 'bg-zinc-50'}`}>
-                  <span className={isDark ? 'text-zinc-400' : 'text-zinc-500'}>Image Size</span>
-                  {isWorkflowEditing ? (
-                    <select
-                      className={`text-xs px-2 py-1 rounded-lg border ${isDark ? 'bg-black/30 border-white/10' : 'bg-white border-zinc-200'}`}
-                      value={node.data.parameters.image_size}
-                      onChange={(e) => {
-                        e.stopPropagation();
-                        updateNodeData(node.id, { parameters: { ...node.data.parameters, image_size: e.target.value } });
-                      }}
-                      onClick={(e) => e.stopPropagation()}
-                      onMouseDown={(e) => e.stopPropagation()}
-                    >
-                      <option value="1K">1K</option>
-                      <option value="2K">2K</option>
-                    </select>
-                  ) : (
-                    <span className="font-semibold">{node.data.parameters.image_size}</span>
-                  )}
-                </div>
-                <div className={`flex justify-between items-center px-2 py-1.5 rounded-lg ${isDark ? 'bg-white/5' : 'bg-zinc-50'}`}>
-                  <span className={isDark ? 'text-zinc-400' : 'text-zinc-500'}>Safety</span>
-                  {isWorkflowEditing ? (
-                    <select
-                      className={`text-xs px-2 py-1 rounded-lg border ${isDark ? 'bg-black/30 border-white/10' : 'bg-white border-zinc-200'}`}
-                      value={node.data.parameters.safety_filter}
-                      onChange={(e) => {
-                        e.stopPropagation();
-                        updateNodeData(node.id, { parameters: { ...node.data.parameters, safety_filter: e.target.value } });
-                      }}
-                      onClick={(e) => e.stopPropagation()}
-                      onMouseDown={(e) => e.stopPropagation()}
-                    >
-                      <option value="low">Low</option>
-                      <option value="medium">Medium</option>
-                      <option value="high">High</option>
-                    </select>
-                  ) : (
-                    <span className="font-semibold capitalize">{node.data.parameters.safety_filter}</span>
-                  )}
-                </div>
-
-                {/* Edit button for standalone workflow nodes */}
-                {workflowEditingEnabled && editingNode !== node.id && (
+                <div className="flex items-center gap-2 pt-3">
                   <button
-                    className={`w-full py-1 mt-2 text-xs rounded transition-colors ${
-                      isDark
-                        ? 'bg-gray-700 hover:bg-gray-600 text-gray-300'
-                        : 'bg-gray-100 hover:bg-gray-200 text-gray-700'
-                    }`}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setEditingNode(node.id);
-                    }}
-                    onMouseDown={(e) => e.stopPropagation()}
+                    className={`flex-1 px-3 py-2 rounded-lg text-[11px] font-medium border ${isDark ? 'bg-white/5 border-white/10 text-white' : 'bg-zinc-100 border-zinc-200 text-zinc-900'}`}
                   >
-                    Edit Parameters
+                    Add another image input
                   </button>
-                )}
-                {isWorkflowEditing && (
                   <button
-                    className={`w-full py-1 mt-2 text-xs rounded transition-colors ${
-                      isDark
-                        ? 'bg-blue-600 hover:bg-blue-500 text-white'
-                        : 'bg-blue-500 hover:bg-blue-400 text-white'
-                    }`}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setEditingNode(null);
-                    }}
-                    onMouseDown={(e) => e.stopPropagation()}
-                    >
-                      Done
-                    </button>
-                )}
-                {!workflowEditingEnabled && (
-                  <p className="text-[11px] mt-2 text-gray-500 dark:text-gray-400 text-center">
-                    Parameters lock after the first generation.
-                  </p>
-                )}
+                    className={`px-3 py-2 rounded-lg text-[11px] font-semibold shadow-lg ${isDark ? 'bg-purple-500 text-white shadow-purple-500/25' : 'bg-purple-500 text-white shadow-purple-400/20'}`}
+                  >
+                    Run Model
+                  </button>
+                </div>
+                <p className={`text-[10px] ${isDark ? 'text-zinc-500' : 'text-zinc-500'}`}>
+                  Parameters lock after the first generation.
+                </p>
               </div>
             )}
+
             {isImage && (
               <div className="h-full flex flex-col gap-2">
-                <div className={`flex-1 flex flex-col rounded-xl border overflow-hidden ${isDark ? 'border-white/10 bg-white/5' : 'border-zinc-200 bg-white shadow-sm'}`}>
+                <div className={`flex-1 rounded-xl overflow-hidden border ${isDark ? 'border-white/10 bg-black/30' : 'border-zinc-200 bg-white'}`}>
                   {node.data.imageData ? (
                     <img
                       src={node.data.imageData}
                       alt={node.label}
-                      className="w-full h-44 object-cover"
+                      className="w-full h-[280px] object-cover"
                       draggable={false}
                     />
                   ) : (
-                    <div className={`w-full h-44 flex items-center justify-center ${isDark ? 'bg-white/5' : 'bg-zinc-50'}`}>
+                    <div className={`w-full h-[280px] flex items-center justify-center ${isDark ? 'bg-black/20' : 'bg-zinc-50'}`}>
                       <ImageIcon className={isDark ? 'text-zinc-500' : 'text-zinc-400'} size={32} />
                     </div>
                   )}
                 </div>
-                <p className={`text-xs px-1 ${isDark ? 'text-zinc-400' : 'text-zinc-600'} truncate`}>
+                <p className={`text-xs ${isDark ? 'text-zinc-400' : 'text-zinc-600'} truncate`}>
                   {node.data.image?.filename || 'No image'}
                 </p>
                 {node.type === 'output-image' && (
-                  <div className={`p-3 rounded-xl border ${isDark ? 'border-white/10 bg-white/5 text-zinc-100' : 'border-zinc-200 bg-white text-zinc-700 shadow-sm'}`}>
-                    <p className="text-[11px] leading-relaxed max-h-20 overflow-y-auto whitespace-pre-wrap">
-                      {node.data.text || 'Text output will appear here'}
-                    </p>
-                  </div>
+                  <p className={`text-[11px] leading-[18px] whitespace-pre-wrap ${isDark ? 'text-zinc-300' : 'text-zinc-700'}`}>
+                    {node.data.text || 'Text output will appear here'}
+                  </p>
                 )}
               </div>
             )}
+
             {node.type === 'output-text' && (
               <div className="h-full flex flex-col">
-                <div className={`w-full h-full p-3 rounded-xl border ${isDark ? 'bg-white/5 border-white/10 text-zinc-100' : 'bg-white border-zinc-200 text-zinc-700 shadow-sm'}`}>
-                  <p className="text-sm leading-relaxed whitespace-pre-wrap break-words max-h-32 overflow-y-auto">
-                    {node.data.text || 'Text output'}
-                  </p>
-                </div>
+                <p className={`w-full h-full text-[12px] leading-[18px] whitespace-pre-wrap break-words ${isDark ? 'text-zinc-100' : 'text-zinc-800'}`}>
+                  {node.data.text || 'Text output'}
+                </p>
               </div>
             )}
           </div>
@@ -1133,8 +958,8 @@ const GraphView: React.FC<GraphViewProps> = ({ sessions, theme, loadImage, onGen
               cx={0}
               cy={node.height / 4}
               r={6}
-              className="fill-purple-500 stroke-purple-300 cursor-pointer hover:r-8"
-              strokeWidth={2}
+              className="fill-[#b977ff] stroke-[#e6d8ff] cursor-pointer"
+              strokeWidth={1.5}
               onMouseDown={(e) => {
                 e.stopPropagation();
               }}
@@ -1147,8 +972,8 @@ const GraphView: React.FC<GraphViewProps> = ({ sessions, theme, loadImage, onGen
               cx={0}
               cy={(node.height / 4) * 2}
               r={6}
-              className="fill-green-500 stroke-green-300 cursor-pointer"
-              strokeWidth={2}
+              className="fill-[#4ad8a4] stroke-[#cff7e5] cursor-pointer"
+              strokeWidth={1.5}
               onMouseDown={(e) => {
                 e.stopPropagation();
               }}
@@ -1161,8 +986,8 @@ const GraphView: React.FC<GraphViewProps> = ({ sessions, theme, loadImage, onGen
               cx={0}
               cy={(node.height / 4) * 3}
               r={6}
-              className="fill-blue-500 stroke-blue-300 cursor-pointer"
-              strokeWidth={2}
+              className="fill-[#6bb2ff] stroke-[#d6e8ff] cursor-pointer"
+              strokeWidth={1.5}
               onMouseDown={(e) => {
                 e.stopPropagation();
               }}
@@ -1175,8 +1000,8 @@ const GraphView: React.FC<GraphViewProps> = ({ sessions, theme, loadImage, onGen
               cx={node.width}
               cy={node.height / 2}
               r={6}
-              className="fill-amber-500 stroke-amber-300 cursor-pointer"
-              strokeWidth={2}
+              className="fill-[#f5b454] stroke-[#ffe6ba] cursor-pointer"
+              strokeWidth={1.5}
               onMouseDown={(e) => handleConnectionStart(e, node.id)}
               style={{ cursor: 'crosshair' }}
             />
@@ -1191,7 +1016,7 @@ const GraphView: React.FC<GraphViewProps> = ({ sessions, theme, loadImage, onGen
               cx={node.width}
               cy={node.height / 2}
               r={4}
-              className={`${isDark ? 'fill-gray-400' : 'fill-gray-500'} cursor-pointer hover:fill-blue-500`}
+              className={`${isDark ? 'fill-[#9f8ac7]' : 'fill-zinc-500'} cursor-pointer`}
               onMouseDown={(e) => handleConnectionStart(e, node.id)}
               style={{ cursor: 'crosshair' }}
             />
@@ -1200,7 +1025,7 @@ const GraphView: React.FC<GraphViewProps> = ({ sessions, theme, loadImage, onGen
               cx={0}
               cy={node.height / 2}
               r={4}
-              className={`${isDark ? 'fill-gray-400' : 'fill-gray-500'} cursor-pointer hover:fill-blue-500`}
+              className={`${isDark ? 'fill-[#9f8ac7]' : 'fill-zinc-500'} cursor-pointer`}
               onMouseDown={(e) => {
                 e.stopPropagation();
               }}
@@ -1225,41 +1050,15 @@ const GraphView: React.FC<GraphViewProps> = ({ sessions, theme, loadImage, onGen
     const key = `edge-${index}-${edge.from}-${edge.to}-${edge.toHandle || 'none'}`;
 
     return (
-      <g key={key}>
-        <defs>
-          <filter id={`glow-${key}`} x="-50%" y="-50%" width="200%" height="200%">
-            <feGaussianBlur stdDeviation="3" result="coloredBlur"/>
-            <feMerge>
-              <feMergeNode in="coloredBlur"/>
-              <feMergeNode in="coloredBlur"/>
-              <feMergeNode in="SourceGraphic"/>
-            </feMerge>
-          </filter>
-          <linearGradient id={`edge-grad-${key}`} gradientUnits="userSpaceOnUse">
-            <stop offset="0%" stopColor={edge.color} stopOpacity="0.8"/>
-            <stop offset="50%" stopColor={edge.color} stopOpacity="1"/>
-            <stop offset="100%" stopColor={edge.color} stopOpacity="0.8"/>
-          </linearGradient>
-        </defs>
-        {/* Glow layer */}
-        <path
-          d={path}
-          stroke={edge.color}
-          strokeWidth={6}
-          fill="none"
-          opacity={0.2}
-          strokeLinecap="round"
-          filter={`url(#glow-${key})`}
-        />
-        {/* Main edge */}
-        <path
-          d={path}
-          stroke={`url(#edge-grad-${key})`}
-          strokeWidth={2.5}
-          fill="none"
-          strokeLinecap="round"
-        />
-      </g>
+      <path
+        key={key}
+        d={path}
+        stroke={edge.color}
+        strokeWidth={2.2}
+        fill="none"
+        strokeLinecap="round"
+        opacity={0.9}
+      />
     );
   };
 
@@ -1275,11 +1074,11 @@ const GraphView: React.FC<GraphViewProps> = ({ sessions, theme, loadImage, onGen
       <div
         className="pointer-events-none absolute inset-0 opacity-70"
         style={{
-          backgroundImage: `radial-gradient(circle at 1px 1px, ${isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)'} 1px, transparent 0)`,
-          backgroundSize: '120px 120px'
+          backgroundImage: `radial-gradient(circle, ${isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.05)'} 1px, transparent 0)`,
+          backgroundSize: '26px 26px'
         }}
       />
-      <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-transparent via-transparent to-black/20" />
+      <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-transparent via-transparent to-black/40" />
 
       {/* Controls */}
       <div className={`absolute top-4 right-4 z-10 flex flex-col gap-3 p-3 rounded-2xl backdrop-blur-xl ${palette.panel}`}>
