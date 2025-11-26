@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { Sidebar } from './components/Sidebar';
+import { Sidebar, GalleryImage } from './components/Sidebar';
 import { PromptPanel } from './components/PromptPanel';
 import { MultiImageUploadPanel } from './components/MultiImageUploadPanel';
 import { ParametersPanel } from './components/ParametersPanel';
@@ -32,7 +32,7 @@ function AppContent() {
   // --- STATE ---
   const [sessions, setSessions] = useState<Session[]>([]);
   const [currentSessionId, setCurrentSessionId] = useState<string | null>(null);
-  const { currentUser, setCurrentUser } = useUser();
+  const { currentUser, setCurrentUser, logout: userLogout } = useUser();
 
   // Active Generation Inputs
   const [prompt, setPrompt] = useState<string>('');
@@ -101,6 +101,64 @@ function AppContent() {
       .sort((a, b) => new Date(b.generation.timestamp).getTime() - new Date(a.generation.timestamp).getTime());
   }, [sessions]);
 
+  // Gallery images for sidebar (all images from all sessions, most recent first)
+  const galleryImages = useMemo<GalleryImage[]>(() => {
+    const images: GalleryImage[] = [];
+
+    sessions.forEach(session => {
+      session.generations.forEach(gen => {
+        // Add control images
+        if (gen.control_images) {
+          gen.control_images.forEach(img => {
+            const dataUri = StorageService.loadImage('control', img.id, img.filename);
+            if (dataUri) {
+              images.push({
+                meta: img,
+                role: 'control',
+                dataUri,
+                timestamp: gen.timestamp
+              });
+            }
+          });
+        }
+
+        // Add reference images
+        if (gen.reference_images) {
+          gen.reference_images.forEach(img => {
+            const dataUri = StorageService.loadImage('reference', img.id, img.filename);
+            if (dataUri) {
+              images.push({
+                meta: img,
+                role: 'reference',
+                dataUri,
+                timestamp: gen.timestamp
+              });
+            }
+          });
+        }
+
+        // Add output images
+        const outputs = gen.output_images || (gen.output_image ? [gen.output_image] : []);
+        outputs.forEach(img => {
+          const dataUri = StorageService.loadImage('output', img.id, img.filename);
+          if (dataUri) {
+            images.push({
+              meta: img,
+              role: 'output',
+              dataUri,
+              timestamp: gen.timestamp
+            });
+          }
+        });
+      });
+    });
+
+    // Sort by timestamp (most recent first) and deduplicate by ID
+    return images
+      .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
+      .filter((img, idx, arr) => arr.findIndex(i => i.meta.id === img.meta.id) === idx);
+  }, [sessions]);
+
   // Get current session
   const currentSession = sessions.find(s => s.session_id === currentSessionId) || null;
 
@@ -157,11 +215,17 @@ function AppContent() {
         console.error('Failed to sync user data to shared storage', err);
       }
 
-      const loadedSessions = StorageService.getSessions();
+      const allSessions = StorageService.getSessions();
       if (cancelled) return;
-      setSessions(loadedSessions);
-      if (loadedSessions.length > 0) {
-        handleSelectSession(loadedSessions[0].session_id);
+
+      // Filter sessions to only show the current user's sessions
+      const userSessions = currentUser
+        ? allSessions.filter(s => s.user?.id === currentUser.id)
+        : [];
+
+      setSessions(userSessions);
+      if (userSessions.length > 0) {
+        handleSelectSession(userSessions[0].session_id);
       } else {
         handleNewSession();
       }
@@ -176,9 +240,42 @@ function AppContent() {
 
   // --- HANDLERS ---
   const handleLogin = (user: { displayName: string; id: string }, persist = true) => {
+    // First, let UserContext process the user and get/create the persistent ID
     setCurrentUser(user, persist);
-    LoggerService.setCurrentUser(user);
-    LoggerService.logLogin('User logged in', { displayName: user.displayName, userId: user.id });
+
+    // UserContext will update currentUser with the persistent ID via the mapping
+    // We need to wait for that update before notifying LoggerService
+    // The useEffect below will handle the LoggerService update
+  };
+
+  // Track previous user to detect login events
+  const [previousUser, setPreviousUser] = useState<typeof currentUser>(null);
+
+  // Update LoggerService whenever currentUser changes (after UserContext processes it)
+  useEffect(() => {
+    if (currentUser) {
+      LoggerService.setCurrentUser(currentUser);
+
+      // Log login event if this is a new login (user changed from null to a value)
+      if (!previousUser) {
+        LoggerService.logLogin('User logged in', {
+          displayName: currentUser.displayName,
+          userId: currentUser.id
+        });
+      }
+      setPreviousUser(currentUser);
+    } else {
+      setPreviousUser(null);
+    }
+  }, [currentUser]);
+
+  const handleLogout = () => {
+    LoggerService.logAction('User logged out', { displayName: currentUser?.displayName });
+    userLogout();
+    // Close settings modal
+    setIsSettingsOpen(false);
+    // Reload the page to clear all state and return to welcome
+    window.location.reload();
   };
 
   const toggleTheme = () => {
@@ -224,16 +321,52 @@ function AppContent() {
   };
 
   const handleNewSession = () => {
-    const newSession = StorageService.createSession();
+    const newSession = StorageService.createSession("New Session", currentUser || undefined);
     setSessions(prev => [newSession, ...prev]);
     setCurrentSessionId(newSession.session_id);
     resetInputs();
-    LoggerService.logAction('Created new session', { sessionId: newSession.session_id });
+    LoggerService.logAction('Created new session', {
+      sessionId: newSession.session_id,
+      user: currentUser?.displayName
+    });
   };
 
   const handleRenameSession = (id: string, newTitle: string) => {
     StorageService.renameSession(id, newTitle);
-    setSessions(StorageService.getSessions());
+    // Reload and filter sessions for current user
+    const allSessions = StorageService.getSessions();
+    const userSessions = currentUser
+      ? allSessions.filter(s => s.user?.id === currentUser.id)
+      : [];
+    setSessions(userSessions);
+  };
+
+  const handleDeleteSession = (id: string) => {
+    const session = sessions.find(s => s.session_id === id);
+    if (!session) return;
+
+    // Only allow deletion of empty sessions
+    if (session.generations.length > 0) {
+      alert('Cannot delete session with generations. Sessions with history are preserved.');
+      return;
+    }
+
+    StorageService.deleteSession(id);
+    // Reload and filter sessions for current user
+    const allSessions = StorageService.getSessions();
+    const userSessions = currentUser
+      ? allSessions.filter(s => s.user?.id === currentUser.id)
+      : [];
+    setSessions(userSessions);
+
+    // If we deleted the current session, switch to another one
+    if (currentSessionId === id) {
+      if (userSessions.length > 0) {
+        handleSelectSession(userSessions[0].session_id);
+      } else {
+        handleNewSession();
+      }
+    }
   };
 
   const handleSelectSession = (id: string) => {
@@ -259,6 +392,31 @@ function AppContent() {
       prev.map((item, idx) => (idx === editingControlIndex ? { ...item, data: dataUri } : item))
     );
     setEditingControlIndex(null);
+  };
+
+  const handleCreateBlankControlImage = () => {
+    // Create a blank white canvas (1024x1024)
+    const canvas = document.createElement('canvas');
+    canvas.width = 1024;
+    canvas.height = 1024;
+    const ctx = canvas.getContext('2d');
+
+    if (ctx) {
+      // Fill with white
+      ctx.fillStyle = '#FFFFFF';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+      // Convert to base64 data URI
+      const dataUri = canvas.toDataURL('image/png');
+
+      const payload: UploadedImagePayload = {
+        data: dataUri,
+        original_name: 'blank_canvas.png',
+        size_bytes: dataUri.length
+      };
+
+      setControlImagesData(prev => [...prev, payload]);
+    }
   };
 
   const handleSelectGeneration = (sessionId: string, gen: SessionGeneration) => {
@@ -344,6 +502,14 @@ function AppContent() {
         }
     };
     reader.readAsDataURL(file);
+  };
+
+  const handleGalleryImageDrop = (payload: UploadedImagePayload, role: 'control' | 'reference') => {
+    if (role === 'control') {
+      setControlImagesData(prev => [...prev, payload]);
+    } else {
+      setReferenceImagesData(prev => [...prev, payload]);
+    }
   };
 
   const handleImageRemove = (index: number, role: 'control' | 'reference') => {
@@ -523,8 +689,10 @@ function AppContent() {
         currentChatId={currentSessionId}
         onSelectChat={handleSelectSession}
         onNewChat={handleNewSession}
+        onDeleteChat={handleDeleteSession}
         onRenameChat={handleRenameSession}
         onOpenSettings={() => setIsSettingsOpen(true)}
+        galleryImages={galleryImages}
       />
 
       {/* MAIN WORKSPACE */}
@@ -544,6 +712,22 @@ function AppContent() {
             </div>
 
             <div className="flex items-center gap-4" style={{ WebkitAppRegion: 'no-drag' } as any}>
+                {/* Generation View (Main View) */}
+                <button
+                  onClick={() => {
+                    setShowGraphView(false);
+                    setShowHistory(false);
+                  }}
+                  className={`flex items-center gap-2 text-xs px-3 py-1.5 rounded border transition-colors font-medium ${
+                    !showGraphView && !showHistory
+                      ? 'bg-green-50 dark:bg-green-950/30 border-green-300 dark:border-green-900 text-green-700 dark:text-green-400'
+                      : 'bg-white dark:bg-zinc-800/50 border-zinc-300 dark:border-zinc-700 text-zinc-700 dark:text-zinc-400 hover:bg-zinc-50 dark:hover:bg-zinc-800'
+                  }`}
+                >
+                  <Zap size={12} />
+                  Generation View
+                </button>
+
                 {/* Graph View Toggle */}
                 <button
                   onClick={() => {
@@ -577,15 +761,6 @@ function AppContent() {
                     History ({historyItems.length})
                   </button>
                 )}
-
-                <button
-                  onClick={handleOpenAdminDashboard}
-                  className="flex items-center gap-2 text-xs px-3 py-1.5 rounded border bg-white dark:bg-emerald-900/30 border-emerald-300 dark:border-emerald-800 text-emerald-700 dark:text-emerald-200 hover:bg-emerald-50 dark:hover:bg-emerald-900 transition-colors"
-                  title="Open the admin dashboard"
-                >
-                  <ShieldCheck size={12} />
-                  Admin Dashboard
-                </button>
 
                 <button
                   onClick={() => setIsAdminLogsOpen(true)}
@@ -682,6 +857,8 @@ function AppContent() {
                             onUpload={(f) => handleImageUpload(f, 'control')}
                             onRemove={(idx) => handleImageRemove(idx, 'control')}
                             onEdit={handleEditControlImage}
+                            onCreateBlank={handleCreateBlankControlImage}
+                            onGalleryDrop={(payload) => handleGalleryImageDrop(payload, 'control')}
                             maxImages={5}
                         />
                         <MultiImageUploadPanel
@@ -690,6 +867,7 @@ function AppContent() {
                             images={referenceImagesData.map(img => img.data)}
                             onUpload={(f) => handleImageUpload(f, 'reference')}
                             onRemove={(idx) => handleImageRemove(idx, 'reference')}
+                            onGalleryDrop={(payload) => handleGalleryImageDrop(payload, 'reference')}
                             maxImages={5}
                         />
                     </div>
@@ -770,6 +948,7 @@ function AppContent() {
         theme={theme}
         toggleTheme={toggleTheme}
         onApiKeyUpdate={handleApiKeyUpdate}
+        onLogout={handleLogout}
       />
       <AdminDashboard
         isOpen={isAdminDashboardOpen}

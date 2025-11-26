@@ -53,6 +53,7 @@
     "copyright": "Copyright © 2025 Artin Lesani",
     "win": {
       "target": "nsis",
+      "icon": "build/Area49_logo_A49-2024-3.ico",
       "signingHashAlgorithms": [],
       "sign": null,
       "executableName": "AREA49-Nano-Banana-UI",
@@ -65,13 +66,15 @@
       "target": [
         "dmg",
         "pkg"
-      ]
+      ],
+      "icon": "build/icon.icns"
     },
     "linux": {
       "target": [
         "AppImage",
         "deb"
       ],
+      "icon": "build/icon.png",
       "category": "Utility"
     },
     "publish": [

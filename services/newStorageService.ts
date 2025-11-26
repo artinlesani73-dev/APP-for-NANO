@@ -71,14 +71,15 @@ export const StorageService = {
   // =======================
 
   // Create a new session
-  createSession: (title: string = "New Session"): Session => {
+  createSession: (title: string = "New Session", user?: { displayName: string; id: string }): Session => {
     const session: Session = {
       session_id: generateUUID(),
       title,
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
       generations: [],
-      graph: { nodes: [], edges: [] }
+      graph: { nodes: [], edges: [] },
+      user
     };
 
     StorageService.saveSession(session);
@@ -144,10 +145,28 @@ export const StorageService = {
     }
   },
 
-  // Delete a session
+  // Delete a session (only if empty)
   deleteSession: (sessionId: string) => {
-    console.warn('Session deletion is disabled to preserve history. Requested session:', sessionId);
-    // Intentionally no-op to keep sessions intact
+    const session = StorageService.loadSession(sessionId);
+    if (!session) return;
+
+    // Only allow deletion of empty sessions (no generations)
+    if (session.generations.length > 0) {
+      console.warn('Cannot delete session with generations:', sessionId);
+      return;
+    }
+
+    // Remove session from storage
+    if (isElectron()) {
+      // @ts-ignore - Electron API for deleting sessions
+      if (window.electron?.deleteSessionSync) {
+        window.electron.deleteSessionSync(sessionId);
+      } else {
+        console.warn('deleteSessionSync not available in Electron API');
+      }
+    } else {
+      localStorage.removeItem(`session_${sessionId}`);
+    }
   },
 
   // Persist graph state for a session

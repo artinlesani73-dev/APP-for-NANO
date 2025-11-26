@@ -6,6 +6,10 @@ export interface Session {
   updated_at: string;
   generations: SessionGeneration[];
   graph?: GraphState;
+  user?: {
+    displayName: string;
+    id: string;
+  };
 }
 
 // Generation data embedded in session (not separated)
