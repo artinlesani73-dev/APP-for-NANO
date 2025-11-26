@@ -28,9 +28,12 @@ let adminWindow;
 const isAdminEnabled = () => Boolean(process.env.VITE_ADMIN_PASSPHRASE || process.env.ADMIN_ENABLED === 'true');
 
 function createWindow() {
+  const iconPath = path.join(__dirname, 'build', 'Area49_logo_A49-2024-3.ico');
+
   mainWindow = new BrowserWindow({
     width: 1280,
     height: 800,
+    icon: iconPath,
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
@@ -55,9 +58,12 @@ function createAdminWindow() {
     return adminWindow;
   }
 
+  const iconPath = path.join(__dirname, 'build', 'Area49_logo_A49-2024-3.ico');
+
   adminWindow = new BrowserWindow({
     width: 1200,
     height: 800,
+    icon: iconPath,
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
