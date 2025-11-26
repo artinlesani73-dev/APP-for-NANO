@@ -756,81 +756,10 @@ const GraphView: React.FC<GraphViewProps> = ({ sessions, theme, loadImage, onGen
         backgroundSize: '24px 24px'
       }}
     >
-      {/* Unified toolbar */}
-      <div className="absolute top-4 left-4 right-4 z-10 flex flex-col gap-3">
-        <div className={`flex flex-col lg:flex-row gap-3 w-full`}>
-          <div className={`flex-1 rounded-2xl p-4 space-y-3 backdrop-blur-xl ${palette.panel}`}>
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <div className="flex items-center gap-3">
-                <div className={`font-semibold text-sm ${isDark ? 'text-zinc-100' : 'text-zinc-900'}`}>Graph Overview</div>
-                <span className={`text-[11px] px-2 py-1 rounded-full ${isDark ? 'bg-white/5 text-zinc-300' : 'bg-zinc-100 text-zinc-600'}`}>
-                  {nodes.length} nodes · {edges.length} edges
-                </span>
-              </div>
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={() => setZoom(Math.min(zoom + 0.1, 2))}
-                  className={`flex items-center gap-2 px-3 py-2 rounded-xl text-sm border transition ${isDark ? 'border-white/10 hover:bg-white/5 text-white' : 'border-zinc-200 hover:bg-zinc-50 text-zinc-900'}`}
-                >
-                  <ZoomIn size={16} />
-                  <span className="hidden sm:inline">Zoom In</span>
-                </button>
-                <button
-                  onClick={() => setZoom(Math.max(zoom - 0.1, 0.2))}
-                  className={`flex items-center gap-2 px-3 py-2 rounded-xl text-sm border transition ${isDark ? 'border-white/10 hover:bg-white/5 text-white' : 'border-zinc-200 hover:bg-zinc-50 text-zinc-900'}`}
-                >
-                  <ZoomOut size={16} />
-                  <span className="hidden sm:inline">Zoom Out</span>
-                </button>
-                <button
-                  onClick={() => { setZoom(0.7); setPan({ x: 50, y: 50 }); }}
-                  className={`flex items-center gap-2 px-3 py-2 rounded-xl text-sm border transition ${isDark ? 'border-white/10 hover:bg-white/5 text-white' : 'border-zinc-200 hover:bg-zinc-50 text-zinc-900'}`}
-                >
-                  <Maximize2 size={16} />
-                  <span className="hidden sm:inline">Reset View</span>
-                </button>
-              </div>
-            </div>
-
-            <div className="flex flex-wrap items-center gap-3">
-              <select
-                value={selectedSessionId}
-                onChange={(e) => setSelectedSessionId(e.target.value as string)}
-                className={`px-3 py-2 text-sm rounded-xl border transition-all ${
-                  isDark
-                    ? 'bg-[#0d0b14]/95 border-white/10 text-zinc-100 hover:bg-white/5'
-                    : 'bg-white border-zinc-200 text-zinc-700 hover:bg-zinc-50'
-                }`}
-              >
-                <option
-                  value="all"
-                  style={{ backgroundColor: isDark ? '#0d0b14' : '#ffffff', color: isDark ? '#e5e7eb' : '#1f2937' }}
-                >
-                  All Sessions ({sessions.length})
-                </option>
-                {sessions.map(session => (
-                  <option
-                    key={session.session_id}
-                    value={session.session_id}
-                    style={{ backgroundColor: isDark ? '#0d0b14' : '#ffffff', color: isDark ? '#e5e7eb' : '#1f2937' }}
-                  >
-                    {session.title} ({session.generations.length})
-                  </option>
-                ))}
-              </select>
-
-              <div className="flex flex-wrap items-center gap-2">
-                {legendItems.map(item => (
-                  <div key={item.label} className="flex items-center gap-2">
-                    <div className={`w-6 h-1 bg-gradient-to-r ${item.color} rounded-full`} />
-                    <span className={`text-xs ${isDark ? 'text-zinc-200' : 'text-zinc-700'}`}>{item.label}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </div>
-
-          <div className={`rounded-2xl p-3 w-full lg:w-64 backdrop-blur-xl ${palette.panel}`}>
+      {/* Unified toolbar anchored to bottom */}
+      <div className="absolute bottom-4 left-4 right-4 z-10">
+        <div className="flex flex-col lg:flex-row items-end gap-3 w-full">
+          <div className={`rounded-2xl p-3 w-full lg:w-72 backdrop-blur-xl ${palette.panel}`}>
             <div className="flex items-center justify-between mb-2">
               <div className={`text-sm font-semibold ${isDark ? 'text-zinc-100' : 'text-zinc-900'}`}>Minimap</div>
               <span className={`text-[11px] px-2 py-1 rounded-full ${isDark ? 'bg-white/5 text-zinc-300' : 'bg-zinc-100 text-zinc-600'}`}>
@@ -890,6 +819,81 @@ const GraphView: React.FC<GraphViewProps> = ({ sessions, theme, loadImage, onGen
                   })}
                 </svg>
               )}
+            </div>
+          </div>
+
+          <div className={`flex-1 rounded-2xl px-4 py-2 backdrop-blur-xl ${palette.panel}`}>
+            <div
+              className={`flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 pb-2 border-b ${
+                isDark ? 'border-white/10' : 'border-zinc-200'
+              }`}
+            >
+              <div className="flex items-center gap-2">
+                <div className={`font-semibold text-sm ${isDark ? 'text-zinc-100' : 'text-zinc-900'}`}>Graph Toolbar</div>
+                <span className={`text-[11px] px-2 py-1 rounded-full ${isDark ? 'bg-white/5 text-zinc-300' : 'bg-zinc-100 text-zinc-600'}`}>
+                  {nodes.length} nodes · {edges.length} edges
+                </span>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setZoom(Math.min(zoom + 0.1, 2))}
+                  className={`h-9 px-3 inline-flex items-center gap-2 rounded-xl text-xs border transition ${isDark ? 'border-white/10 hover:bg-white/5 text-white' : 'border-zinc-200 hover:bg-zinc-50 text-zinc-900'}`}
+                >
+                  <ZoomIn size={14} />
+                  <span className="hidden sm:inline">Zoom In</span>
+                </button>
+                <button
+                  onClick={() => setZoom(Math.max(zoom - 0.1, 0.2))}
+                  className={`h-9 px-3 inline-flex items-center gap-2 rounded-xl text-xs border transition ${isDark ? 'border-white/10 hover:bg-white/5 text-white' : 'border-zinc-200 hover:bg-zinc-50 text-zinc-900'}`}
+                >
+                  <ZoomOut size={14} />
+                  <span className="hidden sm:inline">Zoom Out</span>
+                </button>
+                <button
+                  onClick={() => { setZoom(0.7); setPan({ x: 50, y: 50 }); }}
+                  className={`h-9 px-3 inline-flex items-center gap-2 rounded-xl text-xs border transition ${isDark ? 'border-white/10 hover:bg-white/5 text-white' : 'border-zinc-200 hover:bg-zinc-50 text-zinc-900'}`}
+                >
+                  <Maximize2 size={14} />
+                  <span className="hidden sm:inline">Reset</span>
+                </button>
+              </div>
+            </div>
+
+            <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3 pt-2">
+              <select
+                value={selectedSessionId}
+                onChange={(e) => setSelectedSessionId(e.target.value as string)}
+                className={`px-3 py-2 text-sm rounded-xl border transition-all ${
+                  isDark
+                    ? 'bg-[#0d0b14]/95 border-white/10 text-zinc-100 hover:bg-white/5'
+                    : 'bg-white border-zinc-200 text-zinc-700 hover:bg-zinc-50'
+                }`}
+              >
+                <option
+                  value="all"
+                  style={{ backgroundColor: isDark ? '#0d0b14' : '#ffffff', color: isDark ? '#e5e7eb' : '#1f2937' }}
+                >
+                  All Sessions ({sessions.length})
+                </option>
+                {sessions.map(session => (
+                  <option
+                    key={session.session_id}
+                    value={session.session_id}
+                    style={{ backgroundColor: isDark ? '#0d0b14' : '#ffffff', color: isDark ? '#e5e7eb' : '#1f2937' }}
+                  >
+                    {session.title} ({session.generations.length})
+                  </option>
+                ))}
+              </select>
+
+              <div className="flex flex-wrap items-center gap-2">
+                {legendItems.map(item => (
+                  <div key={item.label} className="flex items-center gap-2">
+                    <div className={`w-6 h-1 bg-gradient-to-r ${item.color} rounded-full`} />
+                    <span className={`text-xs ${isDark ? 'text-zinc-200' : 'text-zinc-700'}`}>{item.label}</span>
+                  </div>
+                ))}
+              </div>
             </div>
           </div>
         </div>

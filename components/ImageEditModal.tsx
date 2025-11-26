@@ -9,14 +9,16 @@ interface ImageEditModalProps {
 }
 
 export const ImageEditModal: React.FC<ImageEditModalProps> = ({ isOpen, image, onClose, onSave }) => {
-  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const baseCanvasRef = useRef<HTMLCanvasElement>(null);
+  const drawCanvasRef = useRef<HTMLCanvasElement>(null);
   const [isDrawing, setIsDrawing] = useState(false);
   const [brushColor, setBrushColor] = useState('#3b82f6');
-  const [brushSize, setBrushSize] = useState(6);
+  const [brushSize, setBrushSize] = useState(8);
   const [brushOpacity, setBrushOpacity] = useState(0.8);
+  const [tool, setTool] = useState<'brush' | 'erase'>('brush');
 
   const getPointerPosition = (e: React.PointerEvent<HTMLCanvasElement>) => {
-    const canvas = canvasRef.current;
+    const canvas = drawCanvasRef.current;
     if (!canvas) return null;
 
     const rect = canvas.getBoundingClientRect();
@@ -35,46 +37,53 @@ export const ImageEditModal: React.FC<ImageEditModalProps> = ({ isOpen, image, o
     const img = new Image();
     img.src = image;
     img.onload = () => {
-      const canvas = canvasRef.current;
-      if (!canvas) return;
+      const baseCanvas = baseCanvasRef.current;
+      const drawCanvas = drawCanvasRef.current;
+      if (!baseCanvas || !drawCanvas) return;
 
-      canvas.width = img.width;
-      canvas.height = img.height;
-      const ctx = canvas.getContext('2d');
-      if (!ctx) return;
+      baseCanvas.width = img.width;
+      baseCanvas.height = img.height;
+      drawCanvas.width = img.width;
+      drawCanvas.height = img.height;
 
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
-      ctx.drawImage(img, 0, 0);
+      const baseCtx = baseCanvas.getContext('2d');
+      const drawCtx = drawCanvas.getContext('2d');
+      if (!baseCtx || !drawCtx) return;
+
+      baseCtx.clearRect(0, 0, baseCanvas.width, baseCanvas.height);
+      baseCtx.drawImage(img, 0, 0);
+      drawCtx.clearRect(0, 0, drawCanvas.width, drawCanvas.height);
     };
   }, [image, isOpen]);
 
   const getContext = () => {
-    const canvas = canvasRef.current;
+    const canvas = drawCanvasRef.current;
     if (!canvas) return null;
     return canvas.getContext('2d');
   };
 
   const handlePointerDown = (e: React.PointerEvent<HTMLCanvasElement>) => {
-    if (!canvasRef.current) return;
+    if (!drawCanvasRef.current) return;
     const ctx = getContext();
     if (!ctx) return;
 
     const pos = getPointerPosition(e);
     if (!pos) return;
 
-    canvasRef.current.setPointerCapture(e.pointerId);
+    drawCanvasRef.current.setPointerCapture(e.pointerId);
     setIsDrawing(true);
     ctx.beginPath();
     ctx.lineWidth = brushSize;
-    ctx.strokeStyle = brushColor;
-    ctx.globalAlpha = brushOpacity;
+    ctx.strokeStyle = tool === 'erase' ? '#000000' : brushColor;
+    ctx.globalAlpha = tool === 'erase' ? 1 : brushOpacity;
+    ctx.globalCompositeOperation = tool === 'erase' ? 'destination-out' : 'source-over';
     ctx.lineCap = 'round';
     ctx.lineJoin = 'round';
     ctx.moveTo(pos.x, pos.y);
   };
 
   const handlePointerMove = (e: React.PointerEvent<HTMLCanvasElement>) => {
-    if (!isDrawing || !canvasRef.current) return;
+    if (!isDrawing || !drawCanvasRef.current) return;
     const ctx = getContext();
     if (!ctx) return;
 
@@ -82,8 +91,8 @@ export const ImageEditModal: React.FC<ImageEditModalProps> = ({ isOpen, image, o
     if (!pos) return;
 
     ctx.lineWidth = brushSize;
-    ctx.strokeStyle = brushColor;
-    ctx.globalAlpha = brushOpacity;
+    ctx.strokeStyle = tool === 'erase' ? '#000000' : brushColor;
+    ctx.globalAlpha = tool === 'erase' ? 1 : brushOpacity;
     ctx.lineCap = 'round';
     ctx.lineJoin = 'round';
     ctx.lineTo(pos.x, pos.y);
@@ -92,21 +101,33 @@ export const ImageEditModal: React.FC<ImageEditModalProps> = ({ isOpen, image, o
 
   const stopDrawing = (e?: React.PointerEvent<HTMLCanvasElement>) => {
     if (!isDrawing) return;
-    if (e && canvasRef.current?.hasPointerCapture(e.pointerId)) {
-      canvasRef.current.releasePointerCapture(e.pointerId);
+    if (e && drawCanvasRef.current?.hasPointerCapture(e.pointerId)) {
+      drawCanvasRef.current.releasePointerCapture(e.pointerId);
     }
     setIsDrawing(false);
     const ctx = getContext();
     if (ctx) {
       ctx.closePath();
       ctx.globalAlpha = 1;
+      ctx.globalCompositeOperation = 'source-over';
     }
   };
 
   const handleSave = () => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const dataUri = canvas.toDataURL('image/png');
+    const baseCanvas = baseCanvasRef.current;
+    const drawCanvas = drawCanvasRef.current;
+    if (!baseCanvas || !drawCanvas) return;
+
+    const merged = document.createElement('canvas');
+    merged.width = baseCanvas.width;
+    merged.height = baseCanvas.height;
+    const ctx = merged.getContext('2d');
+    if (!ctx) return;
+
+    ctx.drawImage(baseCanvas, 0, 0);
+    ctx.drawImage(drawCanvas, 0, 0);
+
+    const dataUri = merged.toDataURL('image/png');
     onSave(dataUri);
     onClose();
   };
@@ -128,17 +149,43 @@ export const ImageEditModal: React.FC<ImageEditModalProps> = ({ isOpen, image, o
 
         <div className="grid grid-cols-1 lg:grid-cols-4 gap-4 p-5">
           <div className="lg:col-span-3 bg-zinc-100 dark:bg-zinc-950 border border-dashed border-zinc-200 dark:border-zinc-800 rounded-xl overflow-auto max-h-[70vh] flex items-center justify-center">
-            <canvas
-              ref={canvasRef}
-              className="max-w-full max-h-[70vh] touch-none"
-              onPointerDown={handlePointerDown}
-              onPointerMove={handlePointerMove}
-              onPointerUp={stopDrawing}
-              onPointerLeave={stopDrawing}
-            />
+            <div className="relative max-w-full max-h-[70vh] touch-none">
+              <canvas ref={baseCanvasRef} className="block max-w-full max-h-[70vh]" />
+              <canvas
+                ref={drawCanvasRef}
+                className="absolute inset-0 max-w-full max-h-[70vh] touch-none"
+                onPointerDown={handlePointerDown}
+                onPointerMove={handlePointerMove}
+                onPointerUp={stopDrawing}
+                onPointerLeave={stopDrawing}
+              />
+            </div>
           </div>
 
           <div className="space-y-4">
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setTool('brush')}
+                className={`flex-1 px-3 py-2 text-sm rounded-lg border transition ${
+                  tool === 'brush'
+                    ? 'bg-blue-600 text-white border-blue-500'
+                    : 'bg-white dark:bg-zinc-800 border-zinc-200 dark:border-zinc-700 text-zinc-700 dark:text-zinc-200'
+                }`}
+              >
+                Brush
+              </button>
+              <button
+                onClick={() => setTool('erase')}
+                className={`flex-1 px-3 py-2 text-sm rounded-lg border transition ${
+                  tool === 'erase'
+                    ? 'bg-amber-500 text-white border-amber-400'
+                    : 'bg-white dark:bg-zinc-800 border-zinc-200 dark:border-zinc-700 text-zinc-700 dark:text-zinc-200'
+                }`}
+              >
+                Eraser
+              </button>
+            </div>
+
             <div>
               <label className="block text-xs font-semibold text-zinc-700 dark:text-zinc-300 mb-2">Brush Color</label>
               <input
@@ -154,7 +201,7 @@ export const ImageEditModal: React.FC<ImageEditModalProps> = ({ isOpen, image, o
               <input
                 type="range"
                 min={1}
-                max={40}
+                max={72}
                 value={brushSize}
                 onChange={(e) => setBrushSize(Number(e.target.value))}
                 className="w-full"
