@@ -1,9 +1,24 @@
-const { app, BrowserWindow, ipcMain, dialog } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, nativeImage } = require('electron');
 const { autoUpdater } = require('electron-updater');
 const path = require('path');
 const fs = require('fs');
 const crypto = require('crypto');
 const os = require('os');
+
+const resolveAppIcon = () => {
+  const candidatePaths = [
+    path.join(__dirname, 'build', 'Area49_logo_A49-2024-3.ico'),
+    app.getAppPath && path.join(app.getAppPath(), 'build', 'Area49_logo_A49-2024-3.ico'),
+    process.resourcesPath && path.join(process.resourcesPath, 'build', 'Area49_logo_A49-2024-3.ico'),
+    process.resourcesPath && path.join(process.resourcesPath, 'app.asar.unpacked', 'build', 'Area49_logo_A49-2024-3.ico')
+  ].filter(Boolean);
+
+  const resolvedPath = candidatePaths.find(candidate => fs.existsSync(candidate));
+  if (!resolvedPath) return undefined;
+
+  const icon = nativeImage.createFromPath(resolvedPath);
+  return icon.isEmpty() ? undefined : icon;
+};
 
 // Explicitly set the application user model ID so Windows uses the packaged
 // executable's icon for taskbar entries instead of the default Electron icon.
@@ -50,10 +65,12 @@ const getUserFolderName = () => {
 const isAdminEnabled = () => Boolean(process.env.VITE_ADMIN_PASSPHRASE || process.env.ADMIN_ENABLED === 'true');
 
 function createWindow() {
+  const icon = resolveAppIcon();
+
   mainWindow = new BrowserWindow({
     width: 1280,
     height: 800,
-    icon: path.join(__dirname, 'build', 'Area49_logo_A49-2024-3.ico'),
+    icon,
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
@@ -78,10 +95,12 @@ function createAdminWindow() {
     return adminWindow;
   }
 
+  const icon = resolveAppIcon();
+
   adminWindow = new BrowserWindow({
     width: 1200,
     height: 800,
-    icon: path.join(__dirname, 'build', 'Area49_logo_A49-2024-3.ico'),
+    icon,
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,

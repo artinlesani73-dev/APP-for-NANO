@@ -1,21 +1,22 @@
-const { app, BrowserWindow, dialog, ipcMain } = require('electron');
+const { app, BrowserWindow, dialog, ipcMain, nativeImage } = require('electron');
 const { autoUpdater } = require('electron-updater');
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
 
-const resolveIconPath = () => {
+const resolveAppIcon = () => {
   const candidatePaths = [
-    path.join(__dirname, 'build', 'Area49_logo_A49-2024-3.ico')
-  ];
+    path.join(__dirname, 'build', 'Area49_logo_A49-2024-3.ico'),
+    app.getAppPath && path.join(app.getAppPath(), 'build', 'Area49_logo_A49-2024-3.ico'),
+    process.resourcesPath && path.join(process.resourcesPath, 'build', 'Area49_logo_A49-2024-3.ico'),
+    process.resourcesPath && path.join(process.resourcesPath, 'app.asar.unpacked', 'build', 'Area49_logo_A49-2024-3.ico')
+  ].filter(Boolean);
 
-  if (process.resourcesPath) {
-    candidatePaths.push(
-      path.join(process.resourcesPath, 'build', 'Area49_logo_A49-2024-3.ico')
-    );
-  }
+  const resolvedPath = candidatePaths.find(candidate => fs.existsSync(candidate));
+  if (!resolvedPath) return undefined;
 
-  return candidatePaths.find(p => p && fs.existsSync(p));
+  const icon = nativeImage.createFromPath(resolvedPath);
+  return icon.isEmpty() ? undefined : icon;
 };
 
 // Explicitly set the application user model ID so Windows uses the packaged
@@ -46,12 +47,12 @@ let adminWindow;
 const isAdminEnabled = () => Boolean(process.env.VITE_ADMIN_PASSPHRASE || process.env.ADMIN_ENABLED === 'true');
 
 function createWindow() {
-  const iconPath = resolveIconPath();
+  const icon = resolveAppIcon();
 
   mainWindow = new BrowserWindow({
     width: 1280,
     height: 800,
-    icon: iconPath,
+    icon,
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
@@ -76,12 +77,12 @@ function createAdminWindow() {
     return adminWindow;
   }
 
-  const iconPath = resolveIconPath();
+  const icon = resolveAppIcon();
 
   adminWindow = new BrowserWindow({
     width: 1200,
     height: 800,
-    icon: iconPath,
+    icon,
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
