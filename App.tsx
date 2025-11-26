@@ -32,7 +32,7 @@ function AppContent() {
   // --- STATE ---
   const [sessions, setSessions] = useState<Session[]>([]);
   const [currentSessionId, setCurrentSessionId] = useState<string | null>(null);
-  const { currentUser, setCurrentUser } = useUser();
+  const { currentUser, setCurrentUser, logout: userLogout } = useUser();
 
   // Active Generation Inputs
   const [prompt, setPrompt] = useState<string>('');
@@ -241,10 +241,10 @@ function AppContent() {
 
   const handleLogout = () => {
     LoggerService.logAction('User logged out', { displayName: currentUser?.displayName });
-    setCurrentUser(null, false);
+    userLogout();
     // Close settings modal
     setIsSettingsOpen(false);
-    // Optionally reload the page to clear all state
+    // Reload the page to clear all state and return to welcome
     window.location.reload();
   };
 
