@@ -15,6 +15,20 @@ export const ImageEditModal: React.FC<ImageEditModalProps> = ({ isOpen, image, o
   const [brushSize, setBrushSize] = useState(6);
   const [brushOpacity, setBrushOpacity] = useState(0.8);
 
+  const getPointerPosition = (e: React.PointerEvent<HTMLCanvasElement>) => {
+    const canvas = canvasRef.current;
+    if (!canvas) return null;
+
+    const rect = canvas.getBoundingClientRect();
+    const scaleX = canvas.width / rect.width;
+    const scaleY = canvas.height / rect.height;
+
+    return {
+      x: (e.clientX - rect.left) * scaleX,
+      y: (e.clientY - rect.top) * scaleY
+    };
+  };
+
   useEffect(() => {
     if (!isOpen || !image) return;
 
@@ -45,10 +59,18 @@ export const ImageEditModal: React.FC<ImageEditModalProps> = ({ isOpen, image, o
     const ctx = getContext();
     if (!ctx) return;
 
+    const pos = getPointerPosition(e);
+    if (!pos) return;
+
+    canvasRef.current.setPointerCapture(e.pointerId);
     setIsDrawing(true);
     ctx.beginPath();
-    const rect = canvasRef.current.getBoundingClientRect();
-    ctx.moveTo(e.clientX - rect.left, e.clientY - rect.top);
+    ctx.lineWidth = brushSize;
+    ctx.strokeStyle = brushColor;
+    ctx.globalAlpha = brushOpacity;
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    ctx.moveTo(pos.x, pos.y);
   };
 
   const handlePointerMove = (e: React.PointerEvent<HTMLCanvasElement>) => {
@@ -56,17 +78,23 @@ export const ImageEditModal: React.FC<ImageEditModalProps> = ({ isOpen, image, o
     const ctx = getContext();
     if (!ctx) return;
 
-    const rect = canvasRef.current.getBoundingClientRect();
+    const pos = getPointerPosition(e);
+    if (!pos) return;
+
     ctx.lineWidth = brushSize;
     ctx.strokeStyle = brushColor;
     ctx.globalAlpha = brushOpacity;
     ctx.lineCap = 'round';
-    ctx.lineTo(e.clientX - rect.left, e.clientY - rect.top);
+    ctx.lineJoin = 'round';
+    ctx.lineTo(pos.x, pos.y);
     ctx.stroke();
   };
 
-  const stopDrawing = () => {
+  const stopDrawing = (e?: React.PointerEvent<HTMLCanvasElement>) => {
     if (!isDrawing) return;
+    if (e && canvasRef.current?.hasPointerCapture(e.pointerId)) {
+      canvasRef.current.releasePointerCapture(e.pointerId);
+    }
     setIsDrawing(false);
     const ctx = getContext();
     if (ctx) {

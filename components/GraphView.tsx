@@ -105,6 +105,12 @@ const GraphView: React.FC<GraphViewProps> = ({ sessions, theme, loadImage, onGen
     return () => svg.removeEventListener('wheel', handleWheel);
   }, []);
 
+  const inputHandleColors = {
+    prompt: nodeAccents['prompt'].solid,
+    control: nodeAccents['control-image'].solid,
+    reference: nodeAccents['reference-image'].solid
+  } as const;
+
   // Helper function to create a unique key for workflow grouping
   const getWorkflowGroupKey = (
     promptText: string,
@@ -498,6 +504,20 @@ const GraphView: React.FC<GraphViewProps> = ({ sessions, theme, loadImage, onGen
     const workflowEditingEnabled = false;
     const isWorkflowEditing = workflowEditingEnabled && editingNode === node.id;
 
+    const inputHandles: Array<{ x: number; y: number; color: string; id: string }> = [];
+    if (node.type === 'workflow') {
+      const handleSpacing = node.height / 4;
+      inputHandles.push(
+        { x: 0, y: handleSpacing, color: inputHandleColors.prompt, id: 'prompt' },
+        { x: 0, y: handleSpacing * 2, color: inputHandleColors.control, id: 'control' },
+        { x: 0, y: handleSpacing * 3, color: inputHandleColors.reference, id: 'reference' }
+      );
+    } else {
+      inputHandles.push({ x: 0, y: node.height / 2, color: accent.solid, id: 'input' });
+    }
+
+    const outputHandle = { x: node.width, y: node.height / 2, color: accent.solid };
+
     return (
       <g
         key={node.id}
@@ -516,6 +536,29 @@ const GraphView: React.FC<GraphViewProps> = ({ sessions, theme, loadImage, onGen
           stroke={palette.stroke}
           strokeWidth={1.2}
         />
+
+        {/* Decorative handles */}
+        <g pointerEvents="none">
+          {inputHandles.map((handle) => (
+            <circle
+              key={`${node.id}-${handle.id}`}
+              cx={handle.x}
+              cy={handle.y}
+              r={7}
+              fill={isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.04)'}
+              stroke={handle.color}
+              strokeWidth={1.5}
+            />
+          ))}
+          <circle
+            cx={outputHandle.x}
+            cy={outputHandle.y}
+            r={7}
+            fill={isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.04)'}
+            stroke={outputHandle.color}
+            strokeWidth={1.5}
+          />
+        </g>
 
         {/* Node icon and title */}
         <g transform="translate(14, 12)">
@@ -667,6 +710,41 @@ const GraphView: React.FC<GraphViewProps> = ({ sessions, theme, loadImage, onGen
   };
 
   const isDark = theme === 'dark';
+  const legendItems = [
+    { label: 'Prompt Flow', color: 'from-purple-500 to-purple-400' },
+    { label: 'Control Images', color: 'from-emerald-500 to-emerald-400' },
+    { label: 'Reference Images', color: 'from-sky-500 to-sky-400' },
+    { label: 'Output', color: 'from-amber-500 to-amber-400' }
+  ];
+
+  const minimapWidth = 240;
+  const minimapHeight = 150;
+  const minimapPadding = 18;
+  const bounds = nodes.reduce(
+    (acc, node) => ({
+      minX: Math.min(acc.minX, node.x),
+      minY: Math.min(acc.minY, node.y),
+      maxX: Math.max(acc.maxX, node.x + node.width),
+      maxY: Math.max(acc.maxY, node.y + node.height)
+    }),
+    { minX: Infinity, minY: Infinity, maxX: -Infinity, maxY: -Infinity }
+  );
+
+  const graphWidth = nodes.length === 0 ? 1 : bounds.maxX - bounds.minX || 1;
+  const graphHeight = nodes.length === 0 ? 1 : bounds.maxY - bounds.minY || 1;
+  const minimapScale = Math.min(
+    (minimapWidth - minimapPadding * 2) / graphWidth,
+    (minimapHeight - minimapPadding * 2) / graphHeight
+  );
+  const offsetX = minimapPadding - (nodes.length ? bounds.minX * minimapScale : 0);
+  const offsetY = minimapPadding - (nodes.length ? bounds.minY * minimapScale : 0);
+
+  const projectPoint = (x: number, y: number) => ({
+    x: x * minimapScale + offsetX,
+    y: y * minimapScale + offsetY
+  });
+
+  const nodeMap = new Map(nodes.map(node => [node.id, node]));
 
   return (
     <div
@@ -678,26 +756,143 @@ const GraphView: React.FC<GraphViewProps> = ({ sessions, theme, loadImage, onGen
         backgroundSize: '24px 24px'
       }}
     >
-      {/* Controls */}
-      <div className={`absolute top-4 right-4 z-10 flex flex-col gap-3 p-3 rounded-2xl backdrop-blur-xl ${palette.panel}`}>
-        {[{
-          icon: <ZoomIn size={16} />, label: 'Zoom In', action: () => setZoom(Math.min(zoom + 0.1, 2))
-        }, {
-          icon: <ZoomOut size={16} />, label: 'Zoom Out', action: () => setZoom(Math.max(zoom - 0.1, 0.2))
-        }, {
-          icon: <Maximize2 size={16} />, label: 'Reset View', action: () => { setZoom(0.7); setPan({ x: 50, y: 50 }); }
-        }].map((item, idx) => (
-          <button
-            key={idx}
-            onClick={item.action}
-            className={`flex items-center justify-between gap-3 px-3 py-2 rounded-xl text-sm transition-all border ${isDark ? 'border-white/10 hover:bg-white/5 text-white' : 'border-zinc-200 hover:bg-zinc-50 text-zinc-900'}`}
-          >
-            <span className={`flex items-center justify-center w-8 h-8 rounded-lg ${isDark ? 'bg-white/5' : 'bg-zinc-100'} border border-white/10`}>
-              {item.icon}
-            </span>
-            <span className="flex-1 text-left font-medium">{item.label}</span>
-          </button>
-        ))}
+      {/* Unified toolbar */}
+      <div className="absolute top-4 left-4 right-4 z-10 flex flex-col gap-3">
+        <div className={`flex flex-col lg:flex-row gap-3 w-full`}>
+          <div className={`flex-1 rounded-2xl p-4 space-y-3 backdrop-blur-xl ${palette.panel}`}>
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div className="flex items-center gap-3">
+                <div className={`font-semibold text-sm ${isDark ? 'text-zinc-100' : 'text-zinc-900'}`}>Graph Overview</div>
+                <span className={`text-[11px] px-2 py-1 rounded-full ${isDark ? 'bg-white/5 text-zinc-300' : 'bg-zinc-100 text-zinc-600'}`}>
+                  {nodes.length} nodes · {edges.length} edges
+                </span>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setZoom(Math.min(zoom + 0.1, 2))}
+                  className={`flex items-center gap-2 px-3 py-2 rounded-xl text-sm border transition ${isDark ? 'border-white/10 hover:bg-white/5 text-white' : 'border-zinc-200 hover:bg-zinc-50 text-zinc-900'}`}
+                >
+                  <ZoomIn size={16} />
+                  <span className="hidden sm:inline">Zoom In</span>
+                </button>
+                <button
+                  onClick={() => setZoom(Math.max(zoom - 0.1, 0.2))}
+                  className={`flex items-center gap-2 px-3 py-2 rounded-xl text-sm border transition ${isDark ? 'border-white/10 hover:bg-white/5 text-white' : 'border-zinc-200 hover:bg-zinc-50 text-zinc-900'}`}
+                >
+                  <ZoomOut size={16} />
+                  <span className="hidden sm:inline">Zoom Out</span>
+                </button>
+                <button
+                  onClick={() => { setZoom(0.7); setPan({ x: 50, y: 50 }); }}
+                  className={`flex items-center gap-2 px-3 py-2 rounded-xl text-sm border transition ${isDark ? 'border-white/10 hover:bg-white/5 text-white' : 'border-zinc-200 hover:bg-zinc-50 text-zinc-900'}`}
+                >
+                  <Maximize2 size={16} />
+                  <span className="hidden sm:inline">Reset View</span>
+                </button>
+              </div>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-3">
+              <select
+                value={selectedSessionId}
+                onChange={(e) => setSelectedSessionId(e.target.value as string)}
+                className={`px-3 py-2 text-sm rounded-xl border transition-all ${
+                  isDark
+                    ? 'bg-[#0d0b14]/95 border-white/10 text-zinc-100 hover:bg-white/5'
+                    : 'bg-white border-zinc-200 text-zinc-700 hover:bg-zinc-50'
+                }`}
+              >
+                <option
+                  value="all"
+                  style={{ backgroundColor: isDark ? '#0d0b14' : '#ffffff', color: isDark ? '#e5e7eb' : '#1f2937' }}
+                >
+                  All Sessions ({sessions.length})
+                </option>
+                {sessions.map(session => (
+                  <option
+                    key={session.session_id}
+                    value={session.session_id}
+                    style={{ backgroundColor: isDark ? '#0d0b14' : '#ffffff', color: isDark ? '#e5e7eb' : '#1f2937' }}
+                  >
+                    {session.title} ({session.generations.length})
+                  </option>
+                ))}
+              </select>
+
+              <div className="flex flex-wrap items-center gap-2">
+                {legendItems.map(item => (
+                  <div key={item.label} className="flex items-center gap-2">
+                    <div className={`w-6 h-1 bg-gradient-to-r ${item.color} rounded-full`} />
+                    <span className={`text-xs ${isDark ? 'text-zinc-200' : 'text-zinc-700'}`}>{item.label}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          <div className={`rounded-2xl p-3 w-full lg:w-64 backdrop-blur-xl ${palette.panel}`}>
+            <div className="flex items-center justify-between mb-2">
+              <div className={`text-sm font-semibold ${isDark ? 'text-zinc-100' : 'text-zinc-900'}`}>Minimap</div>
+              <span className={`text-[11px] px-2 py-1 rounded-full ${isDark ? 'bg-white/5 text-zinc-300' : 'bg-zinc-100 text-zinc-600'}`}>
+                {selectedSessionId === 'all'
+                  ? `All Sessions (${sessions.length})`
+                  : sessions.find(s => s.session_id === selectedSessionId)?.title || 'Session'}
+              </span>
+            </div>
+            <div className={`rounded-xl border ${isDark ? 'border-white/10 bg-black/30' : 'border-zinc-200 bg-white'}`}>
+              {nodes.length === 0 ? (
+                <div className={`h-[130px] flex items-center justify-center text-xs ${isDark ? 'text-zinc-400' : 'text-zinc-600'}`}>
+                  No graph data
+                </div>
+              ) : (
+                <svg width={minimapWidth} height={minimapHeight} className="rounded-xl">
+                  {/* Edges */}
+                  {edges.map((edge, idx) => {
+                    const fromNode = nodeMap.get(edge.from);
+                    const toNode = nodeMap.get(edge.to);
+                    if (!fromNode || !toNode) return null;
+                    const fromPos = getOutputHandlePosition(fromNode);
+                    const toPos = getInputHandlePosition(toNode, edge.toHandle);
+                    const p1 = projectPoint(fromPos.x, fromPos.y);
+                    const p2 = projectPoint(toPos.x, toPos.y);
+                    return (
+                      <line
+                        key={`${edge.from}-${edge.to}-${idx}`}
+                        x1={p1.x}
+                        y1={p1.y}
+                        x2={p2.x}
+                        y2={p2.y}
+                        stroke={edge.color}
+                        strokeWidth={1}
+                        strokeOpacity={0.8}
+                      />
+                    );
+                  })}
+
+                  {/* Nodes */}
+                  {nodes.map(node => {
+                    const pos = projectPoint(node.x, node.y);
+                    const size = { w: node.width * minimapScale, h: node.height * minimapScale };
+                    const accent = nodeAccents[node.type];
+                    return (
+                      <rect
+                        key={node.id}
+                        x={pos.x}
+                        y={pos.y}
+                        width={Math.max(size.w, 4)}
+                        height={Math.max(size.h, 4)}
+                        rx={4}
+                        fill={accent.soft}
+                        stroke={accent.solid}
+                        strokeWidth={0.8}
+                      />
+                    );
+                  })}
+                </svg>
+              )}
+            </div>
+          </div>
+        </div>
       </div>
 
       {/* Graph canvas */}
@@ -717,67 +912,6 @@ const GraphView: React.FC<GraphViewProps> = ({ sessions, theme, loadImage, onGen
           {nodes.map(renderNode)}
         </g>
       </svg>
-
-      {/* Session Filter */}
-      <div className={`absolute top-4 left-4 rounded-2xl p-4 space-y-3 w-72 backdrop-blur-xl ${palette.panel}`}>
-        <div className="flex items-center justify-between">
-          <div className={`font-semibold text-sm ${isDark ? 'text-zinc-100' : 'text-zinc-900'}`}>Graph Overview</div>
-          <span className={`text-[11px] px-2 py-1 rounded-full ${isDark ? 'bg-white/5 text-zinc-300' : 'bg-zinc-100 text-zinc-600'}`}>
-            {nodes.length} nodes
-          </span>
-        </div>
-        <div className={`text-xs ${isDark ? 'text-zinc-400' : 'text-zinc-600'}`}>Choose which session to visualize</div>
-        <select
-          value={selectedSessionId}
-          onChange={(e) => setSelectedSessionId(e.target.value as string)}
-          className={`w-full px-3 py-2 text-sm rounded-xl border transition-all ${
-            isDark
-              ? 'bg-[#0d0b14]/95 border-white/10 text-zinc-100 hover:bg-white/5'
-              : 'bg-white border-zinc-200 text-zinc-700 hover:bg-zinc-50'
-          }`}
-        >
-          <option
-            value="all"
-            style={{ backgroundColor: isDark ? '#0d0b14' : '#ffffff', color: isDark ? '#e5e7eb' : '#1f2937' }}
-          >
-            All Sessions ({sessions.length})
-          </option>
-          {sessions.map(session => (
-            <option
-              key={session.session_id}
-              value={session.session_id}
-              style={{ backgroundColor: isDark ? '#0d0b14' : '#ffffff', color: isDark ? '#e5e7eb' : '#1f2937' }}
-            >
-              {session.title} ({session.generations.length})
-            </option>
-          ))}
-        </select>
-      </div>
-
-      {/* Legend */}
-      <div className={`absolute bottom-4 left-4 rounded-2xl p-4 space-y-3 text-xs w-72 backdrop-blur-xl ${palette.panel}`}>
-        <div className={`font-semibold text-sm ${isDark ? 'text-zinc-100' : 'text-zinc-900'}`}>
-          {selectedSessionId === 'all'
-            ? `All Sessions (${sessions.length})`
-            : sessions.find(s => s.session_id === selectedSessionId)?.title || 'Session'}
-        </div>
-        <div className={`text-xs ${isDark ? 'text-zinc-400' : 'text-zinc-600'}`}>
-          {nodes.length} nodes · {edges.length} edges
-        </div>
-        <div className="space-y-2">
-          {[{ label: 'Prompt Flow', color: 'from-purple-500 to-purple-400' }, { label: 'Control Images', color: 'from-emerald-500 to-emerald-400' }, { label: 'Reference Images', color: 'from-sky-500 to-sky-400' }, { label: 'Output', color: 'from-amber-500 to-amber-400' }].map(item => (
-            <div key={item.label} className="flex items-center gap-2">
-              <div className={`w-6 h-1 bg-gradient-to-r ${item.color} rounded-full`} />
-              <span className={isDark ? 'text-zinc-200' : 'text-zinc-700'}>{item.label}</span>
-            </div>
-          ))}
-        </div>
-        <div className={`mt-2 pt-3 border-t space-y-1.5 ${isDark ? 'border-white/5 text-zinc-500' : 'border-zinc-200 text-zinc-600'}`}>
-          <div>💡 Drag nodes to reposition</div>
-          <div>🖱️ Pan the canvas with drag</div>
-          <div>🔍 Scroll to zoom</div>
-        </div>
-      </div>
     </div>
   );
 };
