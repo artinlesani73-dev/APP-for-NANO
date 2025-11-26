@@ -215,11 +215,17 @@ function AppContent() {
         console.error('Failed to sync user data to shared storage', err);
       }
 
-      const loadedSessions = StorageService.getSessions();
+      const allSessions = StorageService.getSessions();
       if (cancelled) return;
-      setSessions(loadedSessions);
-      if (loadedSessions.length > 0) {
-        handleSelectSession(loadedSessions[0].session_id);
+
+      // Filter sessions to only show the current user's sessions
+      const userSessions = currentUser
+        ? allSessions.filter(s => s.user?.id === currentUser.id)
+        : [];
+
+      setSessions(userSessions);
+      if (userSessions.length > 0) {
+        handleSelectSession(userSessions[0].session_id);
       } else {
         handleNewSession();
       }
@@ -303,7 +309,12 @@ function AppContent() {
 
   const handleRenameSession = (id: string, newTitle: string) => {
     StorageService.renameSession(id, newTitle);
-    setSessions(StorageService.getSessions());
+    // Reload and filter sessions for current user
+    const allSessions = StorageService.getSessions();
+    const userSessions = currentUser
+      ? allSessions.filter(s => s.user?.id === currentUser.id)
+      : [];
+    setSessions(userSessions);
   };
 
   const handleDeleteSession = (id: string) => {
@@ -317,13 +328,17 @@ function AppContent() {
     }
 
     StorageService.deleteSession(id);
-    const updatedSessions = StorageService.getSessions();
-    setSessions(updatedSessions);
+    // Reload and filter sessions for current user
+    const allSessions = StorageService.getSessions();
+    const userSessions = currentUser
+      ? allSessions.filter(s => s.user?.id === currentUser.id)
+      : [];
+    setSessions(userSessions);
 
     // If we deleted the current session, switch to another one
     if (currentSessionId === id) {
-      if (updatedSessions.length > 0) {
-        handleSelectSession(updatedSessions[0].session_id);
+      if (userSessions.length > 0) {
+        handleSelectSession(userSessions[0].session_id);
       } else {
         handleNewSession();
       }
