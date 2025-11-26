@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Session, SessionGeneration, GenerationConfig, GraphNode, GraphEdge } from '../types';
-import { FileText, Settings, Image as ImageIcon, ZoomIn, ZoomOut, Maximize2, Play, Plus } from 'lucide-react';
+import { FileText, Settings, Image as ImageIcon, ZoomIn, ZoomOut, Maximize2 } from 'lucide-react';
 import { StorageService } from '../services/newStorageService';
 
 interface GraphViewProps {
@@ -12,14 +12,6 @@ interface GraphViewProps {
 
 type Node = GraphNode;
 type Edge = GraphEdge;
-
-interface ContextMenu {
-  x: number;
-  y: number;
-  svgX: number;
-  svgY: number;
-  nodeId?: string;
-}
 
 const DEFAULT_CONFIG: GenerationConfig = {
   temperature: 0.7,
@@ -34,8 +26,8 @@ const NODE_WIDTH = 230;
 const NODE_HEIGHT = 150;
 const IMAGE_NODE_HEIGHT = 320;
 const OUTPUT_IMAGE_HEIGHT = 420;
-const WORKFLOW_NODE_HEIGHT = 500;
-const WORKFLOW_NODE_WIDTH = 320;
+const WORKFLOW_NODE_HEIGHT = 240;
+const WORKFLOW_NODE_WIDTH = 300;
 const OUTPUT_IMAGE_WIDTH = 260;
 const BASE_X = 100;
 const BASE_Y = 160;
@@ -51,7 +43,7 @@ const themeTokens = {
     border: 'border-white/5',
     textPrimary: 'text-zinc-100',
     textMuted: 'text-zinc-400',
-    panel: 'bg-[#161021]/85 border border-white/5 shadow-[0_18px_48px_rgba(0,0,0,0.55)] backdrop-blur-lg',
+    panel: 'bg-[#161021]/85 border border-white/5 backdrop-blur-lg',
   },
   light: {
     background: '#f5f7fd',
@@ -61,7 +53,7 @@ const themeTokens = {
     border: 'border-zinc-200',
     textPrimary: 'text-zinc-900',
     textMuted: 'text-zinc-500',
-    panel: 'bg-white/90 border border-zinc-200 shadow-[0_18px_50px_rgba(0,0,0,0.08)] backdrop-blur-xl',
+    panel: 'bg-white/90 border border-zinc-200 backdrop-blur-xl',
   }
 };
 
@@ -85,7 +77,6 @@ const GraphView: React.FC<GraphViewProps> = ({ sessions, theme, loadImage, onGen
   const [panStart, setPanStart] = useState({ x: 0, y: 0 });
   const [draggingNode, setDraggingNode] = useState<string | null>(null);
   const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
-  const [contextMenu, setContextMenu] = useState<ContextMenu | null>(null);
   const [editingNode, setEditingNode] = useState<string | null>(null);
   const [isDraggingOver, setIsDraggingOver] = useState(false);
   const [connectingFrom, setConnectingFrom] = useState<{ nodeId: string; handle?: string } | null>(null);
@@ -474,109 +465,6 @@ const GraphView: React.FC<GraphViewProps> = ({ sessions, theme, loadImage, onGen
     setConnectionPreview(null);
   };
 
-  // Context menu handlers
-  const handleContextMenu = (e: React.MouseEvent, nodeId?: string) => {
-    e.preventDefault();
-    const rect = svgRef.current?.getBoundingClientRect();
-    if (rect) {
-      const svgX = (e.clientX - rect.left - pan.x) / zoom;
-      const svgY = (e.clientY - rect.top - pan.y) / zoom;
-      setContextMenu({
-        x: e.clientX,
-        y: e.clientY,
-        svgX,
-        svgY,
-        nodeId
-      });
-    }
-  };
-
-  const closeContextMenu = () => {
-    setContextMenu(null);
-  };
-
-  const canDeleteNode = (nodeId: string) => {
-    return !edges.some(edge => edge.from === nodeId || edge.to === nodeId);
-  };
-
-  const deleteNode = (nodeId: string) => {
-    setNodes(prev => prev.filter(node => node.id !== nodeId));
-    setEdges(prev => prev.filter(edge => edge.from !== nodeId && edge.to !== nodeId));
-    closeContextMenu();
-  };
-
-  // Helper to check if position overlaps with existing nodes
-  const findNonOverlappingPosition = (initialX: number, initialY: number, width: number, height: number) => {
-    let x = initialX;
-    let y = initialY;
-    const offset = 30; // Offset to apply if overlap detected
-
-    // Check against all current nodes
-    const allNodes = nodes;
-    let hasOverlap = true;
-    let attempts = 0;
-    const maxAttempts = 20;
-
-    while (hasOverlap && attempts < maxAttempts) {
-      hasOverlap = allNodes.some(node => {
-        return !(
-          x + width < node.x ||
-          x > node.x + node.width ||
-          y + height < node.y ||
-          y > node.y + node.height
-        );
-      });
-
-      if (hasOverlap) {
-        x += offset;
-        y += offset;
-        attempts++;
-      }
-    }
-
-    return { x, y };
-  };
-
-  const addPromptNode = (x: number, y: number) => {
-    const width = NODE_WIDTH;
-    const height = NODE_HEIGHT;
-    const position = findNonOverlappingPosition(x, y, width, height);
-
-    const newNode: Node = {
-      id: `standalone-prompt-${Date.now()}`,
-      type: 'prompt',
-      label: 'New Prompt',
-      x: position.x,
-      y: position.y,
-      width,
-      height,
-      isStandalone: true,
-      data: { text: 'Enter your prompt here...', status: 'pending' }
-    };
-    setNodes([...nodes, newNode]);
-    closeContextMenu();
-  };
-
-  const addWorkflowNode = (x: number, y: number) => {
-    const width = NODE_WIDTH;
-    const height = WORKFLOW_NODE_HEIGHT;
-    const position = findNonOverlappingPosition(x, y, width, height);
-
-    const newNode: Node = {
-      id: `standalone-workflow-${Date.now()}`,
-      type: 'workflow',
-      label: 'New Workflow',
-      x: position.x,
-      y: position.y,
-      width,
-      height,
-      isStandalone: true,
-      data: { parameters: { ...DEFAULT_CONFIG } }
-    };
-    setNodes([...nodes, newNode]);
-    closeContextMenu();
-  };
-
   // Drag and drop handlers for external images
   const handleDragOver = (e: React.DragEvent) => {
     // Only handle external file drags, not internal node drags
@@ -800,10 +688,6 @@ const GraphView: React.FC<GraphViewProps> = ({ sessions, theme, loadImage, onGen
           e.stopPropagation();
           handleMouseDown(e, node.id);
         }}
-        onContextMenu={(e) => {
-          e.stopPropagation();
-          handleContextMenu(e, node.id);
-        }}
         style={{ cursor: 'move' }}
       >
         <rect
@@ -813,27 +697,16 @@ const GraphView: React.FC<GraphViewProps> = ({ sessions, theme, loadImage, onGen
           fill={palette.card}
           stroke={palette.stroke}
           strokeWidth={1.2}
-          style={{ filter: isDark ? 'drop-shadow(0 18px 40px rgba(0,0,0,0.55))' : 'drop-shadow(0 14px 28px rgba(0,0,0,0.14))' }}
-        />
-
-        {/* Node header */}
-        <rect
-          width={node.width}
-          height={38}
-          rx={14}
-          fill={isDark ? '#1d172b' : palette.cardMuted}
-          stroke={isDark ? '#2c243c' : palette.stroke}
-          strokeWidth={1}
         />
 
         {/* Node icon and title */}
-        <g transform="translate(14, 10)">
+        <g transform="translate(14, 12)">
           <foreignObject width={node.width - 28} height={20}>
             <div
               className="flex items-center gap-2 text-[12px]"
               style={{ color: isDark ? '#f7f7fb' : '#0f172a' }}
             >
-              <span className="inline-flex h-6 w-6 items-center justify-center rounded-full" style={{ background: isDark ? accent.soft : '#eef2ff' }}>
+              <span className="inline-flex h-6 w-6 items-center justify-center">
                 {node.type === 'prompt' && <FileText size={14} color={accent.solid} />}
                 {node.type === 'workflow' && <Settings size={14} color={accent.solid} />}
                 {node.type.includes('image') && <ImageIcon size={14} color={accent.solid} />}
@@ -894,18 +767,6 @@ const GraphView: React.FC<GraphViewProps> = ({ sessions, theme, loadImage, onGen
                   <span className="text-right text-zinc-100 font-medium">{node.data.parameters.image_size}</span>
                   <span>Safety</span>
                   <span className="text-right text-zinc-100 font-medium capitalize">{node.data.parameters.safety_filter}</span>
-                </div>
-                <div className="flex items-center gap-2 pt-3">
-                  <button
-                    className={`flex-1 px-3 py-2 rounded-lg text-[11px] font-medium border ${isDark ? 'bg-white/5 border-white/10 text-white' : 'bg-zinc-100 border-zinc-200 text-zinc-900'}`}
-                  >
-                    Add another image input
-                  </button>
-                  <button
-                    className={`px-3 py-2 rounded-lg text-[11px] font-semibold shadow-lg ${isDark ? 'bg-purple-500 text-white shadow-purple-500/25' : 'bg-purple-500 text-white shadow-purple-400/20'}`}
-                  >
-                    Run Model
-                  </button>
                 </div>
                 <p className={`text-[10px] ${isDark ? 'text-zinc-500' : 'text-zinc-500'}`}>
                   Parameters lock after the first generation.
@@ -1068,18 +929,12 @@ const GraphView: React.FC<GraphViewProps> = ({ sessions, theme, loadImage, onGen
     <div
       ref={containerRef}
       className={`w-full h-full relative overflow-hidden select-none ${isDark ? 'text-white' : 'text-zinc-900'}`}
-      style={{ background: palette.background }}
+      style={{
+        backgroundColor: palette.background,
+        backgroundImage: `radial-gradient(circle, ${isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.08)'} 1px, transparent 1px)`,
+        backgroundSize: '24px 24px'
+      }}
     >
-      {/* Ambient grid + vignette */}
-      <div
-        className="pointer-events-none absolute inset-0 opacity-70"
-        style={{
-          backgroundImage: `radial-gradient(circle, ${isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.05)'} 1px, transparent 0)`,
-          backgroundSize: '26px 26px'
-        }}
-      />
-      <div className="pointer-events-none absolute inset-0 bg-gradient-to-b from-transparent via-transparent to-black/40" />
-
       {/* Controls */}
       <div className={`absolute top-4 right-4 z-10 flex flex-col gap-3 p-3 rounded-2xl backdrop-blur-xl ${palette.panel}`}>
         {[{
@@ -1092,7 +947,7 @@ const GraphView: React.FC<GraphViewProps> = ({ sessions, theme, loadImage, onGen
           <button
             key={idx}
             onClick={item.action}
-            className={`flex items-center justify-between gap-3 px-3 py-2 rounded-xl text-sm transition-all border ${isDark ? 'border-white/10 hover:bg-white/5 text-white' : 'border-zinc-200 hover:bg-zinc-50 text-zinc-900'} shadow-sm`}
+            className={`flex items-center justify-between gap-3 px-3 py-2 rounded-xl text-sm transition-all border ${isDark ? 'border-white/10 hover:bg-white/5 text-white' : 'border-zinc-200 hover:bg-zinc-50 text-zinc-900'}`}
           >
             <span className={`flex items-center justify-center w-8 h-8 rounded-lg ${isDark ? 'bg-white/5' : 'bg-zinc-100'} border border-white/10`}>
               {item.icon}
@@ -1110,7 +965,6 @@ const GraphView: React.FC<GraphViewProps> = ({ sessions, theme, loadImage, onGen
         onMouseMove={handleMouseMove}
         onMouseUp={handleMouseUp}
         onMouseLeave={handleMouseUp}
-        onContextMenu={handleContextMenu}
         onDragOver={handleDragOver}
         onDragLeave={handleDragLeave}
         onDrop={handleDrop}
@@ -1133,38 +987,15 @@ const GraphView: React.FC<GraphViewProps> = ({ sessions, theme, loadImage, onGen
             const path = `M ${fromX} ${fromY} C ${midX} ${fromY}, ${midX} ${toY}, ${toX} ${toY}`;
 
             return (
-              <g>
-                <defs>
-                  <filter id="preview-glow" x="-50%" y="-50%" width="200%" height="200%">
-                    <feGaussianBlur stdDeviation="4" result="coloredBlur"/>
-                    <feMerge>
-                      <feMergeNode in="coloredBlur"/>
-                      <feMergeNode in="coloredBlur"/>
-                      <feMergeNode in="SourceGraphic"/>
-                    </feMerge>
-                  </filter>
-                </defs>
-                {/* Glow layer */}
-                <path
-                  d={path}
-                  stroke="#a855f7"
-                  strokeWidth={8}
-                  fill="none"
-                  opacity={0.3}
-                  strokeLinecap="round"
-                  filter="url(#preview-glow)"
-                />
-                {/* Main preview line */}
-                <path
-                  d={path}
-                  stroke="#a855f7"
-                  strokeWidth={2.5}
-                  fill="none"
-                  opacity={0.8}
-                  strokeDasharray="8,4"
-                  strokeLinecap="round"
-                />
-              </g>
+              <path
+                d={path}
+                stroke="#a855f7"
+                strokeWidth={2.5}
+                fill="none"
+                opacity={0.8}
+                strokeDasharray="8,4"
+                strokeLinecap="round"
+              />
             );
           })()}
 
@@ -1188,7 +1019,7 @@ const GraphView: React.FC<GraphViewProps> = ({ sessions, theme, loadImage, onGen
           className={`w-full px-3 py-2 text-sm rounded-xl border transition-all ${
             isDark
               ? 'bg-black/30 border-white/10 text-zinc-100 hover:bg-white/5'
-              : 'bg-white border-zinc-200 text-zinc-700 hover:bg-zinc-50 shadow-sm'
+              : 'bg-white border-zinc-200 text-zinc-700 hover:bg-zinc-50'
           }`}
         >
           <option value="all">All Sessions ({sessions.length})</option>
@@ -1213,7 +1044,7 @@ const GraphView: React.FC<GraphViewProps> = ({ sessions, theme, loadImage, onGen
         <div className="space-y-2">
           {[{ label: 'Prompt Flow', color: 'from-purple-500 to-purple-400' }, { label: 'Control Images', color: 'from-emerald-500 to-emerald-400' }, { label: 'Reference Images', color: 'from-sky-500 to-sky-400' }, { label: 'Output', color: 'from-amber-500 to-amber-400' }].map(item => (
             <div key={item.label} className="flex items-center gap-2">
-              <div className={`w-6 h-1 bg-gradient-to-r ${item.color} rounded-full shadow-sm`} />
+              <div className={`w-6 h-1 bg-gradient-to-r ${item.color} rounded-full`} />
               <span className={isDark ? 'text-zinc-200' : 'text-zinc-700'}>{item.label}</span>
             </div>
           ))}
@@ -1224,55 +1055,8 @@ const GraphView: React.FC<GraphViewProps> = ({ sessions, theme, loadImage, onGen
           <div>🖱️ Pan the canvas with drag</div>
           <div>🔍 Scroll to zoom</div>
           <div>📁 Drop images onto canvas</div>
-          <div>🖱️ Right-click to add nodes</div>
         </div>
       </div>
-
-      {/* Context Menu */}
-      {contextMenu && (
-        <>
-          <div
-            className="fixed inset-0 z-40"
-            onClick={closeContextMenu}
-          />
-          <div
-            className={`fixed z-50 rounded-xl shadow-2xl border backdrop-blur-xl ${
-              isDark ? 'bg-zinc-900/95 border-zinc-800' : 'bg-white/95 border-zinc-200'
-            }`}
-            style={{ left: contextMenu.x, top: contextMenu.y }}
-          >
-            {contextMenu.nodeId && canDeleteNode(contextMenu.nodeId) && (
-              <button
-                className={`w-full px-4 py-2.5 text-left text-sm flex items-center gap-2 transition-all rounded-t-xl ${
-                  isDark ? 'text-red-400 hover:bg-red-950/50' : 'text-red-600 hover:bg-red-50'
-                }`}
-                onClick={() => deleteNode(contextMenu.nodeId!)}
-              >
-                <span className="text-lg">🗑️</span>
-                Delete Node
-              </button>
-            )}
-            <button
-              className={`w-full px-4 py-2.5 text-left text-sm flex items-center gap-2 transition-all rounded-t-xl ${
-                isDark ? 'text-zinc-200 hover:bg-zinc-800' : 'text-zinc-700 hover:bg-zinc-100'
-              }`}
-              onClick={() => addPromptNode(contextMenu.svgX, contextMenu.svgY)}
-            >
-              <FileText size={16} />
-              Add Prompt Node
-            </button>
-            <button
-              className={`w-full px-4 py-2.5 text-left text-sm flex items-center gap-2 transition-all rounded-b-xl ${
-                isDark ? 'text-zinc-200 hover:bg-zinc-800' : 'text-zinc-700 hover:bg-zinc-100'
-              }`}
-              onClick={() => addWorkflowNode(contextMenu.svgX, contextMenu.svgY)}
-            >
-              <Settings size={16} />
-              Add Workflow Node
-            </button>
-          </div>
-        </>
-      )}
 
       {/* Drag overlay */}
       {isDraggingOver && (
