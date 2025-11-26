@@ -232,44 +232,52 @@ function AppContent() {
     // If the session has generations, load the most recent one
     if (session.generations.length > 0) {
       const lastGen = session.generations[session.generations.length - 1];
-      loadGenerationIntoView(lastGen);
+      loadGenerationIntoView(lastGen, { includeInputs: false });
     } else {
         resetInputs();
     }
   };
 
   const handleSelectGeneration = (sessionId: string, gen: SessionGeneration) => {
-    if (sessionId !== currentSessionId) {
+    const switchingSession = sessionId !== currentSessionId;
+
+    if (switchingSession) {
       setCurrentSessionId(sessionId);
     }
 
-    loadGenerationIntoView(gen);
+    loadGenerationIntoView(gen, { includeInputs: !switchingSession });
   };
 
-  const loadGenerationIntoView = (gen: SessionGeneration) => {
+  const loadGenerationIntoView = (gen: SessionGeneration, options: { includeInputs?: boolean } = {}) => {
+    const { includeInputs = true } = options;
     setPrompt(gen.prompt);
     setConfig(gen.parameters);
     setCurrentGeneration(gen);
 
-    // Load control images
-    if (gen.control_images && gen.control_images.length > 0) {
-      const imagesData = gen.control_images
-        .map(img => StorageService.loadImage('control', img.id, img.filename))
-        .filter(data => data !== null)
-        .map(data => ({ data })) as UploadedImagePayload[];
-      setControlImagesData(imagesData);
+    if (includeInputs) {
+      // Load control images
+      if (gen.control_images && gen.control_images.length > 0) {
+        const imagesData = gen.control_images
+          .map(img => StorageService.loadImage('control', img.id, img.filename))
+          .filter(data => data !== null)
+          .map(data => ({ data })) as UploadedImagePayload[];
+        setControlImagesData(imagesData);
+      } else {
+        setControlImagesData([]);
+      }
+
+      // Load reference images
+      if (gen.reference_images && gen.reference_images.length > 0) {
+        const imagesData = gen.reference_images
+          .map(img => StorageService.loadImage('reference', img.id, img.filename))
+          .filter(data => data !== null)
+          .map(data => ({ data })) as UploadedImagePayload[];
+        setReferenceImagesData(imagesData);
+      } else {
+        setReferenceImagesData([]);
+      }
     } else {
       setControlImagesData([]);
-    }
-
-    // Load reference images
-    if (gen.reference_images && gen.reference_images.length > 0) {
-      const imagesData = gen.reference_images
-        .map(img => StorageService.loadImage('reference', img.id, img.filename))
-        .filter(data => data !== null)
-        .map(data => ({ data })) as UploadedImagePayload[];
-      setReferenceImagesData(imagesData);
-    } else {
       setReferenceImagesData([]);
     }
 
