@@ -240,10 +240,34 @@ function AppContent() {
 
   // --- HANDLERS ---
   const handleLogin = (user: { displayName: string; id: string }, persist = true) => {
+    // First, let UserContext process the user and get/create the persistent ID
     setCurrentUser(user, persist);
-    LoggerService.setCurrentUser(user);
-    LoggerService.logLogin('User logged in', { displayName: user.displayName, userId: user.id });
+
+    // UserContext will update currentUser with the persistent ID via the mapping
+    // We need to wait for that update before notifying LoggerService
+    // The useEffect below will handle the LoggerService update
   };
+
+  // Track previous user to detect login events
+  const [previousUser, setPreviousUser] = useState<typeof currentUser>(null);
+
+  // Update LoggerService whenever currentUser changes (after UserContext processes it)
+  useEffect(() => {
+    if (currentUser) {
+      LoggerService.setCurrentUser(currentUser);
+
+      // Log login event if this is a new login (user changed from null to a value)
+      if (!previousUser) {
+        LoggerService.logLogin('User logged in', {
+          displayName: currentUser.displayName,
+          userId: currentUser.id
+        });
+      }
+      setPreviousUser(currentUser);
+    } else {
+      setPreviousUser(null);
+    }
+  }, [currentUser]);
 
   const handleLogout = () => {
     LoggerService.logAction('User logged out', { displayName: currentUser?.displayName });
