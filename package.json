@@ -33,6 +33,8 @@
   "build": {
     "appId": "com.area49.nanobanana",
     "productName": "AREA49 - Nano Banana UI",
+    "electronDist": "./node_modules/electron/dist",
+    "electronVersion": "28.3.3",
     "directories": {
       "output": "dist-electron"
     },
