@@ -1,5 +1,5 @@
 import React, { useRef, useState } from 'react';
-import { X, Image as ImageIcon, Plus } from 'lucide-react';
+import { X, Image as ImageIcon, Plus, Square } from 'lucide-react';
 
 interface MultiImageUploadPanelProps {
   title: string;
@@ -7,6 +7,7 @@ interface MultiImageUploadPanelProps {
   onUpload: (file: File) => void;
   onRemove: (index: number) => void;
   onEdit?: (index: number) => void;
+  onCreateBlank?: () => void;
   accept?: string;
   description?: string;
   maxImages?: number;
@@ -18,6 +19,7 @@ export const MultiImageUploadPanel: React.FC<MultiImageUploadPanelProps> = ({
   onUpload,
   onRemove,
   onEdit,
+  onCreateBlank,
   accept = "image/png, image/jpeg, image/webp",
   description,
   maxImages = 5
@@ -117,25 +119,52 @@ export const MultiImageUploadPanel: React.FC<MultiImageUploadPanelProps> = ({
         {/* Add More Button */}
         {canAddMore && (
           <div
-            className={`relative border-2 border-dashed rounded-lg h-32 flex flex-col items-center justify-center transition-all cursor-pointer
+            className={`relative border-2 border-dashed rounded-lg h-32 flex flex-col items-center justify-center transition-all
             ${isDragging
                 ? 'border-blue-500 bg-blue-50 dark:bg-blue-950/30'
-                : 'border-zinc-300 dark:border-zinc-800 hover:border-zinc-400 dark:hover:border-zinc-700 bg-zinc-50 dark:bg-zinc-900/50 hover:bg-zinc-100 dark:hover:bg-zinc-800/50'
+                : 'border-zinc-300 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900/50'
             }`}
-            onClick={() => fileInputRef.current?.click()}
             onDragOver={handleDragOver}
             onDragEnter={handleDragEnter}
             onDragLeave={handleDragLeave}
             onDrop={handleDrop}
           >
-            <Plus size={20} className="text-zinc-400 dark:text-zinc-500 mb-1" />
-            <span className="text-xs font-medium text-zinc-600 dark:text-zinc-400 block text-center px-2">
-              {isDragging ? 'Drop here' : images.length === 0 ? 'Click or drag' : 'Add more'}
-            </span>
-            {images.length === 0 && description && (
-              <span className="text-[10px] opacity-60 mt-1 block max-w-[100px] leading-tight text-center">
-                {description}
-              </span>
+            {isDragging ? (
+              <>
+                <Plus size={20} className="text-zinc-400 dark:text-zinc-500 mb-1" />
+                <span className="text-xs font-medium text-zinc-600 dark:text-zinc-400 block text-center px-2">
+                  Drop here
+                </span>
+              </>
+            ) : (
+              <>
+                <div className="flex gap-2 mb-1">
+                  <button
+                    onClick={() => fileInputRef.current?.click()}
+                    className="bg-zinc-200 dark:bg-zinc-800 hover:bg-zinc-300 dark:hover:bg-zinc-700 text-zinc-700 dark:text-zinc-300 p-2 rounded transition-colors"
+                    title="Upload image"
+                  >
+                    <Plus size={16} />
+                  </button>
+                  {onCreateBlank && (
+                    <button
+                      onClick={onCreateBlank}
+                      className="bg-zinc-200 dark:bg-zinc-800 hover:bg-zinc-300 dark:hover:bg-zinc-700 text-zinc-700 dark:text-zinc-300 p-2 rounded transition-colors"
+                      title="Create blank canvas"
+                    >
+                      <Square size={16} />
+                    </button>
+                  )}
+                </div>
+                <span className="text-xs font-medium text-zinc-600 dark:text-zinc-400 block text-center px-2">
+                  {images.length === 0 ? 'Upload or create blank' : 'Add more'}
+                </span>
+                {images.length === 0 && description && (
+                  <span className="text-[10px] opacity-60 mt-1 block max-w-[100px] leading-tight text-center">
+                    {description}
+                  </span>
+                )}
+              </>
             )}
           </div>
         )}

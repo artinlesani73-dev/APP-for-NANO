@@ -261,6 +261,31 @@ function AppContent() {
     setEditingControlIndex(null);
   };
 
+  const handleCreateBlankControlImage = () => {
+    // Create a blank white canvas (1024x1024)
+    const canvas = document.createElement('canvas');
+    canvas.width = 1024;
+    canvas.height = 1024;
+    const ctx = canvas.getContext('2d');
+
+    if (ctx) {
+      // Fill with white
+      ctx.fillStyle = '#FFFFFF';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+      // Convert to base64 data URI
+      const dataUri = canvas.toDataURL('image/png');
+
+      const payload: UploadedImagePayload = {
+        data: dataUri,
+        original_name: 'blank_canvas.png',
+        size_bytes: dataUri.length
+      };
+
+      setControlImagesData(prev => [...prev, payload]);
+    }
+  };
+
   const handleSelectGeneration = (sessionId: string, gen: SessionGeneration) => {
     const switchingSession = sessionId !== currentSessionId;
 
@@ -682,6 +707,7 @@ function AppContent() {
                             onUpload={(f) => handleImageUpload(f, 'control')}
                             onRemove={(idx) => handleImageRemove(idx, 'control')}
                             onEdit={handleEditControlImage}
+                            onCreateBlank={handleCreateBlankControlImage}
                             maxImages={5}
                         />
                         <MultiImageUploadPanel
