@@ -31,14 +31,17 @@ const saveUserIdMap = (map: Record<string, string>) => {
 const getUserIdForName = (displayName: string): string => {
   const map = getUserIdMap();
 
-  // If user already exists, return their ID
-  if (map[displayName]) {
-    return map[displayName];
+  // Normalize to lowercase for case-insensitive matching
+  const normalizedName = displayName.toLowerCase().trim();
+
+  // If user already exists (case-insensitive), return their ID
+  if (map[normalizedName]) {
+    return map[normalizedName];
   }
 
   // Create new ID for new user
   const newId = generateId();
-  map[displayName] = newId;
+  map[normalizedName] = newId;
   saveUserIdMap(map);
   return newId;
 };
