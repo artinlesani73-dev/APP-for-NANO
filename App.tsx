@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { Sidebar } from './components/Sidebar';
+import { Sidebar, GalleryImage } from './components/Sidebar';
 import { PromptPanel } from './components/PromptPanel';
 import { MultiImageUploadPanel } from './components/MultiImageUploadPanel';
 import { ParametersPanel } from './components/ParametersPanel';
@@ -99,6 +99,64 @@ function AppContent() {
         })
       )
       .sort((a, b) => new Date(b.generation.timestamp).getTime() - new Date(a.generation.timestamp).getTime());
+  }, [sessions]);
+
+  // Gallery images for sidebar (all images from all sessions, most recent first)
+  const galleryImages = useMemo<GalleryImage[]>(() => {
+    const images: GalleryImage[] = [];
+
+    sessions.forEach(session => {
+      session.generations.forEach(gen => {
+        // Add control images
+        if (gen.control_images) {
+          gen.control_images.forEach(img => {
+            const dataUri = StorageService.loadImage('control', img.id, img.filename);
+            if (dataUri) {
+              images.push({
+                meta: img,
+                role: 'control',
+                dataUri,
+                timestamp: gen.timestamp
+              });
+            }
+          });
+        }
+
+        // Add reference images
+        if (gen.reference_images) {
+          gen.reference_images.forEach(img => {
+            const dataUri = StorageService.loadImage('reference', img.id, img.filename);
+            if (dataUri) {
+              images.push({
+                meta: img,
+                role: 'reference',
+                dataUri,
+                timestamp: gen.timestamp
+              });
+            }
+          });
+        }
+
+        // Add output images
+        const outputs = gen.output_images || (gen.output_image ? [gen.output_image] : []);
+        outputs.forEach(img => {
+          const dataUri = StorageService.loadImage('output', img.id, img.filename);
+          if (dataUri) {
+            images.push({
+              meta: img,
+              role: 'output',
+              dataUri,
+              timestamp: gen.timestamp
+            });
+          }
+        });
+      });
+    });
+
+    // Sort by timestamp (most recent first) and deduplicate by ID
+    return images
+      .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
+      .filter((img, idx, arr) => arr.findIndex(i => i.meta.id === img.meta.id) === idx);
   }, [sessions]);
 
   // Get current session
@@ -236,6 +294,30 @@ function AppContent() {
     setSessions(StorageService.getSessions());
   };
 
+  const handleDeleteSession = (id: string) => {
+    const session = sessions.find(s => s.session_id === id);
+    if (!session) return;
+
+    // Only allow deletion of empty sessions
+    if (session.generations.length > 0) {
+      alert('Cannot delete session with generations. Sessions with history are preserved.');
+      return;
+    }
+
+    StorageService.deleteSession(id);
+    const updatedSessions = StorageService.getSessions();
+    setSessions(updatedSessions);
+
+    // If we deleted the current session, switch to another one
+    if (currentSessionId === id) {
+      if (updatedSessions.length > 0) {
+        handleSelectSession(updatedSessions[0].session_id);
+      } else {
+        handleNewSession();
+      }
+    }
+  };
+
   const handleSelectSession = (id: string) => {
     setCurrentSessionId(id);
     const session = StorageService.loadSession(id);
@@ -369,6 +451,14 @@ function AppContent() {
         }
     };
     reader.readAsDataURL(file);
+  };
+
+  const handleGalleryImageDrop = (payload: UploadedImagePayload, role: 'control' | 'reference') => {
+    if (role === 'control') {
+      setControlImagesData(prev => [...prev, payload]);
+    } else {
+      setReferenceImagesData(prev => [...prev, payload]);
+    }
   };
 
   const handleImageRemove = (index: number, role: 'control' | 'reference') => {
@@ -548,8 +638,10 @@ function AppContent() {
         currentChatId={currentSessionId}
         onSelectChat={handleSelectSession}
         onNewChat={handleNewSession}
+        onDeleteChat={handleDeleteSession}
         onRenameChat={handleRenameSession}
         onOpenSettings={() => setIsSettingsOpen(true)}
+        galleryImages={galleryImages}
       />
 
       {/* MAIN WORKSPACE */}
@@ -708,6 +800,7 @@ function AppContent() {
                             onRemove={(idx) => handleImageRemove(idx, 'control')}
                             onEdit={handleEditControlImage}
                             onCreateBlank={handleCreateBlankControlImage}
+                            onGalleryDrop={(payload) => handleGalleryImageDrop(payload, 'control')}
                             maxImages={5}
                         />
                         <MultiImageUploadPanel
@@ -716,6 +809,7 @@ function AppContent() {
                             images={referenceImagesData.map(img => img.data)}
                             onUpload={(f) => handleImageUpload(f, 'reference')}
                             onRemove={(idx) => handleImageRemove(idx, 'reference')}
+                            onGalleryDrop={(payload) => handleGalleryImageDrop(payload, 'reference')}
                             maxImages={5}
                         />
                     </div>

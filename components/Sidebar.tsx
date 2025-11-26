@@ -1,6 +1,13 @@
 import React, { useState } from 'react';
-import { Plus, MessageSquare, Trash2, Search, Settings, Edit2, Check, X } from 'lucide-react';
-import { Chat } from '../types';
+import { Plus, MessageSquare, Trash2, Search, Settings, Edit2, Check, X, Image as ImageIcon } from 'lucide-react';
+import { Chat, StoredImageMeta, ImageRole } from '../types';
+
+export interface GalleryImage {
+  meta: StoredImageMeta;
+  role: ImageRole;
+  dataUri: string;
+  timestamp: string;
+}
 
 interface SidebarProps {
   chats: Chat[];
@@ -10,6 +17,7 @@ interface SidebarProps {
   onDeleteChat?: (id: string) => void;
   onRenameChat?: (id: string, newTitle: string) => void;
   onOpenSettings: () => void;
+  galleryImages?: GalleryImage[];
 }
 
 export const Sidebar: React.FC<SidebarProps> = ({
@@ -19,7 +27,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onNewChat,
   onDeleteChat,
   onRenameChat,
-  onOpenSettings
+  onOpenSettings,
+  galleryImages = []
 }) => {
   const [editingChatId, setEditingChatId] = useState<string | null>(null);
   const [editingTitle, setEditingTitle] = useState<string>('');
@@ -146,13 +155,14 @@ export const Sidebar: React.FC<SidebarProps> = ({
                         <Edit2 size={14} />
                       </button>
                     )}
-                    {onDeleteChat && (
+                    {onDeleteChat && chat.generation_ids.length === 0 && (
                       <button
                         onClick={(e) => {
                           e.stopPropagation();
                           onDeleteChat(chat.chat_id);
                         }}
                         className="opacity-0 group-hover:opacity-100 p-1.5 rounded hover:bg-red-50 dark:hover:bg-red-900/20 text-zinc-400 hover:text-red-500 transition-all"
+                        title="Delete empty session"
                       >
                         <Trash2 size={14} />
                       </button>
@@ -164,7 +174,49 @@ export const Sidebar: React.FC<SidebarProps> = ({
           );
         })}
       </div>
-      
+
+      {/* Image Gallery */}
+      {galleryImages.length > 0 && (
+        <div className="border-t border-zinc-200 dark:border-zinc-800 bg-zinc-50/30 dark:bg-zinc-900/30">
+          <div className="p-3 pb-2">
+            <div className="flex items-center gap-2 mb-2">
+              <ImageIcon size={14} className="text-zinc-500 dark:text-zinc-400" />
+              <span className="text-xs font-medium text-zinc-600 dark:text-zinc-400">Image Library</span>
+              <span className="text-[10px] text-zinc-400 dark:text-zinc-500">({galleryImages.length})</span>
+            </div>
+            <div className="grid grid-cols-4 gap-1.5 max-h-48 overflow-y-auto">
+              {galleryImages.slice(0, 40).map((img, idx) => (
+                <div
+                  key={`${img.meta.id}-${idx}`}
+                  draggable
+                  onDragStart={(e) => {
+                    e.dataTransfer.setData('application/json', JSON.stringify({
+                      meta: img.meta,
+                      role: img.role,
+                      dataUri: img.dataUri
+                    }));
+                    e.dataTransfer.effectAllowed = 'copy';
+                  }}
+                  className="relative aspect-square rounded border border-zinc-300 dark:border-zinc-700 overflow-hidden cursor-move hover:ring-2 hover:ring-blue-500 transition-all group"
+                  title={`${img.role} image - ${new Date(img.timestamp).toLocaleDateString()}`}
+                >
+                  <img
+                    src={img.dataUri}
+                    alt={`${img.role} ${idx + 1}`}
+                    className="w-full h-full object-cover"
+                  />
+                  <div className={`absolute bottom-0 left-0 right-0 h-1 ${
+                    img.role === 'control' ? 'bg-blue-500' :
+                    img.role === 'reference' ? 'bg-purple-500' :
+                    'bg-green-500'
+                  }`} />
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Settings / Footer */}
       <div className="p-4 border-t border-zinc-200 dark:border-zinc-800 bg-zinc-50/50 dark:bg-zinc-900/50">
         <button 

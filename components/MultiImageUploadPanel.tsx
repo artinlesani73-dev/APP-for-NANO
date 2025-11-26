@@ -1,5 +1,6 @@
 import React, { useRef, useState } from 'react';
 import { X, Image as ImageIcon, Plus, Square } from 'lucide-react';
+import { UploadedImagePayload, StoredImageMeta } from '../types';
 
 interface MultiImageUploadPanelProps {
   title: string;
@@ -8,6 +9,7 @@ interface MultiImageUploadPanelProps {
   onRemove: (index: number) => void;
   onEdit?: (index: number) => void;
   onCreateBlank?: () => void;
+  onGalleryDrop?: (payload: UploadedImagePayload) => void;
   accept?: string;
   description?: string;
   maxImages?: number;
@@ -20,6 +22,7 @@ export const MultiImageUploadPanel: React.FC<MultiImageUploadPanelProps> = ({
   onRemove,
   onEdit,
   onCreateBlank,
+  onGalleryDrop,
   accept = "image/png, image/jpeg, image/webp",
   description,
   maxImages = 5
@@ -59,6 +62,24 @@ export const MultiImageUploadPanel: React.FC<MultiImageUploadPanelProps> = ({
     setIsDragging(false);
 
     if (images.length >= maxImages) return;
+
+    // Check if it's a gallery image (from sidebar)
+    const galleryData = e.dataTransfer.getData('application/json');
+    if (galleryData && onGalleryDrop) {
+      try {
+        const parsedData = JSON.parse(galleryData);
+        // Create payload from gallery image, preserving original metadata
+        const payload: UploadedImagePayload = {
+          data: parsedData.dataUri,
+          original_name: parsedData.meta.original_name || parsedData.meta.filename,
+          size_bytes: parsedData.meta.size_bytes
+        };
+        onGalleryDrop(payload);
+      } catch (err) {
+        console.error('Failed to parse gallery drop data:', err);
+      }
+      return;
+    }
 
     const files = e.dataTransfer.files;
     if (files && files.length > 0) {

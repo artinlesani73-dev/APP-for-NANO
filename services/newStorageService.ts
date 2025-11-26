@@ -144,10 +144,26 @@ export const StorageService = {
     }
   },
 
-  // Delete a session
+  // Delete a session (only if empty)
   deleteSession: (sessionId: string) => {
-    console.warn('Session deletion is disabled to preserve history. Requested session:', sessionId);
-    // Intentionally no-op to keep sessions intact
+    const session = StorageService.loadSession(sessionId);
+    if (!session) return;
+
+    // Only allow deletion of empty sessions (no generations)
+    if (session.generations.length > 0) {
+      console.warn('Cannot delete session with generations:', sessionId);
+      return;
+    }
+
+    const sessions = StorageService.getSessions().filter(s => s.session_id !== sessionId);
+    StorageService.saveSessionsList(sessions);
+
+    // Clean up session from storage
+    if (isElectron()) {
+      localStorage.removeItem(`session_${sessionId}`);
+    } else {
+      localStorage.removeItem(`session_${sessionId}`);
+    }
   },
 
   // Persist graph state for a session

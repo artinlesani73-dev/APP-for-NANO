@@ -16,6 +16,8 @@ export const ImageEditModal: React.FC<ImageEditModalProps> = ({ isOpen, image, o
   const [brushSize, setBrushSize] = useState(8);
   const [brushOpacity, setBrushOpacity] = useState(0.8);
   const [tool, setTool] = useState<'brush' | 'erase'>('brush');
+  const [cursorPos, setCursorPos] = useState<{ x: number; y: number } | null>(null);
+  const [showCursor, setShowCursor] = useState(false);
 
   const getPointerPosition = (e: React.PointerEvent<HTMLCanvasElement>) => {
     const canvas = drawCanvasRef.current;
@@ -83,6 +85,16 @@ export const ImageEditModal: React.FC<ImageEditModalProps> = ({ isOpen, image, o
   };
 
   const handlePointerMove = (e: React.PointerEvent<HTMLCanvasElement>) => {
+    // Update cursor position for visual indicator
+    const canvas = drawCanvasRef.current;
+    if (canvas) {
+      const rect = canvas.getBoundingClientRect();
+      setCursorPos({
+        x: e.clientX - rect.left,
+        y: e.clientY - rect.top
+      });
+    }
+
     if (!isDrawing || !drawCanvasRef.current) return;
     const ctx = getContext();
     if (!ctx) return;
@@ -97,6 +109,16 @@ export const ImageEditModal: React.FC<ImageEditModalProps> = ({ isOpen, image, o
     ctx.lineJoin = 'round';
     ctx.lineTo(pos.x, pos.y);
     ctx.stroke();
+  };
+
+  const handlePointerEnter = () => {
+    setShowCursor(true);
+  };
+
+  const handlePointerLeave = (e: React.PointerEvent<HTMLCanvasElement>) => {
+    setShowCursor(false);
+    setCursorPos(null);
+    stopDrawing(e);
   };
 
   const stopDrawing = (e?: React.PointerEvent<HTMLCanvasElement>) => {
@@ -154,11 +176,32 @@ export const ImageEditModal: React.FC<ImageEditModalProps> = ({ isOpen, image, o
               <canvas
                 ref={drawCanvasRef}
                 className="absolute inset-0 max-w-full max-h-[70vh] touch-none"
+                style={{ cursor: 'none' }}
                 onPointerDown={handlePointerDown}
                 onPointerMove={handlePointerMove}
                 onPointerUp={stopDrawing}
-                onPointerLeave={stopDrawing}
+                onPointerEnter={handlePointerEnter}
+                onPointerLeave={handlePointerLeave}
               />
+              {/* Brush size cursor indicator */}
+              {showCursor && cursorPos && drawCanvasRef.current && (
+                <div
+                  className="absolute pointer-events-none"
+                  style={{
+                    left: cursorPos.x,
+                    top: cursorPos.y,
+                    transform: 'translate(-50%, -50%)',
+                    width: brushSize * (drawCanvasRef.current.getBoundingClientRect().width / drawCanvasRef.current.width),
+                    height: brushSize * (drawCanvasRef.current.getBoundingClientRect().height / drawCanvasRef.current.height),
+                    borderRadius: '50%',
+                    border: `2px solid ${tool === 'erase' ? '#f59e0b' : '#3b82f6'}`,
+                    backgroundColor: tool === 'erase'
+                      ? 'rgba(245, 158, 11, 0.1)'
+                      : `${brushColor}${Math.round(brushOpacity * 255).toString(16).padStart(2, '0')}`,
+                    mixBlendMode: tool === 'erase' ? 'normal' : 'normal'
+                  }}
+                />
+              )}
             </div>
           </div>
 
