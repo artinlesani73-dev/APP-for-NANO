@@ -7,6 +7,7 @@ import { ResultPanel } from './components/ResultPanel';
 import { HistoryPanel, HistoryGalleryItem } from './components/HistoryPanel';
 import GraphView from './components/GraphView';
 import { SettingsModal } from './components/SettingsModal';
+import { ImageEditModal } from './components/ImageEditModal';
 import { LoginForm } from './components/LoginForm';
 import { UserProvider, useUser } from './components/UserContext';
 import { AdminLogs } from './components/AdminLogs';
@@ -37,6 +38,7 @@ function AppContent() {
   const [prompt, setPrompt] = useState<string>('');
   const [controlImagesData, setControlImagesData] = useState<UploadedImagePayload[]>([]);
   const [referenceImagesData, setReferenceImagesData] = useState<UploadedImagePayload[]>([]);
+  const [editingControlIndex, setEditingControlIndex] = useState<number | null>(null);
   const [config, setConfig] = useState<GenerationConfig>(DEFAULT_CONFIG);
 
   // Output State
@@ -44,6 +46,10 @@ function AppContent() {
   const [currentGeneration, setCurrentGeneration] = useState<SessionGeneration | null>(null);
   const [outputImagesData, setOutputImagesData] = useState<string[]>([]);
   const [outputTexts, setOutputTexts] = useState<string[]>([]);
+
+  const editingControlImage = editingControlIndex !== null
+    ? controlImagesData[editingControlIndex]?.data ?? null
+    : null;
 
   // API Key State
   const [apiKeyConnected, setApiKeyConnected] = useState(false);
@@ -102,6 +108,12 @@ function AppContent() {
   useEffect(() => {
     LoggerService.init();
   }, []);
+
+  useEffect(() => {
+    if (editingControlIndex !== null && editingControlIndex >= controlImagesData.length) {
+      setEditingControlIndex(null);
+    }
+  }, [controlImagesData.length, editingControlIndex]);
 
   useEffect(() => {
     LoggerService.setCurrentUser(currentUser);
@@ -232,44 +244,63 @@ function AppContent() {
     // If the session has generations, load the most recent one
     if (session.generations.length > 0) {
       const lastGen = session.generations[session.generations.length - 1];
-      loadGenerationIntoView(lastGen);
+      loadGenerationIntoView(lastGen, { includeInputs: false });
     } else {
         resetInputs();
     }
   };
 
+  const handleEditControlImage = (index: number) => {
+    setEditingControlIndex(index);
+  };
+
+  const handleSaveEditedControl = (dataUri: string) => {
+    setControlImagesData(prev =>
+      prev.map((item, idx) => (idx === editingControlIndex ? { ...item, data: dataUri } : item))
+    );
+    setEditingControlIndex(null);
+  };
+
   const handleSelectGeneration = (sessionId: string, gen: SessionGeneration) => {
-    if (sessionId !== currentSessionId) {
+    const switchingSession = sessionId !== currentSessionId;
+
+    if (switchingSession) {
       setCurrentSessionId(sessionId);
     }
 
-    loadGenerationIntoView(gen);
+    loadGenerationIntoView(gen, { includeInputs: !switchingSession });
   };
 
-  const loadGenerationIntoView = (gen: SessionGeneration) => {
+  const loadGenerationIntoView = (gen: SessionGeneration, options: { includeInputs?: boolean } = {}) => {
+    const { includeInputs = true } = options;
     setPrompt(gen.prompt);
     setConfig(gen.parameters);
     setCurrentGeneration(gen);
 
-    // Load control images
-    if (gen.control_images && gen.control_images.length > 0) {
-      const imagesData = gen.control_images
-        .map(img => StorageService.loadImage('control', img.id, img.filename))
-        .filter(data => data !== null)
-        .map(data => ({ data })) as UploadedImagePayload[];
-      setControlImagesData(imagesData);
+    if (includeInputs) {
+      // Load control images
+      if (gen.control_images && gen.control_images.length > 0) {
+        const imagesData = gen.control_images
+          .map(img => StorageService.loadImage('control', img.id, img.filename))
+          .filter(data => data !== null)
+          .map(data => ({ data })) as UploadedImagePayload[];
+        setControlImagesData(imagesData);
+      } else {
+        setControlImagesData([]);
+      }
+
+      // Load reference images
+      if (gen.reference_images && gen.reference_images.length > 0) {
+        const imagesData = gen.reference_images
+          .map(img => StorageService.loadImage('reference', img.id, img.filename))
+          .filter(data => data !== null)
+          .map(data => ({ data })) as UploadedImagePayload[];
+        setReferenceImagesData(imagesData);
+      } else {
+        setReferenceImagesData([]);
+      }
     } else {
       setControlImagesData([]);
-    }
-
-    // Load reference images
-    if (gen.reference_images && gen.reference_images.length > 0) {
-      const imagesData = gen.reference_images
-        .map(img => StorageService.loadImage('reference', img.id, img.filename))
-        .filter(data => data !== null)
-        .map(data => ({ data })) as UploadedImagePayload[];
-      setReferenceImagesData(imagesData);
-    } else {
       setReferenceImagesData([]);
     }
 
@@ -650,6 +681,7 @@ function AppContent() {
                             images={controlImagesData.map(img => img.data)}
                             onUpload={(f) => handleImageUpload(f, 'control')}
                             onRemove={(idx) => handleImageRemove(idx, 'control')}
+                            onEdit={handleEditControlImage}
                             maxImages={5}
                         />
                         <MultiImageUploadPanel
@@ -724,6 +756,13 @@ function AppContent() {
             )}
           </div>
       </div>
+
+      <ImageEditModal
+        isOpen={editingControlIndex !== null}
+        image={editingControlImage}
+        onClose={() => setEditingControlIndex(null)}
+        onSave={handleSaveEditedControl}
+      />
 
       <SettingsModal
         isOpen={isSettingsOpen}

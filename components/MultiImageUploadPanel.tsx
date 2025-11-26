@@ -6,6 +6,7 @@ interface MultiImageUploadPanelProps {
   images: string[]; // Array of base64 data URIs
   onUpload: (file: File) => void;
   onRemove: (index: number) => void;
+  onEdit?: (index: number) => void;
   accept?: string;
   description?: string;
   maxImages?: number;
@@ -16,6 +17,7 @@ export const MultiImageUploadPanel: React.FC<MultiImageUploadPanelProps> = ({
   images,
   onUpload,
   onRemove,
+  onEdit,
   accept = "image/png, image/jpeg, image/webp",
   description,
   maxImages = 5
@@ -88,10 +90,20 @@ export const MultiImageUploadPanel: React.FC<MultiImageUploadPanelProps> = ({
               alt={`${title} ${index + 1}`}
               className="w-full h-full object-cover"
             />
-            <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+            <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2">
+              {onEdit && (
+                <button
+                  onClick={() => onEdit(index)}
+                  className="bg-white/10 backdrop-blur text-white p-2 rounded-full hover:bg-blue-500/80 transition-colors"
+                  title="Edit image"
+                >
+                  <ImageIcon size={16} />
+                </button>
+              )}
               <button
                 onClick={() => onRemove(index)}
                 className="bg-white/10 backdrop-blur text-white p-2 rounded-full hover:bg-red-500/80 transition-colors"
+                title="Remove image"
               >
                 <X size={16} />
               </button>
