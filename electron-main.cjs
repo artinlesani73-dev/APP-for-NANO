@@ -49,7 +49,7 @@ function createWindow() {
   mainWindow = new BrowserWindow({
     width: 1280,
     height: 800,
-    icon: path.join(__dirname, 'build', 'icon.png'),
+    icon: path.join(__dirname, 'build', 'Area49_logo_A49-2024-3.ico'),
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
@@ -77,7 +77,7 @@ function createAdminWindow() {
   adminWindow = new BrowserWindow({
     width: 1200,
     height: 800,
-    icon: path.join(__dirname, 'build', 'icon.png'),
+    icon: path.join(__dirname, 'build', 'Area49_logo_A49-2024-3.ico'),
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
