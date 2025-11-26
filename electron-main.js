@@ -18,6 +18,10 @@ const resolveIconPath = () => {
   return candidatePaths.find(p => p && fs.existsSync(p));
 };
 
+// Explicitly set the application user model ID so Windows uses the packaged
+// executable's icon for taskbar entries instead of the default Electron icon.
+app.setAppUserModelId('com.area49.nanobanana');
+
 const loadDotEnv = () => {
   const envPath = path.join(__dirname, '.env');
   if (!fs.existsSync(envPath)) return;

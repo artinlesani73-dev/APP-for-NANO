@@ -5,6 +5,10 @@ const fs = require('fs');
 const crypto = require('crypto');
 const os = require('os');
 
+// Explicitly set the application user model ID so Windows uses the packaged
+// executable's icon for taskbar entries instead of the default Electron icon.
+app.setAppUserModelId('com.area49.nanobanana');
+
 const loadDotEnv = () => {
   const envPath = path.join(__dirname, '.env');
   if (!fs.existsSync(envPath)) return;
