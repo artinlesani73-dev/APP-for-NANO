@@ -4,6 +4,20 @@ const path = require('path');
 const fs = require('fs');
 const os = require('os');
 
+const resolveIconPath = () => {
+  const candidatePaths = [
+    path.join(__dirname, 'build', 'Area49_logo_A49-2024-3.ico')
+  ];
+
+  if (process.resourcesPath) {
+    candidatePaths.push(
+      path.join(process.resourcesPath, 'build', 'Area49_logo_A49-2024-3.ico')
+    );
+  }
+
+  return candidatePaths.find(p => p && fs.existsSync(p));
+};
+
 const loadDotEnv = () => {
   const envPath = path.join(__dirname, '.env');
   if (!fs.existsSync(envPath)) return;
@@ -28,7 +42,7 @@ let adminWindow;
 const isAdminEnabled = () => Boolean(process.env.VITE_ADMIN_PASSPHRASE || process.env.ADMIN_ENABLED === 'true');
 
 function createWindow() {
-  const iconPath = path.join(__dirname, 'build', 'Area49_logo_A49-2024-3.ico');
+  const iconPath = resolveIconPath();
 
   mainWindow = new BrowserWindow({
     width: 1280,
@@ -58,7 +72,7 @@ function createAdminWindow() {
     return adminWindow;
   }
 
-  const iconPath = path.join(__dirname, 'build', 'Area49_logo_A49-2024-3.ico');
+  const iconPath = resolveIconPath();
 
   adminWindow = new BrowserWindow({
     width: 1200,
