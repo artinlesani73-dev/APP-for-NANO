@@ -71,14 +71,15 @@ export const StorageService = {
   // =======================
 
   // Create a new session
-  createSession: (title: string = "New Session"): Session => {
+  createSession: (title: string = "New Session", user?: { displayName: string; id: string }): Session => {
     const session: Session = {
       session_id: generateUUID(),
       title,
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
       generations: [],
-      graph: { nodes: [], edges: [] }
+      graph: { nodes: [], edges: [] },
+      user
     };
 
     StorageService.saveSession(session);

@@ -1,5 +1,5 @@
 import React, { useRef, useState, useEffect } from 'react';
-import { X, Moon, Sun, Download, Upload, Monitor, Folder, Key } from 'lucide-react';
+import { X, Moon, Sun, Download, Upload, Monitor, Folder, Key, LogOut } from 'lucide-react';
 import { StorageService } from '../services/storageService';
 
 interface SettingsModalProps {
@@ -8,6 +8,7 @@ interface SettingsModalProps {
   theme: 'dark' | 'light';
   toggleTheme: () => void;
   onApiKeyUpdate?: () => void;
+  onLogout?: () => void;
 }
 
 export const SettingsModal: React.FC<SettingsModalProps> = ({
@@ -15,12 +16,12 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   onClose,
   theme,
   toggleTheme,
-  onApiKeyUpdate
+  onApiKeyUpdate,
+  onLogout
 }) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const isElectron = StorageService.isElectron();
   const [apiKey, setApiKey] = useState('');
-  const [showApiKey, setShowApiKey] = useState(false);
 
   useEffect(() => {
     if (isOpen && isElectron) {
@@ -108,29 +109,17 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 </div>
 
                 <div className="space-y-2">
-                  <div className="flex gap-2">
-                    <input
-                      type={showApiKey ? "text" : "password"}
-                      value={apiKey}
-                      onChange={(e) => setApiKey(e.target.value)}
-                      placeholder="AIza..."
-                      className={`flex-1 px-3 py-2 rounded-md text-sm font-mono border ${
-                        theme === 'dark'
-                          ? 'bg-zinc-900 border-zinc-700 focus:border-blue-500'
-                          : 'bg-white border-zinc-300 focus:border-blue-500'
-                      } outline-none transition-colors`}
-                    />
-                    <button
-                      onClick={() => setShowApiKey(!showApiKey)}
-                      className={`px-3 py-2 rounded-md text-xs font-medium transition-colors border ${
-                        theme === 'dark'
-                          ? 'bg-zinc-800 border-zinc-700 hover:bg-zinc-700'
-                          : 'bg-white border-zinc-300 hover:bg-zinc-100'
-                      }`}
-                    >
-                      {showApiKey ? 'Hide' : 'Show'}
-                    </button>
-                  </div>
+                  <input
+                    type="password"
+                    value={apiKey}
+                    onChange={(e) => setApiKey(e.target.value)}
+                    placeholder="AIza..."
+                    className={`w-full px-3 py-2 rounded-md text-sm font-mono border ${
+                      theme === 'dark'
+                        ? 'bg-zinc-900 border-zinc-700 focus:border-blue-500'
+                        : 'bg-white border-zinc-300 focus:border-blue-500'
+                    } outline-none transition-colors`}
+                  />
                   <button
                     onClick={handleSaveApiKey}
                     className="w-full px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white text-sm font-medium rounded-md transition-colors"
@@ -213,7 +202,25 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                )}
             </div>
           </section>
-          
+
+          {/* Account Section */}
+          {onLogout && (
+            <section className="space-y-3">
+              <h3 className={`text-sm font-medium ${theme === 'dark' ? 'text-zinc-400' : 'text-zinc-500'} uppercase tracking-wider`}>Account</h3>
+              <button
+                onClick={onLogout}
+                className={`w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg border transition-colors ${
+                  theme === 'dark'
+                    ? 'bg-red-950/20 border-red-900/50 hover:bg-red-950/30 text-red-400'
+                    : 'bg-red-50 border-red-200 hover:bg-red-100 text-red-600'
+                } font-medium text-sm`}
+              >
+                <LogOut size={16} />
+                Log Out
+              </button>
+            </section>
+          )}
+
         </div>
 
         {/* Footer */}

@@ -239,6 +239,15 @@ function AppContent() {
     LoggerService.logLogin('User logged in', { displayName: user.displayName, userId: user.id });
   };
 
+  const handleLogout = () => {
+    LoggerService.logAction('User logged out', { displayName: currentUser?.displayName });
+    setCurrentUser(null, false);
+    // Close settings modal
+    setIsSettingsOpen(false);
+    // Optionally reload the page to clear all state
+    window.location.reload();
+  };
+
   const toggleTheme = () => {
     const newTheme = theme === 'dark' ? 'light' : 'dark';
     setTheme(newTheme);
@@ -282,11 +291,14 @@ function AppContent() {
   };
 
   const handleNewSession = () => {
-    const newSession = StorageService.createSession();
+    const newSession = StorageService.createSession("New Session", currentUser || undefined);
     setSessions(prev => [newSession, ...prev]);
     setCurrentSessionId(newSession.session_id);
     resetInputs();
-    LoggerService.logAction('Created new session', { sessionId: newSession.session_id });
+    LoggerService.logAction('Created new session', {
+      sessionId: newSession.session_id,
+      user: currentUser?.displayName
+    });
   };
 
   const handleRenameSession = (id: string, newTitle: string) => {
@@ -661,6 +673,22 @@ function AppContent() {
             </div>
 
             <div className="flex items-center gap-4" style={{ WebkitAppRegion: 'no-drag' } as any}>
+                {/* Generation View (Main View) */}
+                <button
+                  onClick={() => {
+                    setShowGraphView(false);
+                    setShowHistory(false);
+                  }}
+                  className={`flex items-center gap-2 text-xs px-3 py-1.5 rounded border transition-colors font-medium ${
+                    !showGraphView && !showHistory
+                      ? 'bg-green-50 dark:bg-green-950/30 border-green-300 dark:border-green-900 text-green-700 dark:text-green-400'
+                      : 'bg-white dark:bg-zinc-800/50 border-zinc-300 dark:border-zinc-700 text-zinc-700 dark:text-zinc-400 hover:bg-zinc-50 dark:hover:bg-zinc-800'
+                  }`}
+                >
+                  <Zap size={12} />
+                  Generation View
+                </button>
+
                 {/* Graph View Toggle */}
                 <button
                   onClick={() => {
@@ -694,15 +722,6 @@ function AppContent() {
                     History ({historyItems.length})
                   </button>
                 )}
-
-                <button
-                  onClick={handleOpenAdminDashboard}
-                  className="flex items-center gap-2 text-xs px-3 py-1.5 rounded border bg-white dark:bg-emerald-900/30 border-emerald-300 dark:border-emerald-800 text-emerald-700 dark:text-emerald-200 hover:bg-emerald-50 dark:hover:bg-emerald-900 transition-colors"
-                  title="Open the admin dashboard"
-                >
-                  <ShieldCheck size={12} />
-                  Admin Dashboard
-                </button>
 
                 <button
                   onClick={() => setIsAdminLogsOpen(true)}
@@ -890,6 +909,7 @@ function AppContent() {
         theme={theme}
         toggleTheme={toggleTheme}
         onApiKeyUpdate={handleApiKeyUpdate}
+        onLogout={handleLogout}
       />
       <AdminDashboard
         isOpen={isAdminDashboardOpen}
