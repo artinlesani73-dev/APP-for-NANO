@@ -33,6 +33,7 @@ function AppContent() {
   const [sessions, setSessions] = useState<Session[]>([]);
   const [currentSessionId, setCurrentSessionId] = useState<string | null>(null);
   const { currentUser, setCurrentUser, logout: userLogout } = useUser();
+  const [showGreeting, setShowGreeting] = useState(true);
 
   // Active Generation Inputs
   const [prompt, setPrompt] = useState<string>('');
@@ -675,6 +676,35 @@ function AppContent() {
 
   return (
     <div className={`flex h-screen w-screen overflow-hidden font-sans selection:bg-blue-500/30 transition-colors duration-200 ${theme === 'dark' ? 'bg-black text-zinc-100' : 'bg-white text-zinc-900'}`}>
+
+      {/* Christmas Greeting Modal */}
+      {showGreeting && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm"
+          onClick={() => setShowGreeting(false)}
+        >
+          <div
+            className="bg-gradient-to-br from-red-600 via-green-700 to-red-600 p-1 rounded-2xl shadow-2xl animate-pulse"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="bg-white dark:bg-zinc-900 rounded-xl p-12 text-center">
+              <h1 className="text-6xl font-bold mb-4 bg-gradient-to-r from-red-600 via-green-600 to-red-600 bg-clip-text text-transparent">
+                Buon Natale!
+              </h1>
+              <p className="text-xl text-zinc-600 dark:text-zinc-400 mb-6">
+                Auguri di Buone Feste!
+              </p>
+              <button
+                onClick={() => setShowGreeting(false)}
+                className="px-6 py-3 bg-gradient-to-r from-red-600 to-green-600 text-white font-semibold rounded-lg hover:from-red-700 hover:to-green-700 transition-all shadow-lg"
+              >
+                Grazie!
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       
       {/* SIDEBAR */}
       <Sidebar
