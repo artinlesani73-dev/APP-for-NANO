@@ -169,6 +169,15 @@ const appendLog = (entry) => {
     fs.writeFileSync(getLogFilePath(), JSON.stringify(logs, null, 2));
 };
 
+const logAutoUpdateEvent = (event, details) => {
+  appendLog({
+    type: 'auto-update',
+    event,
+    details,
+    timestamp: new Date().toISOString()
+  });
+};
+
 // IPC Handlers for synchronous file operations
 ipcMain.on('save-sync', (event, filename, content) => {
     try {
@@ -222,7 +231,9 @@ ipcMain.handle('fetch-logs', async () => {
 });
 
 ipcMain.handle('check-for-updates', async () => {
+  logAutoUpdateEvent('check-for-updates');
   const result = await autoUpdater.checkForUpdates();
+  logAutoUpdateEvent('check-for-updates-result', { versionInfo: result?.updateInfo });
   return result;
 });
 
@@ -273,14 +284,17 @@ ipcMain.handle('get-admin-metrics', async () => {
 });
 
 autoUpdater.on('update-available', (info) => {
+  logAutoUpdateEvent('update-available', info);
   sendUpdateStatus('update-available', info);
 });
 
 autoUpdater.on('download-progress', (progress) => {
+  logAutoUpdateEvent('download-progress', progress);
   sendUpdateStatus('update-download-progress', progress);
 });
 
 autoUpdater.on('update-downloaded', (info) => {
+  logAutoUpdateEvent('update-downloaded', info);
   sendUpdateStatus('update-downloaded', info);
   dialog.showMessageBox(mainWindow, {
     type: 'info',
@@ -291,12 +305,14 @@ autoUpdater.on('update-downloaded', (info) => {
     message: 'A new version has been downloaded. Restart to apply the update?',
   }).then(({ response }) => {
     if (response === 0) {
+      logAutoUpdateEvent('quit-and-install');
       autoUpdater.quitAndInstall();
     }
   });
 });
 
 autoUpdater.on('error', (error) => {
+  logAutoUpdateEvent('error', { message: error?.message ?? String(error) });
   sendUpdateStatus('update-error', error?.message ?? String(error));
 });
 
