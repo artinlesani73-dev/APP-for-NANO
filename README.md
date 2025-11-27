@@ -212,11 +212,11 @@ Build configuration is in `package.json` under the `build` key.
 
 Maintainers can cut a new release with the following steps:
 
-1. **Bump the version** in `package.json` to the new release number.
+1. **Bump the version** in `package.json` to the new release number and document the changes in `CHANGELOG.md`.
 2. **Build the renderer**: `npm run build`.
-3. **Package installers** for all targets: `npx electron-builder -mwl`. Artifacts are written to `dist-electron/`.
-4. **Publish assets**: upload the generated artifacts to the GitHub Releases draft created by Electron Builder (configured via the `publish` section). Promoting the release will make updates available to clients.
-5. **Verify auto-updates** by launching the packaged app; it will check GitHub for the new version and prompt to install when ready.
+3. **Package installers** for all targets: `npx electron-builder -mwl`. Artifacts are written to `dist-electron/` and a draft GitHub release is created.
+4. **Upload assets to the draft** created by Electron Builder, then publish the release to make auto-updates available to clients.
+5. **Smoke-test the packaged app** on each platform: launch, confirm update checks run on startup, and run `window.electron.checkForUpdates()` for a manual verification if needed.
 
 ## Troubleshooting
 
