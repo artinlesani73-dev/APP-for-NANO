@@ -1,6 +1,6 @@
 {
   "name": "area49-nano-banana-ui",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "AREA49 - Nano Banana UI",
   "main": "electron-main.cjs",
   "author": "Artin Lesani",
