@@ -107,10 +107,6 @@ export const GeminiService = {
           data: stripBase64Header(image)
         }
       });
-
-      if (idx === 0) {
-        prompt += "\n\n(Use the first image as a structural control/composition reference.)";
-      }
     });
 
     referenceImages.forEach((image, idx) => {
@@ -120,13 +116,29 @@ export const GeminiService = {
           data: stripBase64Header(image)
         }
       });
-
-      if (idx === 0) {
-        prompt += "\n\n(Use the second image as a style reference.)";
-      }
     });
 
-    parts.push({ text: prompt });
+    // Add a structured preamble so the model knows how many and which images are controls vs references.
+    // We describe the order and role of each slice of parts.
+    let finalPrompt = prompt;
+    if (controlImages.length > 0 || referenceImages.length > 0) {
+      const hasControls = controlImages.length > 0;
+      const hasReferences = referenceImages.length > 0;
+
+      const controlRange = hasControls
+        ? `control image${controlImages.length === 1 ? '' : 's'} (parts 1-${controlImages.length}) for structure/composition`
+        : '';
+
+      const referenceStart = controlImages.length + 1;
+      const referenceRange = hasReferences
+        ? `reference image${referenceImages.length === 1 ? '' : 's'} (parts ${referenceStart}-${referenceStart + referenceImages.length - 1}) for style`
+        : '';
+
+      const rangeSummary = [controlRange, referenceRange].filter(Boolean).join('; ');
+      finalPrompt = `Context images: ${rangeSummary}. Preserve order across both groups.\n\n${prompt}`;
+    }
+
+    parts.push({ text: finalPrompt });
 
     // Construct image config
     const imageConfig: any = {
