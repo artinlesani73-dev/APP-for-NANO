@@ -125,17 +125,31 @@ export const GeminiService = {
       const hasControls = controlImages.length > 0;
       const hasReferences = referenceImages.length > 0;
 
-      const controlRange = hasControls
-        ? `control image${controlImages.length === 1 ? '' : 's'} (parts 1-${controlImages.length}) for structure/composition`
-        : '';
+      const formatRange = (start: number, count: number) =>
+        count === 1 ? `${start}` : `${start}-${start + count - 1}`;
 
-      const referenceStart = controlImages.length + 1;
-      const referenceRange = hasReferences
-        ? `reference image${referenceImages.length === 1 ? '' : 's'} (parts ${referenceStart}-${referenceStart + referenceImages.length - 1}) for style`
-        : '';
+      const preambleSections: string[] = ['Context images:'];
 
-      const rangeSummary = [controlRange, referenceRange].filter(Boolean).join('; ');
-      finalPrompt = `Context images: ${rangeSummary}. Preserve order across both groups.\n\n${prompt}`;
+      if (hasControls) {
+        preambleSections.push(
+          `(Use control image${controlImages.length === 1 ? '' : 's'} ${formatRange(1, controlImages.length)} as structural control/composition reference${
+            controlImages.length === 1 ? '' : 's'
+          } in order.)`
+        );
+      }
+
+      if (hasReferences) {
+        const referenceStart = controlImages.length + 1;
+        preambleSections.push(
+          `(Use reference image${referenceImages.length === 1 ? '' : 's'} ${formatRange(referenceStart, referenceImages.length)} as style reference${
+            referenceImages.length === 1 ? '' : 's'
+          } in order.)`
+        );
+      }
+
+      preambleSections.push('Preserve order across both groups.');
+
+      finalPrompt = `${preambleSections.join('\n\n')}\n\n${prompt}`;
     }
 
     parts.push({ text: finalPrompt });
