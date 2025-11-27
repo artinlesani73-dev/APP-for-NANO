@@ -185,7 +185,9 @@ export const StorageService = {
   // Save image to file system (Electron) or localStorage (web)
   saveImage: (image: string | UploadedImagePayload, role: ImageRole): StoredImageMeta => {
     const payload = normalizeImagePayload(image);
-    const id = generateUUID();
+    // Use existing id and hash if provided (e.g., when reusing an output as input), otherwise generate new ones
+    const id = payload.id || generateUUID();
+    const hash = payload.hash || simpleHash(stripDataUriHeader(payload.data));
     const filename = generateImageFilename(role, id);
     const base64Data = payload.data;
     const estimatedSize = payload.size_bytes ?? estimateSizeFromBase64(base64Data);
@@ -199,7 +201,18 @@ export const StorageService = {
         if (!result.success) {
           throw new Error(`Failed to save image: ${result.error}`);
         }
-        return { id, filename, hash: simpleHash(stripDataUriHeader(base64Data)), size_bytes: estimatedSize, original_name: originalName };
+        return { id, filename, hash, size_bytes: estimatedSize, original_name: originalName };
+      }
+
+      // Input images: if id and hash are provided (reusing existing image), save directly
+      // Otherwise, use deduplication logic
+      if (payload.id && payload.hash) {
+        // @ts-ignore
+        const result = window.electron.saveImageSync('inputs', filename, base64Data);
+        if (!result.success) {
+          throw new Error(`Failed to save image: ${result.error}`);
+        }
+        return { id, filename, hash, size_bytes: estimatedSize, original_name: originalName };
       }
 
       // Input images: deduplicate by name and size using shared log
@@ -220,7 +233,8 @@ export const StorageService = {
     // Web fallback with localStorage log for deduplication
     const logRaw = localStorage.getItem(INPUT_LOG_KEY);
     const log: StoredImageMeta[] = logRaw ? JSON.parse(logRaw) : [];
-    if (role !== 'output') {
+    // Only deduplicate if id/hash are not provided (not reusing an existing image)
+    if (role !== 'output' && !payload.id && !payload.hash) {
       const existing = log.find(entry => entry.original_name === originalName && entry.size_bytes === estimatedSize);
       if (existing) {
         const existingData = localStorage.getItem(`image_${existing.id}`);
@@ -231,7 +245,6 @@ export const StorageService = {
       }
     }
 
-    const hash = simpleHash(stripDataUriHeader(base64Data));
     const suffix = originalName.includes('.') ? originalName.substring(originalName.lastIndexOf('.')) : '.png';
     const baseName = originalName.replace(suffix, '');
     const sanitizedBase = baseName.replace(/[^a-zA-Z0-9_-]/g, '_').replace(/_{2,}/g, '_').replace(/^_+|_+$/g, '') || role;

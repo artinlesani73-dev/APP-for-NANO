@@ -25,6 +25,8 @@ export interface UploadedImagePayload {
   data: string;
   original_name?: string;
   size_bytes?: number;
+  id?: string;
+  hash?: string;
 }
 
 export interface SessionGeneration {

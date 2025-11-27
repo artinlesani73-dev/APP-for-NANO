@@ -129,8 +129,9 @@ const GraphView: React.FC<GraphViewProps> = ({ sessions, theme, loadImage, onGen
   };
 
   // Helper function to get image key for deduplication
-  const getImageKey = (role: 'control' | 'reference' | 'output', id: string, filename: string) => {
-    return `${role}-${id}-${filename}`;
+  // Use only ID to ensure the same image appears as one node regardless of role
+  const getImageKey = (id: string) => {
+    return id;
   };
 
   const generateGraphLayout = () => {
@@ -165,7 +166,19 @@ const GraphView: React.FC<GraphViewProps> = ({ sessions, theme, loadImage, onGen
     // Maps for grouping
     const promptGroups = new Map<string, string>(); // prompt text -> node id
     const workflowGroups = new Map<string, string>(); // workflow key -> node id
-    const imageGroups = new Map<string, string>(); // image key -> node id
+    const imageGroups = new Map<string, string>(); // image id -> node id
+
+    // Track roles and metadata for each image node
+    interface ImageNodeInfo {
+      nodeId: string;
+      roles: Set<'control' | 'reference' | 'output'>;
+      imageData: string | null;
+      meta: any; // StoredImageMeta
+      outputText?: string;
+      firstSeenGenIndex: number; // Track which generation first used this image
+      firstSeenYOffset: number; // Track the yOffset when first seen
+    }
+    const imageNodeInfoMap = new Map<string, ImageNodeInfo>(); // image id -> info
 
     let yOffset = BASE_Y;
 
@@ -192,53 +205,63 @@ const GraphView: React.FC<GraphViewProps> = ({ sessions, theme, loadImage, onGen
         });
       }
 
-      // 2. Handle Control Images (deduplicate)
+      // 2. Handle Control Images (deduplicate by ID)
       const controlImageIds: string[] = [];
-      (generation.control_images || []).forEach((img, idx) => {
-        const imageKey = getImageKey('control', img.id, img.filename);
+      (generation.control_images || []).forEach((img) => {
+        const imageKey = getImageKey(img.id);
         let imageNodeId = imageGroups.get(imageKey);
+        let imageInfo = imageNodeInfoMap.get(img.id);
 
-        if (!imageNodeId) {
-          imageNodeId = `control-${img.id}`;
+        if (!imageInfo) {
+          // First time seeing this image
+          imageNodeId = `image-${img.id}`;
           imageGroups.set(imageKey, imageNodeId);
           const imageData = loadImage('control', img.id, img.filename);
 
-          newNodes.push({
-            id: imageNodeId,
-            type: 'control-image',
-            label: `Control`,
-            x: BASE_X + COLUMN_SPACING,
-            y: yOffset + idx * (IMAGE_NODE_HEIGHT + 30),
-            width: NODE_WIDTH,
-            height: IMAGE_NODE_HEIGHT,
-            data: { image: img, imageData }
-          });
+          imageInfo = {
+            nodeId: imageNodeId,
+            roles: new Set(['control']),
+            imageData,
+            meta: img,
+            firstSeenGenIndex: genIndex,
+            firstSeenYOffset: yOffset
+          };
+          imageNodeInfoMap.set(img.id, imageInfo);
+        } else {
+          // Image already exists, add control role
+          imageInfo.roles.add('control');
+          imageNodeId = imageInfo.nodeId;
         }
 
         controlImageIds.push(imageNodeId);
       });
 
-      // 3. Handle Reference Images (deduplicate)
+      // 3. Handle Reference Images (deduplicate by ID)
       const referenceImageIds: string[] = [];
-      (generation.reference_images || []).forEach((img, idx) => {
-        const imageKey = getImageKey('reference', img.id, img.filename);
+      (generation.reference_images || []).forEach((img) => {
+        const imageKey = getImageKey(img.id);
         let imageNodeId = imageGroups.get(imageKey);
+        let imageInfo = imageNodeInfoMap.get(img.id);
 
-        if (!imageNodeId) {
-          imageNodeId = `reference-${img.id}`;
+        if (!imageInfo) {
+          // First time seeing this image
+          imageNodeId = `image-${img.id}`;
           imageGroups.set(imageKey, imageNodeId);
           const imageData = loadImage('reference', img.id, img.filename);
 
-          newNodes.push({
-            id: imageNodeId,
-            type: 'reference-image',
-            label: `Reference`,
-            x: BASE_X + COLUMN_SPACING,
-            y: yOffset + (controlImageIds.length + idx) * (IMAGE_NODE_HEIGHT + 30),
-            width: NODE_WIDTH,
-            height: IMAGE_NODE_HEIGHT,
-            data: { image: img, imageData }
-          });
+          imageInfo = {
+            nodeId: imageNodeId,
+            roles: new Set(['reference']),
+            imageData,
+            meta: img,
+            firstSeenGenIndex: genIndex,
+            firstSeenYOffset: yOffset
+          };
+          imageNodeInfoMap.set(img.id, imageInfo);
+        } else {
+          // Image already exists, add reference role
+          imageInfo.roles.add('reference');
+          imageNodeId = imageInfo.nodeId;
         }
 
         referenceImageIds.push(imageNodeId);
@@ -307,27 +330,37 @@ const GraphView: React.FC<GraphViewProps> = ({ sessions, theme, loadImage, onGen
         }
       });
 
-      // 8. Handle Output Images (deduplicate)
+      // 8. Handle Output Images (deduplicate by ID)
       const outputImages = generation.output_images || (generation.output_image ? [generation.output_image] : []);
       outputImages.forEach((img, idx) => {
-        const imageKey = getImageKey('output', img.id, img.filename);
+        const imageKey = getImageKey(img.id);
         let imageNodeId = imageGroups.get(imageKey);
+        let imageInfo = imageNodeInfoMap.get(img.id);
 
-        if (!imageNodeId) {
-          imageNodeId = `output-${img.id}`;
+        if (!imageInfo) {
+          // First time seeing this image
+          imageNodeId = `image-${img.id}`;
           imageGroups.set(imageKey, imageNodeId);
           const imageData = loadImage('output', img.id, img.filename);
 
-          newNodes.push({
-            id: imageNodeId,
-            type: 'output-image',
-            label: `Output`,
-            x: BASE_X + COLUMN_SPACING * 3,
-            y: yOffset + idx * (OUTPUT_IMAGE_HEIGHT + 40),
-            width: OUTPUT_IMAGE_WIDTH,
-            height: OUTPUT_IMAGE_HEIGHT,
-            data: { image: img, imageData, text: generation.output_texts?.[idx] }
-          });
+          imageInfo = {
+            nodeId: imageNodeId,
+            roles: new Set(['output']),
+            imageData,
+            meta: img,
+            outputText: generation.output_texts?.[idx],
+            firstSeenGenIndex: genIndex,
+            firstSeenYOffset: yOffset
+          };
+          imageNodeInfoMap.set(img.id, imageInfo);
+        } else {
+          // Image already exists, add output role
+          imageInfo.roles.add('output');
+          imageNodeId = imageInfo.nodeId;
+          // Update output text if available
+          if (generation.output_texts?.[idx]) {
+            imageInfo.outputText = generation.output_texts[idx];
+          }
         }
 
         // Create edge from workflow to output
@@ -342,6 +375,64 @@ const GraphView: React.FC<GraphViewProps> = ({ sessions, theme, loadImage, onGen
       });
 
       yOffset += GENERATION_SPACING;
+    });
+
+    // Now create actual nodes for all images based on their roles
+    imageNodeInfoMap.forEach((info, imageId) => {
+      const roles = Array.from(info.roles);
+      const hasOutput = info.roles.has('output');
+      const hasControl = info.roles.has('control');
+      const hasReference = info.roles.has('reference');
+      const hasInput = hasControl || hasReference;
+
+      // Determine node type and position based on roles
+      let nodeType: Node['type'];
+      let xPosition: number;
+      let label: string;
+
+      if (hasOutput && hasInput) {
+        // Multi-role image: both output and input
+        nodeType = 'output-image'; // Use output-image as base type
+        xPosition = BASE_X + COLUMN_SPACING * 2.5; // Position between workflow and output
+        const roleLabels = roles.map(r => r.charAt(0).toUpperCase() + r.slice(1));
+        label = roleLabels.join(' + ');
+      } else if (hasOutput) {
+        // Output only
+        nodeType = 'output-image';
+        xPosition = BASE_X + COLUMN_SPACING * 3;
+        label = 'Output';
+      } else if (hasControl && hasReference) {
+        // Both control and reference
+        nodeType = 'control-image';
+        xPosition = BASE_X + COLUMN_SPACING;
+        label = 'Control + Reference';
+      } else if (hasControl) {
+        // Control only
+        nodeType = 'control-image';
+        xPosition = BASE_X + COLUMN_SPACING;
+        label = 'Control';
+      } else {
+        // Reference only
+        nodeType = 'reference-image';
+        xPosition = BASE_X + COLUMN_SPACING;
+        label = 'Reference';
+      }
+
+      newNodes.push({
+        id: info.nodeId,
+        type: nodeType,
+        label,
+        x: xPosition,
+        y: info.firstSeenYOffset, // Use the yOffset from when we first saw this image
+        width: hasOutput ? OUTPUT_IMAGE_WIDTH : NODE_WIDTH,
+        height: hasOutput ? OUTPUT_IMAGE_HEIGHT : IMAGE_NODE_HEIGHT,
+        data: {
+          image: info.meta,
+          imageData: info.imageData,
+          text: info.outputText,
+          roles: roles // Store all roles in data
+        }
+      });
     });
 
     setNodes(newNodes);
