@@ -30,12 +30,13 @@ export const ImageEditModal: React.FC<ImageEditModalProps> = ({ isOpen, image, o
   const [historyIndex, setHistoryIndex] = useState(-1);
 
   const getPointerPosition = (e: React.PointerEvent<HTMLCanvasElement>) => {
-    const canvas = drawCanvasRef.current;
-    if (!canvas) return null;
+    const canvas = e.currentTarget;
+    const drawCanvas = drawCanvasRef.current;
+    if (!canvas || !drawCanvas) return null;
 
     const rect = canvas.getBoundingClientRect();
-    const scaleX = canvas.width / rect.width;
-    const scaleY = canvas.height / rect.height;
+    const scaleX = drawCanvas.width / rect.width;
+    const scaleY = drawCanvas.height / rect.height;
 
     return {
       x: (e.clientX - rect.left) * scaleX,
@@ -76,16 +77,27 @@ export const ImageEditModal: React.FC<ImageEditModalProps> = ({ isOpen, image, o
     };
   }, [image, isOpen]);
 
+  // Get context with willReadFrequently for better performance
+  useEffect(() => {
+    const drawCanvas = drawCanvasRef.current;
+    if (drawCanvas) {
+      const ctx = drawCanvas.getContext('2d', { willReadFrequently: true });
+      if (ctx) {
+        // Context is now optimized for frequent reads
+      }
+    }
+  }, []);
+
   const getContext = () => {
     const canvas = drawCanvasRef.current;
     if (!canvas) return null;
-    return canvas.getContext('2d');
+    return canvas.getContext('2d', { willReadFrequently: true });
   };
 
   const saveToHistory = () => {
     const canvas = drawCanvasRef.current;
     if (!canvas) return;
-    const ctx = canvas.getContext('2d');
+    const ctx = canvas.getContext('2d', { willReadFrequently: true });
     if (!ctx) return;
 
     const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
@@ -99,7 +111,7 @@ export const ImageEditModal: React.FC<ImageEditModalProps> = ({ isOpen, image, o
     if (historyIndex <= 0) return;
     const canvas = drawCanvasRef.current;
     if (!canvas) return;
-    const ctx = canvas.getContext('2d');
+    const ctx = canvas.getContext('2d', { willReadFrequently: true });
     if (!ctx) return;
 
     const newIndex = historyIndex - 1;
@@ -111,7 +123,7 @@ export const ImageEditModal: React.FC<ImageEditModalProps> = ({ isOpen, image, o
     if (historyIndex >= history.length - 1) return;
     const canvas = drawCanvasRef.current;
     if (!canvas) return;
-    const ctx = canvas.getContext('2d');
+    const ctx = canvas.getContext('2d', { willReadFrequently: true });
     if (!ctx) return;
 
     const newIndex = historyIndex + 1;
@@ -188,14 +200,14 @@ export const ImageEditModal: React.FC<ImageEditModalProps> = ({ isOpen, image, o
   };
 
   const handlePointerDown = (e: React.PointerEvent<HTMLCanvasElement>) => {
-    if (!drawCanvasRef.current) return;
+    const canvas = e.currentTarget;
     const ctx = getContext();
-    if (!ctx) return;
+    if (!ctx || !canvas) return;
 
     const pos = getPointerPosition(e);
     if (!pos) return;
 
-    drawCanvasRef.current.setPointerCapture(e.pointerId);
+    canvas.setPointerCapture(e.pointerId);
     setIsDrawing(true);
     setStartPos(pos);
 
@@ -214,7 +226,7 @@ export const ImageEditModal: React.FC<ImageEditModalProps> = ({ isOpen, image, o
 
   const handlePointerMove = (e: React.PointerEvent<HTMLCanvasElement>) => {
     // Update cursor position for visual indicator
-    const canvas = drawCanvasRef.current;
+    const canvas = e.currentTarget;
     if (canvas) {
       const rect = canvas.getBoundingClientRect();
       setCursorPos({
@@ -223,7 +235,7 @@ export const ImageEditModal: React.FC<ImageEditModalProps> = ({ isOpen, image, o
       });
     }
 
-    if (!isDrawing || !drawCanvasRef.current) return;
+    if (!isDrawing) return;
     const pos = getPointerPosition(e);
     if (!pos) return;
 
@@ -266,8 +278,11 @@ export const ImageEditModal: React.FC<ImageEditModalProps> = ({ isOpen, image, o
 
   const stopDrawing = (e?: React.PointerEvent<HTMLCanvasElement>) => {
     if (!isDrawing) return;
-    if (e && drawCanvasRef.current?.hasPointerCapture(e.pointerId)) {
-      drawCanvasRef.current.releasePointerCapture(e.pointerId);
+    if (e) {
+      const canvas = e.currentTarget;
+      if (canvas.hasPointerCapture(e.pointerId)) {
+        canvas.releasePointerCapture(e.pointerId);
+      }
     }
 
     // For shapes, finalize the drawing on the draw canvas
