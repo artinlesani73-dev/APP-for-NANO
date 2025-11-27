@@ -68,11 +68,13 @@ export const MultiImageUploadPanel: React.FC<MultiImageUploadPanelProps> = ({
     if (galleryData && onGalleryDrop) {
       try {
         const parsedData = JSON.parse(galleryData);
-        // Create payload from gallery image, preserving original metadata
+        // Create payload from gallery image, preserving original metadata including id and hash
         const payload: UploadedImagePayload = {
           data: parsedData.dataUri,
           original_name: parsedData.meta.original_name || parsedData.meta.filename,
-          size_bytes: parsedData.meta.size_bytes
+          size_bytes: parsedData.meta.size_bytes,
+          id: parsedData.meta.id,
+          hash: parsedData.meta.hash
         };
         onGalleryDrop(payload);
       } catch (err) {
