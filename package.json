@@ -81,7 +81,8 @@
       {
         "provider": "github",
         "owner": "AREA49",
-        "repo": "APP-for-NANO"
+        "repo": "APP-for-NANO",
+        "releaseType": "release"
       }
     ]
   }
