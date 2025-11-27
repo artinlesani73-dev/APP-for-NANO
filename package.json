@@ -79,7 +79,7 @@
     "publish": [
       {
         "provider": "github",
-        "owner": "AREA49",
+        "owner": "artinlesani73-dev",
         "repo": "APP-for-NANO",
         "releaseType": "release"
       }
