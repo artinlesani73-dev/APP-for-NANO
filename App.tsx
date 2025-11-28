@@ -6,6 +6,7 @@ import { ParametersPanel } from './components/ParametersPanel';
 import { ResultPanel } from './components/ResultPanel';
 import { HistoryPanel, HistoryGalleryItem } from './components/HistoryPanel';
 import GraphView from './components/GraphView';
+import { ViewPointsPanel } from './components/ViewPointsPanel';
 import { SettingsModal } from './components/SettingsModal';
 import { ImageEditModal } from './components/ImageEditModal';
 import { LoginForm } from './components/LoginForm';
@@ -17,7 +18,7 @@ import { GeminiService } from './services/geminiService';
 import { LoggerService } from './services/logger';
 import { AdminService } from './services/adminService';
 import { Session, SessionGeneration, GenerationConfig, UploadedImagePayload } from './types';
-import { Zap, Database, Key, ExternalLink, History, ShieldCheck, Network } from 'lucide-react';
+import { Zap, Database, Key, ExternalLink, History, ShieldCheck, Network, Eye } from 'lucide-react';
 
 const DEFAULT_CONFIG: GenerationConfig = {
   temperature: 0.7,
@@ -58,6 +59,7 @@ function AppContent() {
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
   const [showGraphView, setShowGraphView] = useState(false);
+  const [showViewPoints, setShowViewPoints] = useState(false);
   const [theme, setTheme] = useState<'dark' | 'light'>('dark');
   const [isAdminLogsOpen, setIsAdminLogsOpen] = useState(false);
   const [isAdminDashboardOpen, setIsAdminDashboardOpen] = useState(false);
@@ -717,9 +719,10 @@ function AppContent() {
                   onClick={() => {
                     setShowGraphView(false);
                     setShowHistory(false);
+                    setShowViewPoints(false);
                   }}
                   className={`flex items-center gap-2 text-xs px-3 py-1.5 rounded border transition-colors font-medium ${
-                    !showGraphView && !showHistory
+                    !showGraphView && !showHistory && !showViewPoints
                       ? 'bg-green-50 dark:bg-green-950/30 border-green-300 dark:border-green-900 text-green-700 dark:text-green-400'
                       : 'bg-white dark:bg-zinc-800/50 border-zinc-300 dark:border-zinc-700 text-zinc-700 dark:text-zinc-400 hover:bg-zinc-50 dark:hover:bg-zinc-800'
                   }`}
@@ -733,6 +736,7 @@ function AppContent() {
                   onClick={() => {
                     setShowGraphView(!showGraphView);
                     setShowHistory(false);
+                    setShowViewPoints(false);
                   }}
                   className={`flex items-center gap-2 text-xs px-3 py-1.5 rounded border transition-colors font-medium ${
                     showGraphView
@@ -750,6 +754,7 @@ function AppContent() {
                     onClick={() => {
                       setShowHistory(!showHistory);
                       setShowGraphView(false);
+                      setShowViewPoints(false);
                     }}
                     className={`flex items-center gap-2 text-xs px-3 py-1.5 rounded border transition-colors font-medium ${
                       showHistory
@@ -761,6 +766,23 @@ function AppContent() {
                     History ({historyItems.length})
                   </button>
                 )}
+
+                {/* View Points Toggle */}
+                <button
+                  onClick={() => {
+                    setShowViewPoints(!showViewPoints);
+                    setShowHistory(false);
+                    setShowGraphView(false);
+                  }}
+                  className={`flex items-center gap-2 text-xs px-3 py-1.5 rounded border transition-colors font-medium ${
+                    showViewPoints
+                      ? 'bg-orange-50 dark:bg-orange-950/30 border-orange-300 dark:border-orange-900 text-orange-700 dark:text-orange-400'
+                      : 'bg-white dark:bg-zinc-800/50 border-zinc-300 dark:border-zinc-700 text-zinc-700 dark:text-zinc-400 hover:bg-zinc-50 dark:hover:bg-zinc-800'
+                  }`}
+                >
+                  <Eye size={12} />
+                  View Points
+                </button>
 
                 <button
                   onClick={() => setIsAdminLogsOpen(true)}
@@ -806,7 +828,7 @@ function AppContent() {
         </header>
 
         {/* Content Area */}
-          <div className={`flex-1 ${showGraphView ? 'overflow-hidden' : 'overflow-y-auto'} ${showGraphView ? '' : 'p-6'} bg-zinc-50 dark:bg-black/50`}>
+          <div className={`flex-1 ${showGraphView || showViewPoints ? 'overflow-hidden' : 'overflow-y-auto'} ${showGraphView || showViewPoints ? '' : 'p-6'} bg-zinc-50 dark:bg-black/50`}>
             {showGraphView ? (
               <div className="h-full w-full">
                 <GraphView
@@ -827,6 +849,14 @@ function AppContent() {
                     setShowGraphView(false);
                     await handleGenerate();
                   }}
+                />
+              </div>
+            ) : showViewPoints ? (
+              <div className="h-full w-full">
+                <ViewPointsPanel
+                  sessions={sessions}
+                  theme={theme}
+                  loadImage={(role, id, filename) => StorageService.loadImage(role, id, filename)}
                 />
               </div>
             ) : showHistory ? (
