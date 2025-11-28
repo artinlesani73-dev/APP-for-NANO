@@ -118,29 +118,29 @@ export const GeminiService = {
       });
     });
 
-    // Add a structured preamble so the model knows how many and which images are controls vs references.
-    // We describe the order and role of each slice of parts.
+    // Add a structured preamble following Gemini API best practices
+    // Explicitly describe which images to use and how to use them
     let finalPrompt = prompt;
     if (controlImages.length > 0 || referenceImages.length > 0) {
       const hasControls = controlImages.length > 0;
       const hasReferences = referenceImages.length > 0;
 
-      const controlRange = hasControls
-        ? `control image${controlImages.length === 1 ? '' : 's'} (parts 1-${controlImages.length}) for structure/composition`
+      const controlDesc = hasControls
+        ? `The first ${controlImages.length} image${controlImages.length === 1 ? '' : 's'} (part${controlImages.length === 1 ? '' : 's'} 1-${controlImages.length}) show${controlImages.length === 1 ? 's' : ''} the structure, layout, and composition to preserve. Keep the same scene elements, object positions, and overall composition.`
         : '';
 
       const referenceStart = controlImages.length + 1;
-      const referenceRange = hasReferences
-        ? `reference image${referenceImages.length === 1 ? '' : 's'} (parts ${referenceStart}-${referenceStart + referenceImages.length - 1}) for style`
+      const referenceDesc = hasReferences
+        ? `The next ${referenceImages.length} image${referenceImages.length === 1 ? '' : 's'} (part${referenceImages.length === 1 ? '' : 's'} ${referenceStart}-${referenceStart + referenceImages.length - 1}) show${referenceImages.length === 1 ? 's' : ''} the style, colors, lighting, and aesthetic to match. Apply the same visual style and rendering quality.`
         : '';
 
-      const rangeSummary = [controlRange, referenceRange].filter(Boolean).join('; ');
-      finalPrompt = `Context images: ${rangeSummary}. Preserve order across both groups.\n\n${prompt}`;
+      const contextInstructions = [controlDesc, referenceDesc].filter(Boolean).join(' ');
+      finalPrompt = `Context Images: ${contextInstructions}\n\n${prompt}`;
     }
 
     parts.push({ text: finalPrompt });
 
-    // Construct image config
+    // Construct image config following Gemini API best practices
     const imageConfig: any = {
         aspectRatio: config.aspect_ratio,
     };
@@ -161,13 +161,20 @@ export const GeminiService = {
         }
       : undefined;
 
+    // Build generation config following Gemini API documentation
+    // https://ai.google.dev/gemini-api/docs/image-generation
     const response = await ai.models.generateContent({
       model: modelName,
       contents: { parts },
       config: {
-        // Nano Banana / Imagen configs
+        // Response modalities - specify that we want both text and images
+        responseModalities: ['TEXT', 'IMAGE'],
+        // Generation parameters for creativity control
+        temperature: config.temperature,
+        topP: config.top_p,
+        // Image-specific configuration
         imageConfig: imageConfig
-        // safetySettings could be added here
+        // safetySettings could be added here if needed
       },
       // @ts-expect-error Request options are allowed at runtime for transport metadata
       requestOptions
