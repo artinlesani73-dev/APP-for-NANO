@@ -118,20 +118,20 @@ export const GeminiService = {
       });
     });
 
-    // Add a structured preamble following Gemini API best practices
-    // Explicitly describe which images to use and how to use them
+    // Add a neutral preamble that identifies images without dictating behavior
+    // The user's prompt controls what to do with the images (preserve, change, modify, etc.)
     let finalPrompt = prompt;
     if (controlImages.length > 0 || referenceImages.length > 0) {
       const hasControls = controlImages.length > 0;
       const hasReferences = referenceImages.length > 0;
 
       const controlDesc = hasControls
-        ? `The first ${controlImages.length} image${controlImages.length === 1 ? '' : 's'} (part${controlImages.length === 1 ? '' : 's'} 1-${controlImages.length}) show${controlImages.length === 1 ? 's' : ''} the structure, layout, and composition to preserve. Keep the same scene elements, object positions, and overall composition.`
+        ? `The first ${controlImages.length} image${controlImages.length === 1 ? '' : 's'} (part${controlImages.length === 1 ? '' : 's'} 1-${controlImages.length}) provide${controlImages.length === 1 ? 's' : ''} structural and compositional reference (scene layout, object positions, spatial arrangement).`
         : '';
 
       const referenceStart = controlImages.length + 1;
       const referenceDesc = hasReferences
-        ? `The next ${referenceImages.length} image${referenceImages.length === 1 ? '' : 's'} (part${referenceImages.length === 1 ? '' : 's'} ${referenceStart}-${referenceStart + referenceImages.length - 1}) show${referenceImages.length === 1 ? 's' : ''} the style, colors, lighting, and aesthetic to match. Apply the same visual style and rendering quality.`
+        ? `The next ${referenceImages.length} image${referenceImages.length === 1 ? '' : 's'} (part${referenceImages.length === 1 ? '' : 's'} ${referenceStart}-${referenceStart + referenceImages.length - 1}) provide${referenceImages.length === 1 ? 's' : ''} stylistic reference (visual style, colors, lighting, aesthetic qualities).`
         : '';
 
       const contextInstructions = [controlDesc, referenceDesc].filter(Boolean).join(' ');
