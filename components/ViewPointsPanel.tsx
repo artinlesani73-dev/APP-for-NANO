@@ -418,45 +418,122 @@ Technical Specifications:
               <div className="flex justify-center mb-4">
                 <div
                   className="relative select-none"
-                  style={{ perspective: '800px' }}
+                  style={{
+                    width: '180px',
+                    height: '180px',
+                    background: 'radial-gradient(circle at center, rgba(100, 100, 120, 0.15) 0%, rgba(20, 20, 30, 0.4) 100%)',
+                    borderRadius: '12px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    perspective: '1000px'
+                  }}
                   onMouseDown={handleMouseDown}
                   onMouseMove={handleMouseMove}
                   onMouseUp={handleMouseUp}
                   onMouseLeave={handleMouseUp}
                 >
+                  {/* Scale container for zoom */}
                   <div
-                    className={`w-32 h-32 border-2 border-zinc-700 rounded-lg bg-zinc-900/50 relative ${
-                      isDragging ? 'cursor-grabbing' : 'cursor-grab'
-                    }`}
                     style={{
                       transformStyle: 'preserve-3d',
                       transform: `scale(${1 + zoomLevel / 200})`,
                       transition: 'transform 0.3s ease'
                     }}
                   >
+                    {/* Rotation container */}
                     <div
-                      className="absolute inset-0"
+                      className={isDragging ? 'cursor-grabbing' : 'cursor-grab'}
                       style={{
+                        width: '80px',
+                        height: '80px',
+                        position: 'relative',
                         transformStyle: 'preserve-3d',
                         transform: `rotateX(${-verticalAngle}deg) rotateY(${horizontalAngle}deg)`,
                         transition: isDragging ? 'none' : 'transform 0.3s ease'
                       }}
                     >
-                      {/* Cube faces */}
-                      {[
-                        { transform: 'translateZ(32px)', bg: 'bg-blue-500/30' },
-                        { transform: 'translateZ(-32px) rotateY(180deg)', bg: 'bg-blue-500/20' },
-                        { transform: 'rotateY(-90deg) translateZ(32px)', bg: 'bg-blue-500/20' },
-                        { transform: 'rotateY(90deg) translateZ(32px)', bg: 'bg-blue-500/20' },
-                        { transform: 'rotateX(90deg) translateZ(32px)', bg: 'bg-blue-500/25' },
-                        { transform: 'rotateX(-90deg) translateZ(32px)', bg: 'bg-blue-500/25' }
-                      ].map((face, i) => (
-                        <div
-                          key={i}
-                          className={`absolute inset-0 border border-zinc-600 ${face.bg}`}
-                          style={{ transform: face.transform }}
-                        />
-                      ))}
+                      {/* Front face - with image */}
+                      <div
+                        style={{
+                          position: 'absolute',
+                          width: '80px',
+                          height: '80px',
+                          transform: 'translateZ(40px)',
+                          border: '2px solid rgba(150, 150, 170, 0.6)',
+                          boxShadow: 'inset 0 0 20px rgba(100, 150, 255, 0.1)',
+                          background: uploadedImage
+                            ? `url(${uploadedImage}) center/cover`
+                            : 'rgba(80, 100, 150, 0.15)',
+                          borderRadius: '4px',
+                          overflow: 'hidden'
+                        }}
+                      />
+
+                      {/* Back face */}
+                      <div
+                        style={{
+                          position: 'absolute',
+                          width: '80px',
+                          height: '80px',
+                          transform: 'translateZ(-40px) rotateY(180deg)',
+                          border: '2px solid rgba(120, 120, 140, 0.4)',
+                          background: 'rgba(60, 70, 100, 0.1)',
+                          borderRadius: '4px'
+                        }}
+                      />
+
+                      {/* Right face */}
+                      <div
+                        style={{
+                          position: 'absolute',
+                          width: '80px',
+                          height: '80px',
+                          transform: 'rotateY(90deg) translateZ(40px)',
+                          border: '2px solid rgba(120, 120, 140, 0.4)',
+                          background: 'rgba(60, 70, 100, 0.1)',
+                          borderRadius: '4px'
+                        }}
+                      />
+
+                      {/* Left face */}
+                      <div
+                        style={{
+                          position: 'absolute',
+                          width: '80px',
+                          height: '80px',
+                          transform: 'rotateY(-90deg) translateZ(40px)',
+                          border: '2px solid rgba(120, 120, 140, 0.4)',
+                          background: 'rgba(60, 70, 100, 0.1)',
+                          borderRadius: '4px'
+                        }}
+                      />
+
+                      {/* Top face */}
+                      <div
+                        style={{
+                          position: 'absolute',
+                          width: '80px',
+                          height: '80px',
+                          transform: 'rotateX(90deg) translateZ(40px)',
+                          border: '2px solid rgba(120, 120, 140, 0.4)',
+                          background: 'rgba(60, 70, 100, 0.1)',
+                          borderRadius: '4px'
+                        }}
+                      />
+
+                      {/* Bottom face */}
+                      <div
+                        style={{
+                          position: 'absolute',
+                          width: '80px',
+                          height: '80px',
+                          transform: 'rotateX(-90deg) translateZ(40px)',
+                          border: '2px solid rgba(120, 120, 140, 0.4)',
+                          background: 'rgba(60, 70, 100, 0.1)',
+                          borderRadius: '4px'
+                        }}
+                      />
                     </div>
                   </div>
                 </div>
