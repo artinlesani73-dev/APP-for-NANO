@@ -114,26 +114,26 @@ export const ViewPointsPanel: React.FC<ViewPointsPanelProps> = ({
     else lens = ' using a standard lens';
 
     // Build the structured prompt
-    const prompt = `Generate a new view of the scene from the reference image with the following camera parameters:
+    const prompt = `Generate the exact same scene from the control image, but viewed from a different camera angle.
 
-Camera Position and Angle:
-- Horizontal: ${direction}
-- Vertical: ${height}
-- Distance: ${distance}
-- Field of View: ${fov}° ${lens}
+Camera Parameters for New View:
+- Horizontal Rotation: ${direction}
+- Vertical Angle: ${height}
+- Camera Distance: ${distance}
+- Field of View: ${fov}°${lens}
 
-Instructions:
-- Maintain the exact same scene, objects, lighting, and style from the reference image
-- Only change the camera viewpoint as specified above
-- Preserve all details, textures, and colors
-- Generate a photorealistic view from the new camera angle
-- Keep the composition natural and well-framed
+Requirements:
+- Keep EXACTLY the same scene, objects, layout, and composition from the control image
+- Only change the camera position and angle as specified
+- Preserve all lighting, colors, textures, and details
+- Maintain photorealistic quality
+- Ensure natural perspective and framing
 
-Technical Parameters:
-- Horizontal Rotation: ${horizontalAngle}°
-- Vertical Rotation: ${verticalAngle}°
-- Zoom Level: ${zoomLevel > 0 ? '+' : ''}${zoomLevel}%
-- Field of View: ${fov}°`;
+Technical Specifications:
+- Horizontal: ${horizontalAngle}°
+- Vertical: ${verticalAngle}°
+- Zoom: ${zoomLevel > 0 ? '+' : ''}${zoomLevel}%
+- FOV: ${fov}°`;
 
     return prompt;
   };
@@ -170,12 +170,12 @@ Technical Parameters:
         model: config.model
       });
 
-      // Generate new view using the image as reference
+      // Generate new view using the image as control (to preserve structure/composition)
       const result = await GeminiService.generateImage(
         prompt,
         config,
-        undefined, // no control images
-        imageData, // use selected image as reference
+        imageData, // use selected image as control to preserve scene structure
+        undefined, // no reference images
         currentUser?.username
       );
 
@@ -207,7 +207,7 @@ Technical Parameters:
           status: 'completed' as const,
           prompt: prompt,
           parameters: config,
-          reference_images: [selectedImageMeta.image],
+          control_images: [selectedImageMeta.image], // Using as control to preserve scene structure
           output_images: storedImages,
           output_texts: result.texts,
           viewpoint_data: {
