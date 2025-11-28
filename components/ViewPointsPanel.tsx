@@ -2,7 +2,7 @@ import React, { useState, useRef } from 'react';
 import { Session, StoredImageMeta, GenerationConfig } from '../types';
 import { GeminiService } from '../services/geminiService';
 import { StorageService } from '../services/newStorageService';
-import { Loader2 } from 'lucide-react';
+import { Loader2, Upload, X } from 'lucide-react';
 
 interface ViewPointsPanelProps {
   sessions: Session[];
@@ -25,43 +25,69 @@ export const ViewPointsPanel: React.FC<ViewPointsPanelProps> = ({
   currentSessionId,
   onViewGenerated
 }) => {
-  const [horizontalAngle, setHorizontalAngle] = useState(39);
-  const [verticalAngle, setVerticalAngle] = useState(38);
-  const [zoomLevel, setZoomLevel] = useState(51);
-  const [fov, setFov] = useState(45); // Field of view
-  const [selectedImage, setSelectedImage] = useState<string | null>(null);
-  const [selectedImageMeta, setSelectedImageMeta] = useState<{ session_id: string; generation_id: string; image: StoredImageMeta } | null>(null);
+  const [horizontalAngle, setHorizontalAngle] = useState(0);
+  const [verticalAngle, setVerticalAngle] = useState(0);
+  const [zoomLevel, setZoomLevel] = useState(0);
+  const [fov, setFov] = useState(45);
+  const [uploadedImage, setUploadedImage] = useState<string | null>(null);
+  const [uploadedImageMeta, setUploadedImageMeta] = useState<StoredImageMeta | null>(null);
+  const [outputImages, setOutputImages] = useState<string[]>([]);
   const [isDragging, setIsDragging] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const dragStartRef = useRef<{ x: number; y: number; startH: number; startV: number }>({ x: 0, y: 0, startH: 0, startV: 0 });
 
-  // Get all output images from sessions
-  const getAllImages = (): Array<{ session_id: string; generation_id: string; image: StoredImageMeta }> => {
-    const images: Array<{ session_id: string; generation_id: string; image: StoredImageMeta }> = [];
-    sessions.forEach(session => {
-      session.generations.forEach(generation => {
-        if (generation.output_images && generation.output_images.length > 0) {
-          generation.output_images.forEach(image => {
-            images.push({
-              session_id: session.session_id,
-              generation_id: generation.generation_id,
-              image
-            });
-          });
-        }
-      });
-    });
-    return images;
+  // Handle file upload
+  const handleFileUpload = async (file: File) => {
+    const reader = new FileReader();
+    reader.onload = async (e) => {
+      const result = e.target?.result as string;
+      setUploadedImage(result);
+
+      // Save the uploaded image
+      const savedImage = StorageService.saveImage(result, 'control');
+      setUploadedImageMeta(savedImage);
+    };
+    reader.readAsDataURL(file);
   };
 
-  const allImages = getAllImages();
-
-  const handleImageSelect = (session_id: string, generation_id: string, image: StoredImageMeta) => {
-    const imageUrl = loadImage('output', generation_id, image.filename);
-    setSelectedImage(imageUrl);
-    setSelectedImageMeta({ session_id, generation_id, image });
+  // Drag and drop handlers
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
   };
 
+  const handleDragEnter = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(true);
+  };
+
+  const handleDragLeave = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(false);
+  };
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(false);
+
+    const files = e.dataTransfer.files;
+    if (files && files[0]) {
+      handleFileUpload(files[0]);
+    }
+  };
+
+  const handleFileInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (files && files[0]) {
+      handleFileUpload(files[0]);
+    }
+  };
+
+  // Cube rotation handlers
   const handleMouseDown = (e: React.MouseEvent) => {
     setIsDragging(true);
     dragStartRef.current = {
@@ -78,7 +104,6 @@ export const ViewPointsPanel: React.FC<ViewPointsPanelProps> = ({
     const deltaX = e.clientX - dragStartRef.current.x;
     const deltaY = e.clientY - dragStartRef.current.y;
 
-    // Sensitivity: 0.5 degrees per pixel
     const newH = Math.max(-90, Math.min(90, dragStartRef.current.startH + deltaX * 0.5));
     const newV = Math.max(-90, Math.min(90, dragStartRef.current.startV - deltaY * 0.5));
 
@@ -90,30 +115,25 @@ export const ViewPointsPanel: React.FC<ViewPointsPanelProps> = ({
     setIsDragging(false);
   };
 
-  // Build structured viewpoint prompt
+  // Build viewpoint prompt
   const buildViewpointPrompt = () => {
-    // Determine direction based on horizontal angle
     let direction = 'centered';
     if (horizontalAngle > 20) direction = `rotated ${horizontalAngle}° to the right`;
     else if (horizontalAngle < -20) direction = `rotated ${Math.abs(horizontalAngle)}° to the left`;
 
-    // Determine height based on vertical angle
     let height = 'at eye level';
     if (verticalAngle > 20) height = `${verticalAngle}° above (high angle)`;
     else if (verticalAngle < -20) height = `${Math.abs(verticalAngle)}° below (low angle)`;
 
-    // Determine zoom/distance
     let distance = 'at normal distance';
     if (zoomLevel > 20) distance = `${zoomLevel}% closer (zoomed in)`;
     else if (zoomLevel < -20) distance = `${Math.abs(zoomLevel)}% farther (zoomed out)`;
 
-    // Determine lens/FOV
     let lens = '';
     if (fov < 35) lens = ' using a narrow/telephoto lens';
     else if (fov > 60) lens = ' using a wide-angle lens';
     else lens = ' using a standard lens';
 
-    // Build the structured prompt
     const prompt = `Generate the exact same scene from the control image, but viewed from a different camera angle.
 
 Camera Parameters for New View:
@@ -139,8 +159,8 @@ Technical Specifications:
   };
 
   const handleGenerateView = async () => {
-    if (!selectedImageMeta) {
-      alert('Please select an image first');
+    if (!uploadedImage || !uploadedImageMeta) {
+      alert('Please upload an image first');
       return;
     }
 
@@ -150,15 +170,9 @@ Technical Specifications:
     }
 
     setIsGenerating(true);
+    setOutputImages([]);
 
     try {
-      // Get the original image data
-      const imageData = loadImage('output', selectedImageMeta.generation_id, selectedImageMeta.image.filename);
-      if (!imageData) {
-        throw new Error('Failed to load image data');
-      }
-
-      // Build the viewpoint prompt
       const prompt = buildViewpointPrompt();
 
       console.log('Generating viewpoint with prompt:', prompt);
@@ -170,12 +184,12 @@ Technical Specifications:
         model: config.model
       });
 
-      // Generate new view using the image as control (to preserve structure/composition)
+      // Generate new view using the image as control
       const result = await GeminiService.generateImage(
         prompt,
         config,
-        imageData, // use selected image as control to preserve scene structure
-        undefined, // no reference images
+        uploadedImage,
+        undefined,
         currentUser?.displayName
       );
 
@@ -186,19 +200,25 @@ Technical Specifications:
 
       // Store the generated images
       const storedImages: StoredImageMeta[] = [];
+      const outputDataUris: string[] = [];
+
       for (let i = 0; i < result.images.length; i++) {
         const imageBase64 = result.images[i];
+        const dataUri = `data:image/png;base64,${imageBase64}`;
 
-        // StorageService.saveImage returns StoredImageMeta with id, filename, hash, etc.
-        const storedImage = StorageService.saveImage(
-          `data:image/png;base64,${imageBase64}`,
-          'output'
-        );
-
+        const storedImage = StorageService.saveImage(dataUri, 'output');
         storedImages.push(storedImage);
+
+        // Load the image for display
+        const loadedImage = StorageService.loadImage('output', storedImage.id, storedImage.filename);
+        if (loadedImage) {
+          outputDataUris.push(loadedImage);
+        }
       }
 
-      // Save generation to session
+      setOutputImages(outputDataUris);
+
+      // Save generation to session (exactly like Generation View)
       const currentSession = sessions.find(s => s.session_id === currentSessionId);
       if (currentSession) {
         const newGeneration = {
@@ -207,7 +227,7 @@ Technical Specifications:
           status: 'completed' as const,
           prompt: prompt,
           parameters: config,
-          control_images: [selectedImageMeta.image], // Using as control to preserve scene structure
+          control_images: [uploadedImageMeta],
           output_images: storedImages,
           output_texts: result.texts,
           viewpoint_data: {
@@ -215,8 +235,7 @@ Technical Specifications:
             vertical_angle: verticalAngle,
             zoom_level: zoomLevel,
             field_of_view: fov,
-            source_image: selectedImageMeta.image.filename,
-            source_generation: selectedImageMeta.generation_id
+            source_image: uploadedImageMeta.filename,
           }
         };
 
@@ -247,140 +266,140 @@ Technical Specifications:
           View Points
         </h2>
         <p className="text-sm text-zinc-600 dark:text-zinc-400 mt-1">
-          Drag the cube to rotate • Adjust camera settings with sliders
+          Upload an image, set camera angles, and generate new viewpoints
         </p>
       </div>
 
-      <div className="flex-1 overflow-auto">
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 p-6">
-          {/* Left Panel - Image Selection and Preview */}
-          <div className="space-y-6">
-            {/* Image Preview */}
-            <div className="bg-zinc-50 dark:bg-zinc-800/50 rounded-lg border-2 border-dashed border-zinc-300 dark:border-zinc-700 overflow-hidden">
-              {selectedImage ? (
-                <div className="relative">
-                  <img
-                    src={selectedImage}
-                    alt="Selected"
-                    className="w-full h-auto max-h-96 object-contain"
-                  />
-                  <div className="absolute top-2 right-2">
+      <div className="flex-1 overflow-auto p-6">
+        <div className="max-w-6xl mx-auto grid grid-cols-12 gap-6">
+          {/* Left Column - Input & Output (8/12) */}
+          <div className="col-span-12 lg:col-span-8 space-y-6">
+
+            {/* Upload Area */}
+            <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-lg shadow-sm">
+              <div className="p-4 border-b border-zinc-200 dark:border-zinc-800">
+                <h3 className="text-sm font-medium text-zinc-900 dark:text-zinc-100">Input Image</h3>
+              </div>
+              <div className="p-4">
+                {uploadedImage ? (
+                  <div className="relative">
+                    <img
+                      src={uploadedImage}
+                      alt="Uploaded"
+                      className="w-full h-auto max-h-96 object-contain rounded-lg"
+                    />
                     <button
                       onClick={() => {
-                        setSelectedImage(null);
-                        setSelectedImageMeta(null);
+                        setUploadedImage(null);
+                        setUploadedImageMeta(null);
                       }}
-                      className="px-3 py-1.5 bg-red-500 hover:bg-red-600 text-white text-xs rounded-lg transition-colors"
+                      className="absolute top-2 right-2 p-2 bg-red-500 hover:bg-red-600 text-white rounded-lg transition-colors"
                     >
-                      Clear
+                      <X size={16} />
                     </button>
                   </div>
-                </div>
-              ) : (
-                <div className="flex items-center justify-center h-96">
-                  <div className="text-center text-zinc-500 dark:text-zinc-400">
-                    <svg className="w-16 h-16 mx-auto mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                    </svg>
-                    <p className="text-sm">Select an image from below</p>
-                  </div>
-                </div>
-              )}
-            </div>
-
-            {/* Image Gallery */}
-            <div>
-              <h3 className="text-sm font-medium text-zinc-700 dark:text-zinc-300 mb-3">
-                Select an Image
-              </h3>
-              <div className="grid grid-cols-3 gap-3 max-h-64 overflow-y-auto">
-                {allImages.length === 0 ? (
-                  <div className="col-span-3 text-center py-8 text-zinc-500 dark:text-zinc-400 text-sm">
-                    No images available. Generate some images first.
-                  </div>
                 ) : (
-                  allImages.map((item, index) => {
-                    const imageUrl = loadImage('output', item.generation_id, item.image.filename);
-                    const isSelected = selectedImageMeta?.generation_id === item.generation_id &&
-                                      selectedImageMeta?.image.filename === item.image.filename;
-
-                    return imageUrl ? (
-                      <button
-                        key={`${item.generation_id}-${item.image.filename}-${index}`}
-                        onClick={() => handleImageSelect(item.session_id, item.generation_id, item.image)}
-                        className={`relative aspect-square rounded-lg overflow-hidden border-2 transition-all ${
-                          isSelected
-                            ? 'border-blue-500 ring-2 ring-blue-500/50'
-                            : 'border-zinc-300 dark:border-zinc-700 hover:border-blue-400'
-                        }`}
-                      >
-                        <img
-                          src={imageUrl}
-                          alt={`Output ${index + 1}`}
-                          className="w-full h-full object-cover"
-                        />
-                      </button>
-                    ) : null;
-                  })
+                  <div
+                    onDragOver={handleDragOver}
+                    onDragEnter={handleDragEnter}
+                    onDragLeave={handleDragLeave}
+                    onDrop={handleDrop}
+                    onClick={() => fileInputRef.current?.click()}
+                    className={`border-2 border-dashed rounded-lg p-12 text-center cursor-pointer transition-colors ${
+                      isDragging
+                        ? 'border-blue-500 bg-blue-50 dark:bg-blue-950/20'
+                        : 'border-zinc-300 dark:border-zinc-700 hover:border-blue-400 dark:hover:border-blue-600'
+                    }`}
+                  >
+                    <Upload className="w-12 h-12 mx-auto mb-4 text-zinc-400" />
+                    <p className="text-sm text-zinc-600 dark:text-zinc-400 mb-2">
+                      Drag and drop an image here, or click to browse
+                    </p>
+                    <p className="text-xs text-zinc-500 dark:text-zinc-500">
+                      Supports PNG, JPG, WebP
+                    </p>
+                    <input
+                      ref={fileInputRef}
+                      type="file"
+                      accept="image/*"
+                      onChange={handleFileInputChange}
+                      className="hidden"
+                    />
+                  </div>
                 )}
               </div>
             </div>
+
+            {/* Output Area */}
+            {outputImages.length > 0 && (
+              <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-lg shadow-sm">
+                <div className="p-4 border-b border-zinc-200 dark:border-zinc-800">
+                  <h3 className="text-sm font-medium text-zinc-900 dark:text-zinc-100">Generated Views</h3>
+                </div>
+                <div className="p-4">
+                  <div className="grid grid-cols-2 gap-4">
+                    {outputImages.map((img, idx) => (
+                      <div key={idx} className="relative group">
+                        <img
+                          src={img}
+                          alt={`Output ${idx + 1}`}
+                          className="w-full h-auto rounded-lg border border-zinc-200 dark:border-zinc-700"
+                        />
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
 
-          {/* Right Panel - Viewpoint Controls */}
-          <div className="space-y-6">
+          {/* Right Column - Controls (4/12) */}
+          <div className="col-span-12 lg:col-span-4 space-y-4">
+
             {/* Model Selection */}
-            <div className="bg-zinc-50 dark:bg-zinc-800/50 rounded-lg p-4 border border-zinc-200 dark:border-zinc-700">
-              <h3 className="text-sm font-medium text-zinc-700 dark:text-zinc-300 mb-3">
-                Generation Model
+            <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-lg shadow-sm p-4">
+              <h3 className="text-sm font-medium text-zinc-900 dark:text-zinc-100 mb-3">
+                Model
               </h3>
               <select
                 value={config.model}
                 onChange={(e) => setConfig({ ...config, model: e.target.value })}
-                className="w-full bg-white dark:bg-zinc-950 border border-zinc-300 dark:border-zinc-800 rounded px-3 py-2 text-sm text-zinc-900 dark:text-zinc-300 focus:outline-none focus:border-blue-500"
+                className="w-full bg-white dark:bg-zinc-950 border border-zinc-300 dark:border-zinc-700 rounded px-3 py-2 text-sm text-zinc-900 dark:text-zinc-300 focus:outline-none focus:border-blue-500"
               >
-                <option value="gemini-2.5-flash-image">Gemini 2.5 Flash Image (Free/Fast)</option>
-                <option value="gemini-3-pro-image-preview">Gemini 3.0 Pro Image (Paid/Quality)</option>
+                <option value="gemini-2.5-flash-image">Gemini 2.5 Flash</option>
+                <option value="gemini-3-pro-image-preview">Gemini 3.0 Pro</option>
               </select>
             </div>
 
-            {/* Viewpoint Visualization */}
-            <div className="bg-black rounded-lg p-8">
-              <div className="text-center mb-6">
-                <h3 className="text-zinc-400 text-sm font-medium tracking-wider">
-                  SET YOUR VIEWPOINT
-                </h3>
-                <p className="text-zinc-600 text-xs mt-1">
-                  Click and drag to rotate
-                </p>
-              </div>
+            {/* 3D Cube Viewpoint */}
+            <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-lg shadow-sm p-4">
+              <h3 className="text-sm font-medium text-zinc-900 dark:text-zinc-100 mb-3">
+                Camera Angle
+              </h3>
+              <p className="text-xs text-zinc-500 dark:text-zinc-400 mb-3">
+                Drag to rotate
+              </p>
 
-              <div className="flex items-center justify-center gap-8 mb-6">
-                {/* 3D Cube Visualization */}
+              {/* Cube Visualization */}
+              <div className="flex justify-center mb-4">
                 <div
                   className="relative select-none"
-                  style={{
-                    perspective: '1000px',
-                    perspectiveOrigin: '50% 50%'
-                  }}
+                  style={{ perspective: '800px' }}
                   onMouseDown={handleMouseDown}
                   onMouseMove={handleMouseMove}
                   onMouseUp={handleMouseUp}
                   onMouseLeave={handleMouseUp}
                 >
                   <div
-                    className={`w-48 h-48 border-2 border-zinc-700 rounded-lg bg-zinc-900/50 relative ${
+                    className={`w-32 h-32 border-2 border-zinc-700 rounded-lg bg-zinc-900/50 relative ${
                       isDragging ? 'cursor-grabbing' : 'cursor-grab'
                     }`}
                     style={{
                       transformStyle: 'preserve-3d',
-                      // Apply scale here to maintain cube proportions
-                      // Calculate scale: 0% zoom = 1.0 scale, +100% = 2.0 scale, -100% = 0.5 scale
                       transform: `scale(${1 + zoomLevel / 200})`,
                       transition: 'transform 0.3s ease'
                     }}
                   >
-                    {/* Cube container */}
                     <div
                       className="absolute inset-0"
                       style={{
@@ -389,110 +408,42 @@ Technical Specifications:
                         transition: isDragging ? 'none' : 'transform 0.3s ease'
                       }}
                     >
-                      {/* Front face with image preview */}
-                      <div
-                        className="absolute inset-0 border border-zinc-600 bg-zinc-800/30 flex items-center justify-center overflow-hidden"
-                        style={{
-                          transform: 'translateZ(48px)'
-                        }}
-                      >
-                        {selectedImage ? (
-                          <img
-                            src={selectedImage}
-                            alt="Preview"
-                            className="w-full h-full object-cover opacity-60 pointer-events-none"
-                          />
-                        ) : (
-                          <div className="text-zinc-600 text-xs">Front</div>
-                        )}
-                      </div>
-
-                      {/* Back face */}
-                      <div
-                        className="absolute inset-0 border border-zinc-600 bg-zinc-800/50"
-                        style={{
-                          transform: 'translateZ(-48px) rotateY(180deg)'
-                        }}
-                      />
-
-                      {/* Left face */}
-                      <div
-                        className="absolute inset-0 border border-zinc-600 bg-zinc-800/40"
-                        style={{
-                          transform: 'rotateY(-90deg) translateZ(48px)'
-                        }}
-                      />
-
-                      {/* Right face */}
-                      <div
-                        className="absolute inset-0 border border-zinc-600 bg-zinc-800/40"
-                        style={{
-                          transform: 'rotateY(90deg) translateZ(48px)'
-                        }}
-                      />
-
-                      {/* Top face */}
-                      <div
-                        className="absolute inset-0 border border-zinc-600 bg-zinc-800/60"
-                        style={{
-                          transform: 'rotateX(90deg) translateZ(48px)'
-                        }}
-                      />
-
-                      {/* Bottom face */}
-                      <div
-                        className="absolute inset-0 border border-zinc-600 bg-zinc-800/60"
-                        style={{
-                          transform: 'rotateX(-90deg) translateZ(48px)'
-                        }}
-                      />
+                      {/* Cube faces */}
+                      {[
+                        { transform: 'translateZ(32px)', bg: 'bg-blue-500/30' },
+                        { transform: 'translateZ(-32px) rotateY(180deg)', bg: 'bg-blue-500/20' },
+                        { transform: 'rotateY(-90deg) translateZ(32px)', bg: 'bg-blue-500/20' },
+                        { transform: 'rotateY(90deg) translateZ(32px)', bg: 'bg-blue-500/20' },
+                        { transform: 'rotateX(90deg) translateZ(32px)', bg: 'bg-blue-500/25' },
+                        { transform: 'rotateX(-90deg) translateZ(32px)', bg: 'bg-blue-500/25' }
+                      ].map((face, i) => (
+                        <div
+                          key={i}
+                          className={`absolute inset-0 border border-zinc-600 ${face.bg}`}
+                          style={{ transform: face.transform }}
+                        />
+                      ))}
                     </div>
-
-                    {/* Camera indicator */}
-                    <div
-                      className="absolute w-3 h-3 bg-white rounded-full shadow-lg pointer-events-none"
-                      style={{
-                        top: '50%',
-                        left: '50%',
-                        transform: `translate(-50%, -50%) translateZ(${100 + zoomLevel}px)`,
-                        transformStyle: 'preserve-3d'
-                      }}
-                    />
                   </div>
                 </div>
               </div>
 
-              {/* Current Values Display */}
-              <div className="text-center mb-4">
-                <div className="inline-flex items-center gap-4 text-zinc-300 text-sm font-mono">
-                  <span>{horizontalAngle}° H</span>
-                  <span>{verticalAngle}° V</span>
-                  <span>{zoomLevel > 0 ? '+' : ''}{zoomLevel}% Z</span>
-                </div>
-              </div>
-
-              {/* Instruction Display */}
-              <div className="text-center">
-                <div className="text-zinc-500 text-xs uppercase tracking-wider">
-                  {horizontalAngle > 20 ? 'ROTATE RIGHT' : horizontalAngle < -20 ? 'ROTATE LEFT' : 'CENTERED'},
-                  {' '}
-                  {verticalAngle > 20 ? 'HIGH' : verticalAngle < -20 ? 'LOW' : 'EYE LEVEL'},
-                  {' '}
-                  {zoomLevel > 20 ? 'CLOSE UP' : zoomLevel < -20 ? 'ZOOM OUT' : 'NORMAL'}
-                </div>
+              {/* Angle Display */}
+              <div className="text-center text-xs text-zinc-500 dark:text-zinc-400 font-mono mb-2">
+                H: {horizontalAngle}° | V: {verticalAngle}° | Z: {zoomLevel > 0 ? '+' : ''}{zoomLevel}%
               </div>
             </div>
 
-            {/* Camera Settings Panel */}
-            <div className="space-y-4 bg-zinc-50 dark:bg-zinc-800/50 rounded-lg p-4 border border-zinc-200 dark:border-zinc-700">
-              <h3 className="text-sm font-medium text-zinc-700 dark:text-zinc-300 mb-3">
+            {/* Camera Settings */}
+            <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-lg shadow-sm p-4 space-y-4">
+              <h3 className="text-sm font-medium text-zinc-900 dark:text-zinc-100">
                 Camera Settings
               </h3>
 
-              {/* Zoom Level Slider */}
+              {/* Zoom */}
               <div>
-                <label className="block text-sm font-medium text-zinc-700 dark:text-zinc-300 mb-2">
-                  Zoom Level: {zoomLevel > 0 ? '+' : ''}{zoomLevel}%
+                <label className="block text-xs text-zinc-600 dark:text-zinc-400 mb-2">
+                  Zoom: {zoomLevel > 0 ? '+' : ''}{zoomLevel}%
                 </label>
                 <input
                   type="range"
@@ -500,13 +451,13 @@ Technical Specifications:
                   max="100"
                   value={zoomLevel}
                   onChange={(e) => setZoomLevel(Number(e.target.value))}
-                  className="w-full h-2 bg-zinc-300 dark:bg-zinc-700 rounded-lg appearance-none cursor-pointer slider"
+                  className="w-full"
                 />
               </div>
 
-              {/* Field of View Slider */}
+              {/* FOV */}
               <div>
-                <label className="block text-sm font-medium text-zinc-700 dark:text-zinc-300 mb-2">
+                <label className="block text-xs text-zinc-600 dark:text-zinc-400 mb-2">
                   Field of View: {fov}°
                 </label>
                 <input
@@ -515,29 +466,25 @@ Technical Specifications:
                   max="120"
                   value={fov}
                   onChange={(e) => setFov(Number(e.target.value))}
-                  className="w-full h-2 bg-zinc-300 dark:bg-zinc-700 rounded-lg appearance-none cursor-pointer slider"
+                  className="w-full"
                 />
-                <div className="flex justify-between text-xs text-zinc-500 dark:text-zinc-400 mt-1">
-                  <span>Narrow</span>
-                  <span>Wide</span>
-                </div>
               </div>
             </div>
 
             {/* Generate Button */}
             <button
               onClick={handleGenerateView}
-              disabled={!selectedImage || isGenerating}
-              className={`w-full py-4 rounded-lg font-medium text-white transition-colors flex items-center justify-center gap-2 ${
-                selectedImage && !isGenerating
+              disabled={!uploadedImage || isGenerating}
+              className={`w-full py-3 rounded-lg font-medium text-white transition-colors flex items-center justify-center gap-2 ${
+                uploadedImage && !isGenerating
                   ? 'bg-blue-600 hover:bg-blue-700'
                   : 'bg-zinc-400 dark:bg-zinc-700 cursor-not-allowed'
               }`}
             >
               {isGenerating ? (
                 <>
-                  <Loader2 className="animate-spin" size={20} />
-                  Generating View...
+                  <Loader2 className="animate-spin" size={18} />
+                  Generating...
                 </>
               ) : (
                 'Generate View'
@@ -547,42 +494,19 @@ Technical Specifications:
             {/* Reset Button */}
             <button
               onClick={() => {
-                setHorizontalAngle(39);
-                setVerticalAngle(38);
-                setZoomLevel(51);
+                setHorizontalAngle(0);
+                setVerticalAngle(0);
+                setZoomLevel(0);
                 setFov(45);
               }}
               disabled={isGenerating}
-              className="w-full py-2 rounded-lg font-medium text-zinc-700 dark:text-zinc-300 bg-zinc-200 dark:bg-zinc-800 hover:bg-zinc-300 dark:hover:bg-zinc-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              className="w-full py-2 rounded-lg text-sm font-medium text-zinc-700 dark:text-zinc-300 bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 transition-colors disabled:opacity-50"
             >
-              Reset to Default
+              Reset Camera
             </button>
           </div>
         </div>
       </div>
-
-      {/* Custom slider styles */}
-      <style>{`
-        .slider::-webkit-slider-thumb {
-          appearance: none;
-          width: 20px;
-          height: 20px;
-          border-radius: 50%;
-          background: #3b82f6;
-          cursor: pointer;
-          box-shadow: 0 2px 4px rgba(0,0,0,0.2);
-        }
-
-        .slider::-moz-range-thumb {
-          width: 20px;
-          height: 20px;
-          border-radius: 50%;
-          background: #3b82f6;
-          cursor: pointer;
-          border: none;
-          box-shadow: 0 2px 4px rgba(0,0,0,0.2);
-        }
-      `}</style>
     </div>
   );
 };
