@@ -115,32 +115,67 @@ export const ViewPointsPanel: React.FC<ViewPointsPanelProps> = ({
     setIsDragging(false);
   };
 
-  // Build viewpoint prompt
+  // Natural language translation functions
+  const translateHorizontalRotation = (angle: number): string => {
+    const absAngle = Math.abs(angle);
+
+    if (absAngle <= 15) return 'Front view';
+    if (angle > 0) {
+      // Rotating right
+      if (angle <= 30) return 'Front view, slight rotation right';
+      if (angle <= 60) return 'Rotate right';
+      if (angle <= 120) return 'Right side view';
+      return 'Rotate far right';
+    } else {
+      // Rotating left
+      if (absAngle <= 30) return 'Front view, slight rotation left';
+      if (absAngle <= 60) return 'Rotate left';
+      if (absAngle <= 120) return 'Left side view';
+      return 'Rotate far left';
+    }
+  };
+
+  const translateVerticalAngle = (angle: number): string => {
+    if (angle <= -70) return 'Plan view';
+    if (angle <= -45) return 'High aerial view';
+    if (angle <= -30) return 'Aerial view';
+    if (angle <= -15) return 'High angle view';
+    if (angle <= 15) return 'Eye level / human perspective';
+    if (angle <= 30) return 'Low angle view';
+    if (angle <= 45) return 'Ground level view';
+    if (angle <= 70) return 'Extreme low angle (looking up)';
+    return "Worm's eye view (bottom-up)";
+  };
+
+  const translateZoomLevel = (zoom: number): string => {
+    if (zoom <= -30) return 'Extreme wide shot (very far distance)';
+    if (zoom <= -15) return 'Wide shot (far distance)';
+    if (zoom <= 15) return 'Medium shot (moderate distance)';
+    if (zoom <= 30) return 'Close-up (near distance)';
+    return 'Extreme close-up (very near distance)';
+  };
+
+  const translateFieldOfView = (fov: number): string => {
+    if (fov <= 50) return 'Telephoto lens (narrow field, compressed perspective)';
+    if (fov <= 70) return 'Normal lens (natural perspective)';
+    if (fov <= 90) return 'Wide angle lens (expanded perspective)';
+    return 'Ultra-wide lens (dramatic perspective distortion)';
+  };
+
+  // Build viewpoint prompt with natural language descriptions
   const buildViewpointPrompt = () => {
-    let direction = 'centered';
-    if (horizontalAngle > 20) direction = `rotated ${horizontalAngle}° to the right`;
-    else if (horizontalAngle < -20) direction = `rotated ${Math.abs(horizontalAngle)}° to the left`;
-
-    let height = 'at eye level';
-    if (verticalAngle > 20) height = `${verticalAngle}° above (high angle)`;
-    else if (verticalAngle < -20) height = `${Math.abs(verticalAngle)}° below (low angle)`;
-
-    let distance = 'at normal distance';
-    if (zoomLevel > 20) distance = `${zoomLevel}% closer (zoomed in)`;
-    else if (zoomLevel < -20) distance = `${Math.abs(zoomLevel)}% farther (zoomed out)`;
-
-    let lens = '';
-    if (fov < 35) lens = ' using a narrow/telephoto lens';
-    else if (fov > 60) lens = ' using a wide-angle lens';
-    else lens = ' using a standard lens';
+    const horizontalDesc = translateHorizontalRotation(horizontalAngle);
+    const verticalDesc = translateVerticalAngle(verticalAngle);
+    const zoomDesc = translateZoomLevel(zoomLevel);
+    const fovDesc = translateFieldOfView(fov);
 
     const prompt = `Generate the exact same scene from the control image, but viewed from a different camera angle.
 
 Camera Parameters for New View:
-- Horizontal Rotation: ${direction}
-- Vertical Angle: ${height}
-- Camera Distance: ${distance}
-- Field of View: ${fov}°${lens}
+- Horizontal Rotation: ${horizontalDesc}
+- Vertical Angle: ${verticalDesc}
+- Camera Distance: ${zoomDesc}
+- Lens Type: ${fovDesc}
 
 Requirements:
 - Keep EXACTLY the same scene, objects, layout, and composition from the control image
@@ -431,6 +466,16 @@ Technical Specifications:
               {/* Angle Display */}
               <div className="text-center text-xs text-zinc-500 dark:text-zinc-400 font-mono mb-2">
                 H: {horizontalAngle}° | V: {verticalAngle}° | Z: {zoomLevel > 0 ? '+' : ''}{zoomLevel}%
+              </div>
+
+              {/* Natural Language Display */}
+              <div className="text-center text-xs text-zinc-700 dark:text-zinc-300 bg-zinc-100 dark:bg-zinc-800 rounded p-2 leading-relaxed">
+                <div className="font-medium text-orange-600 dark:text-orange-400 mb-1">
+                  {translateHorizontalRotation(horizontalAngle).toUpperCase()}
+                </div>
+                <div className="text-zinc-600 dark:text-zinc-400">
+                  {translateVerticalAngle(verticalAngle)}
+                </div>
               </div>
             </div>
 
