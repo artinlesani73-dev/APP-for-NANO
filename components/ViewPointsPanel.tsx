@@ -1,5 +1,5 @@
 import React, { useState, useRef } from 'react';
-import { Session, StoredImageMeta, GenerationConfig, User } from '../types';
+import { Session, StoredImageMeta, GenerationConfig } from '../types';
 import { GeminiService } from '../services/geminiService';
 import { StorageService } from '../services/newStorageService';
 import { Loader2 } from 'lucide-react';
@@ -10,7 +10,7 @@ interface ViewPointsPanelProps {
   loadImage: (role: 'control' | 'reference' | 'output', id: string, filename: string) => string | null;
   config: GenerationConfig;
   setConfig: (config: GenerationConfig) => void;
-  currentUser: User | null;
+  currentUser: { displayName: string; id: string } | null;
   currentSessionId: string | null;
   onViewGenerated: (generationId: string, outputs: StoredImageMeta[], texts: string[]) => void;
 }
@@ -188,14 +188,14 @@ Technical Specifications:
       const storedImages: StoredImageMeta[] = [];
       for (let i = 0; i < result.images.length; i++) {
         const imageBase64 = result.images[i];
-        const filename = `viewpoint_${generationId}_${i}.png`;
 
-        await StorageService.saveImage('output', generationId, filename, imageBase64);
+        // StorageService.saveImage returns StoredImageMeta with id, filename, hash, etc.
+        const storedImage = StorageService.saveImage(
+          `data:image/png;base64,${imageBase64}`,
+          'output'
+        );
 
-        storedImages.push({
-          filename,
-          timestamp: new Date().toISOString()
-        });
+        storedImages.push(storedImage);
       }
 
       // Save generation to session
