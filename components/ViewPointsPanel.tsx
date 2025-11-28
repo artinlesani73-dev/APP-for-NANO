@@ -178,9 +178,8 @@ Camera Parameters for New View:
 - Lens Type: ${fovDesc}
 
 Requirements:
-- Keep EXACTLY the same scene, objects, layout, and composition from the control image
+- Keep the same objects, light, material and mood from the control image
 - Only change the camera position and angle as specified
-- Preserve all lighting, colors, textures, and details
 - Maintain photorealistic quality
 - Ensure natural perspective and framing
 
