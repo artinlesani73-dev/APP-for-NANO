@@ -176,7 +176,7 @@ Technical Specifications:
         config,
         imageData, // use selected image as control to preserve scene structure
         undefined, // no reference images
-        currentUser?.username
+        currentUser?.displayName
       );
 
       console.log('Generation result:', result);
