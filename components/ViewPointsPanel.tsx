@@ -204,7 +204,11 @@ export const ViewPointsPanel: React.FC<ViewPointsPanelProps> = ({
                 {/* 3D Cube Visualization */}
                 <div
                   className="relative select-none"
-                  style={{ perspective: '1000px' }}
+                  style={{
+                    perspective: '1000px',
+                    // Adjust perspective based on zoom for more dramatic effect
+                    perspectiveOrigin: '50% 50%'
+                  }}
                   onMouseDown={handleMouseDown}
                   onMouseMove={handleMouseMove}
                   onMouseUp={handleMouseUp}
@@ -223,8 +227,9 @@ export const ViewPointsPanel: React.FC<ViewPointsPanelProps> = ({
                       className="absolute inset-0"
                       style={{
                         transformStyle: 'preserve-3d',
-                        transform: `rotateX(${-verticalAngle}deg) rotateY(${horizontalAngle}deg)`,
-                        transition: isDragging ? 'none' : 'transform 0.2s ease'
+                        // Calculate scale: 0% zoom = 1.0 scale, +100% = 2.0 scale, -100% = 0.5 scale
+                        transform: `rotateX(${-verticalAngle}deg) rotateY(${horizontalAngle}deg) scale(${1 + zoomLevel / 200})`,
+                        transition: isDragging ? 'none' : 'transform 0.3s ease'
                       }}
                     >
                       {/* Front face with image preview */}
