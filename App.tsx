@@ -857,6 +857,29 @@ function AppContent() {
                   sessions={sessions}
                   theme={theme}
                   loadImage={(role, id, filename) => StorageService.loadImage(role, id, filename)}
+                  config={config}
+                  setConfig={setConfig}
+                  currentUser={currentUser}
+                  currentSessionId={currentSessionId}
+                  onViewGenerated={(generationId, outputs, texts) => {
+                    // Update the current session with the new generation
+                    if (currentSessionId) {
+                      setSessions((prev) =>
+                        prev.map((s) =>
+                          s.session_id === currentSessionId
+                            ? {
+                                ...s,
+                                generations: s.generations.map((g) =>
+                                  g.generation_id === generationId
+                                    ? { ...g, output_images: outputs, output_texts: texts, status: 'completed' }
+                                    : g
+                                ),
+                              }
+                            : s
+                        )
+                      );
+                    }
+                  }}
                 />
               </div>
             ) : showHistory ? (

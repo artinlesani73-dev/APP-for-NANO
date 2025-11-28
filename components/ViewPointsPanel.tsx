@@ -1,16 +1,29 @@
 import React, { useState, useRef } from 'react';
-import { Session, StoredImageMeta } from '../types';
+import { Session, StoredImageMeta, GenerationConfig, User } from '../types';
+import { GeminiService } from '../services/geminiService';
+import { StorageService } from '../services/newStorageService';
+import { Loader2 } from 'lucide-react';
 
 interface ViewPointsPanelProps {
   sessions: Session[];
   theme: 'dark' | 'light';
   loadImage: (role: 'control' | 'reference' | 'output', id: string, filename: string) => string | null;
+  config: GenerationConfig;
+  setConfig: (config: GenerationConfig) => void;
+  currentUser: User | null;
+  currentSessionId: string | null;
+  onViewGenerated: (generationId: string, outputs: StoredImageMeta[], texts: string[]) => void;
 }
 
 export const ViewPointsPanel: React.FC<ViewPointsPanelProps> = ({
   sessions,
   theme,
-  loadImage
+  loadImage,
+  config,
+  setConfig,
+  currentUser,
+  currentSessionId,
+  onViewGenerated
 }) => {
   const [horizontalAngle, setHorizontalAngle] = useState(39);
   const [verticalAngle, setVerticalAngle] = useState(38);
@@ -19,6 +32,7 @@ export const ViewPointsPanel: React.FC<ViewPointsPanelProps> = ({
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
   const [selectedImageMeta, setSelectedImageMeta] = useState<{ session_id: string; generation_id: string; image: StoredImageMeta } | null>(null);
   const [isDragging, setIsDragging] = useState(false);
+  const [isGenerating, setIsGenerating] = useState(false);
   const dragStartRef = useRef<{ x: number; y: number; startH: number; startV: number }>({ x: 0, y: 0, startH: 0, startV: 0 });
 
   // Get all output images from sessions
@@ -76,27 +90,153 @@ export const ViewPointsPanel: React.FC<ViewPointsPanelProps> = ({
     setIsDragging(false);
   };
 
-  const handleGenerateView = () => {
+  // Build structured viewpoint prompt
+  const buildViewpointPrompt = () => {
+    // Determine direction based on horizontal angle
+    let direction = 'centered';
+    if (horizontalAngle > 20) direction = `rotated ${horizontalAngle}° to the right`;
+    else if (horizontalAngle < -20) direction = `rotated ${Math.abs(horizontalAngle)}° to the left`;
+
+    // Determine height based on vertical angle
+    let height = 'at eye level';
+    if (verticalAngle > 20) height = `${verticalAngle}° above (high angle)`;
+    else if (verticalAngle < -20) height = `${Math.abs(verticalAngle)}° below (low angle)`;
+
+    // Determine zoom/distance
+    let distance = 'at normal distance';
+    if (zoomLevel > 20) distance = `${zoomLevel}% closer (zoomed in)`;
+    else if (zoomLevel < -20) distance = `${Math.abs(zoomLevel)}% farther (zoomed out)`;
+
+    // Determine lens/FOV
+    let lens = '';
+    if (fov < 35) lens = ' using a narrow/telephoto lens';
+    else if (fov > 60) lens = ' using a wide-angle lens';
+    else lens = ' using a standard lens';
+
+    // Build the structured prompt
+    const prompt = `Generate a new view of the scene from the reference image with the following camera parameters:
+
+Camera Position and Angle:
+- Horizontal: ${direction}
+- Vertical: ${height}
+- Distance: ${distance}
+- Field of View: ${fov}° ${lens}
+
+Instructions:
+- Maintain the exact same scene, objects, lighting, and style from the reference image
+- Only change the camera viewpoint as specified above
+- Preserve all details, textures, and colors
+- Generate a photorealistic view from the new camera angle
+- Keep the composition natural and well-framed
+
+Technical Parameters:
+- Horizontal Rotation: ${horizontalAngle}°
+- Vertical Rotation: ${verticalAngle}°
+- Zoom Level: ${zoomLevel > 0 ? '+' : ''}${zoomLevel}%
+- Field of View: ${fov}°`;
+
+    return prompt;
+  };
+
+  const handleGenerateView = async () => {
     if (!selectedImageMeta) {
       alert('Please select an image first');
       return;
     }
 
-    const direction = horizontalAngle > 20 ? 'RIGHT' : horizontalAngle < -20 ? 'LEFT' : 'CENTERED';
-    const height = verticalAngle > 20 ? 'HIGH' : verticalAngle < -20 ? 'LOW' : 'EYE LEVEL';
-    const zoom = zoomLevel > 20 ? 'CLOSE UP' : zoomLevel < -20 ? 'ZOOM OUT' : 'NORMAL';
+    if (!currentSessionId) {
+      alert('No active session. Please create or select a session first.');
+      return;
+    }
 
-    const instruction = `ROTATE ${direction}, ${height}, ${zoom}`;
+    setIsGenerating(true);
 
-    console.log('Generating view with settings:', {
-      horizontal: `${horizontalAngle}° H`,
-      vertical: `${verticalAngle}° V`,
-      zoom: `${zoomLevel > 0 ? '+' : ''}${zoomLevel}% Z`,
-      fov: `${fov}° FOV`,
-      instruction
-    });
+    try {
+      // Get the original image data
+      const imageData = loadImage('output', selectedImageMeta.generation_id, selectedImageMeta.image.filename);
+      if (!imageData) {
+        throw new Error('Failed to load image data');
+      }
 
-    alert(`View settings:\n${horizontalAngle}° H, ${verticalAngle}° V, ${zoomLevel > 0 ? '+' : ''}${zoomLevel}% Z\nFOV: ${fov}°\n\nInstruction: ${instruction}`);
+      // Build the viewpoint prompt
+      const prompt = buildViewpointPrompt();
+
+      console.log('Generating viewpoint with prompt:', prompt);
+      console.log('Camera settings:', {
+        horizontal: horizontalAngle,
+        vertical: verticalAngle,
+        zoom: zoomLevel,
+        fov: fov,
+        model: config.model
+      });
+
+      // Generate new view using the image as reference
+      const result = await GeminiService.generateImage(
+        prompt,
+        config,
+        undefined, // no control images
+        imageData, // use selected image as reference
+        currentUser?.username
+      );
+
+      console.log('Generation result:', result);
+
+      // Create a new generation ID
+      const generationId = `gen_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+
+      // Store the generated images
+      const storedImages: StoredImageMeta[] = [];
+      for (let i = 0; i < result.images.length; i++) {
+        const imageBase64 = result.images[i];
+        const filename = `viewpoint_${generationId}_${i}.png`;
+
+        await StorageService.saveImage('output', generationId, filename, imageBase64);
+
+        storedImages.push({
+          filename,
+          timestamp: new Date().toISOString()
+        });
+      }
+
+      // Save generation to session
+      const currentSession = sessions.find(s => s.session_id === currentSessionId);
+      if (currentSession) {
+        const newGeneration = {
+          generation_id: generationId,
+          timestamp: new Date().toISOString(),
+          status: 'completed' as const,
+          prompt: prompt,
+          parameters: config,
+          reference_images: [selectedImageMeta.image],
+          output_images: storedImages,
+          output_texts: result.texts,
+          viewpoint_data: {
+            horizontal_angle: horizontalAngle,
+            vertical_angle: verticalAngle,
+            zoom_level: zoomLevel,
+            field_of_view: fov,
+            source_image: selectedImageMeta.image.filename,
+            source_generation: selectedImageMeta.generation_id
+          }
+        };
+
+        await StorageService.saveSession({
+          ...currentSession,
+          generations: [...currentSession.generations, newGeneration]
+        });
+
+        // Notify parent component
+        onViewGenerated(generationId, storedImages, result.texts);
+
+        alert(`View generated successfully!\n\nGeneration ID: ${generationId}\nImages: ${storedImages.length}\nCamera: H${horizontalAngle}° V${verticalAngle}° Z${zoomLevel}% FOV${fov}°`);
+      }
+
+    } catch (error: any) {
+      console.error('Error generating view:', error);
+      alert(`Error generating view: ${error.message || 'Unknown error'}`);
+    } finally {
+      setIsGenerating(false);
+    }
   };
 
   return (
@@ -189,6 +329,21 @@ export const ViewPointsPanel: React.FC<ViewPointsPanelProps> = ({
 
           {/* Right Panel - Viewpoint Controls */}
           <div className="space-y-6">
+            {/* Model Selection */}
+            <div className="bg-zinc-50 dark:bg-zinc-800/50 rounded-lg p-4 border border-zinc-200 dark:border-zinc-700">
+              <h3 className="text-sm font-medium text-zinc-700 dark:text-zinc-300 mb-3">
+                Generation Model
+              </h3>
+              <select
+                value={config.model}
+                onChange={(e) => setConfig({ ...config, model: e.target.value })}
+                className="w-full bg-white dark:bg-zinc-950 border border-zinc-300 dark:border-zinc-800 rounded px-3 py-2 text-sm text-zinc-900 dark:text-zinc-300 focus:outline-none focus:border-blue-500"
+              >
+                <option value="gemini-2.5-flash-image">Gemini 2.5 Flash Image (Free/Fast)</option>
+                <option value="gemini-3-pro-image-preview">Gemini 3.0 Pro Image (Paid/Quality)</option>
+              </select>
+            </div>
+
             {/* Viewpoint Visualization */}
             <div className="bg-black rounded-lg p-8">
               <div className="text-center mb-6">
@@ -372,14 +527,21 @@ export const ViewPointsPanel: React.FC<ViewPointsPanelProps> = ({
             {/* Generate Button */}
             <button
               onClick={handleGenerateView}
-              disabled={!selectedImage}
-              className={`w-full py-4 rounded-lg font-medium text-white transition-colors ${
-                selectedImage
+              disabled={!selectedImage || isGenerating}
+              className={`w-full py-4 rounded-lg font-medium text-white transition-colors flex items-center justify-center gap-2 ${
+                selectedImage && !isGenerating
                   ? 'bg-blue-600 hover:bg-blue-700'
                   : 'bg-zinc-400 dark:bg-zinc-700 cursor-not-allowed'
               }`}
             >
-              Generate View
+              {isGenerating ? (
+                <>
+                  <Loader2 className="animate-spin" size={20} />
+                  Generating View...
+                </>
+              ) : (
+                'Generate View'
+              )}
             </button>
 
             {/* Reset Button */}
@@ -390,7 +552,8 @@ export const ViewPointsPanel: React.FC<ViewPointsPanelProps> = ({
                 setZoomLevel(51);
                 setFov(45);
               }}
-              className="w-full py-2 rounded-lg font-medium text-zinc-700 dark:text-zinc-300 bg-zinc-200 dark:bg-zinc-800 hover:bg-zinc-300 dark:hover:bg-zinc-700 transition-colors"
+              disabled={isGenerating}
+              className="w-full py-2 rounded-lg font-medium text-zinc-700 dark:text-zinc-300 bg-zinc-200 dark:bg-zinc-800 hover:bg-zinc-300 dark:hover:bg-zinc-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
             >
               Reset to Default
             </button>
