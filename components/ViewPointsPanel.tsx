@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { Session, StoredImageMeta } from '../types';
 
 interface ViewPointsPanelProps {
@@ -15,8 +15,11 @@ export const ViewPointsPanel: React.FC<ViewPointsPanelProps> = ({
   const [horizontalAngle, setHorizontalAngle] = useState(39);
   const [verticalAngle, setVerticalAngle] = useState(38);
   const [zoomLevel, setZoomLevel] = useState(51);
+  const [fov, setFov] = useState(45); // Field of view
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
   const [selectedImageMeta, setSelectedImageMeta] = useState<{ session_id: string; generation_id: string; image: StoredImageMeta } | null>(null);
+  const [isDragging, setIsDragging] = useState(false);
+  const dragStartRef = useRef<{ x: number; y: number; startH: number; startV: number }>({ x: 0, y: 0, startH: 0, startV: 0 });
 
   // Get all output images from sessions
   const getAllImages = (): Array<{ session_id: string; generation_id: string; image: StoredImageMeta }> => {
@@ -45,15 +48,43 @@ export const ViewPointsPanel: React.FC<ViewPointsPanelProps> = ({
     setSelectedImageMeta({ session_id, generation_id, image });
   };
 
+  const handleMouseDown = (e: React.MouseEvent) => {
+    setIsDragging(true);
+    dragStartRef.current = {
+      x: e.clientX,
+      y: e.clientY,
+      startH: horizontalAngle,
+      startV: verticalAngle
+    };
+  };
+
+  const handleMouseMove = (e: React.MouseEvent) => {
+    if (!isDragging) return;
+
+    const deltaX = e.clientX - dragStartRef.current.x;
+    const deltaY = e.clientY - dragStartRef.current.y;
+
+    // Sensitivity: 0.5 degrees per pixel
+    const newH = Math.max(-90, Math.min(90, dragStartRef.current.startH + deltaX * 0.5));
+    const newV = Math.max(-90, Math.min(90, dragStartRef.current.startV - deltaY * 0.5));
+
+    setHorizontalAngle(Math.round(newH));
+    setVerticalAngle(Math.round(newV));
+  };
+
+  const handleMouseUp = () => {
+    setIsDragging(false);
+  };
+
   const handleGenerateView = () => {
     if (!selectedImageMeta) {
       alert('Please select an image first');
       return;
     }
 
-    const direction = horizontalAngle > 45 ? 'RIGHT' : horizontalAngle < -45 ? 'LEFT' : 'CENTERED';
-    const height = verticalAngle > 45 ? 'HIGH' : verticalAngle < -45 ? 'LOW' : 'EYE LEVEL';
-    const zoom = zoomLevel > 0 ? 'CLOSE UP' : zoomLevel < 0 ? 'ZOOM OUT' : 'NORMAL';
+    const direction = horizontalAngle > 20 ? 'RIGHT' : horizontalAngle < -20 ? 'LEFT' : 'CENTERED';
+    const height = verticalAngle > 20 ? 'HIGH' : verticalAngle < -20 ? 'LOW' : 'EYE LEVEL';
+    const zoom = zoomLevel > 20 ? 'CLOSE UP' : zoomLevel < -20 ? 'ZOOM OUT' : 'NORMAL';
 
     const instruction = `ROTATE ${direction}, ${height}, ${zoom}`;
 
@@ -61,10 +92,11 @@ export const ViewPointsPanel: React.FC<ViewPointsPanelProps> = ({
       horizontal: `${horizontalAngle}° H`,
       vertical: `${verticalAngle}° V`,
       zoom: `${zoomLevel > 0 ? '+' : ''}${zoomLevel}% Z`,
+      fov: `${fov}° FOV`,
       instruction
     });
 
-    alert(`View settings:\n${horizontalAngle}° H, ${verticalAngle}° V, ${zoomLevel > 0 ? '+' : ''}${zoomLevel}% Z\n\nInstruction: ${instruction}`);
+    alert(`View settings:\n${horizontalAngle}° H, ${verticalAngle}° V, ${zoomLevel > 0 ? '+' : ''}${zoomLevel}% Z\nFOV: ${fov}°\n\nInstruction: ${instruction}`);
   };
 
   return (
@@ -75,7 +107,7 @@ export const ViewPointsPanel: React.FC<ViewPointsPanelProps> = ({
           View Points
         </h2>
         <p className="text-sm text-zinc-600 dark:text-zinc-400 mt-1">
-          Generate different views of an image with interactive camera controls
+          Drag the cube to rotate • Adjust camera settings with sliders
         </p>
       </div>
 
@@ -163,13 +195,25 @@ export const ViewPointsPanel: React.FC<ViewPointsPanelProps> = ({
                 <h3 className="text-zinc-400 text-sm font-medium tracking-wider">
                   SET YOUR VIEWPOINT
                 </h3>
+                <p className="text-zinc-600 text-xs mt-1">
+                  Click and drag to rotate
+                </p>
               </div>
 
               <div className="flex items-center justify-center gap-8 mb-6">
                 {/* 3D Cube Visualization */}
-                <div className="relative" style={{ perspective: '1000px' }}>
+                <div
+                  className="relative select-none"
+                  style={{ perspective: '1000px' }}
+                  onMouseDown={handleMouseDown}
+                  onMouseMove={handleMouseMove}
+                  onMouseUp={handleMouseUp}
+                  onMouseLeave={handleMouseUp}
+                >
                   <div
-                    className="w-48 h-48 border-2 border-zinc-700 rounded-lg bg-zinc-900/50 relative"
+                    className={`w-48 h-48 border-2 border-zinc-700 rounded-lg bg-zinc-900/50 relative ${
+                      isDragging ? 'cursor-grabbing' : 'cursor-grab'
+                    }`}
                     style={{
                       transformStyle: 'preserve-3d',
                     }}
@@ -180,7 +224,7 @@ export const ViewPointsPanel: React.FC<ViewPointsPanelProps> = ({
                       style={{
                         transformStyle: 'preserve-3d',
                         transform: `rotateX(${-verticalAngle}deg) rotateY(${horizontalAngle}deg)`,
-                        transition: 'transform 0.3s ease'
+                        transition: isDragging ? 'none' : 'transform 0.2s ease'
                       }}
                     >
                       {/* Front face with image preview */}
@@ -194,7 +238,7 @@ export const ViewPointsPanel: React.FC<ViewPointsPanelProps> = ({
                           <img
                             src={selectedImage}
                             alt="Preview"
-                            className="w-full h-full object-cover opacity-60"
+                            className="w-full h-full object-cover opacity-60 pointer-events-none"
                           />
                         ) : (
                           <div className="text-zinc-600 text-xs">Front</div>
@@ -244,7 +288,7 @@ export const ViewPointsPanel: React.FC<ViewPointsPanelProps> = ({
 
                     {/* Camera indicator */}
                     <div
-                      className="absolute w-3 h-3 bg-white rounded-full shadow-lg"
+                      className="absolute w-3 h-3 bg-white rounded-full shadow-lg pointer-events-none"
                       style={{
                         top: '50%',
                         left: '50%',
@@ -252,26 +296,6 @@ export const ViewPointsPanel: React.FC<ViewPointsPanelProps> = ({
                         transformStyle: 'preserve-3d'
                       }}
                     />
-                  </div>
-                </div>
-
-                {/* Vertical Zoom Slider */}
-                <div className="relative flex flex-col items-center h-48">
-                  <input
-                    type="range"
-                    min="-100"
-                    max="100"
-                    value={zoomLevel}
-                    onChange={(e) => setZoomLevel(Number(e.target.value))}
-                    className="h-full appearance-none bg-transparent cursor-pointer zoom-slider"
-                    style={{
-                      writingMode: 'bt-lr',
-                      WebkitAppearance: 'slider-vertical',
-                      width: '8px'
-                    }}
-                  />
-                  <div className="absolute -bottom-6 text-zinc-400 text-xs font-mono">
-                    {zoomLevel > 0 ? '+' : ''}{zoomLevel}
                   </div>
                 </div>
               </div>
@@ -297,37 +321,11 @@ export const ViewPointsPanel: React.FC<ViewPointsPanelProps> = ({
               </div>
             </div>
 
-            {/* Sliders Panel */}
+            {/* Camera Settings Panel */}
             <div className="space-y-4 bg-zinc-50 dark:bg-zinc-800/50 rounded-lg p-4 border border-zinc-200 dark:border-zinc-700">
-              {/* Horizontal Angle Slider */}
-              <div>
-                <label className="block text-sm font-medium text-zinc-700 dark:text-zinc-300 mb-2">
-                  Horizontal Rotation: {horizontalAngle}°
-                </label>
-                <input
-                  type="range"
-                  min="-90"
-                  max="90"
-                  value={horizontalAngle}
-                  onChange={(e) => setHorizontalAngle(Number(e.target.value))}
-                  className="w-full h-2 bg-zinc-300 dark:bg-zinc-700 rounded-lg appearance-none cursor-pointer slider"
-                />
-              </div>
-
-              {/* Vertical Angle Slider */}
-              <div>
-                <label className="block text-sm font-medium text-zinc-700 dark:text-zinc-300 mb-2">
-                  Vertical Rotation: {verticalAngle}°
-                </label>
-                <input
-                  type="range"
-                  min="-90"
-                  max="90"
-                  value={verticalAngle}
-                  onChange={(e) => setVerticalAngle(Number(e.target.value))}
-                  className="w-full h-2 bg-zinc-300 dark:bg-zinc-700 rounded-lg appearance-none cursor-pointer slider"
-                />
-              </div>
+              <h3 className="text-sm font-medium text-zinc-700 dark:text-zinc-300 mb-3">
+                Camera Settings
+              </h3>
 
               {/* Zoom Level Slider */}
               <div>
@@ -342,6 +340,25 @@ export const ViewPointsPanel: React.FC<ViewPointsPanelProps> = ({
                   onChange={(e) => setZoomLevel(Number(e.target.value))}
                   className="w-full h-2 bg-zinc-300 dark:bg-zinc-700 rounded-lg appearance-none cursor-pointer slider"
                 />
+              </div>
+
+              {/* Field of View Slider */}
+              <div>
+                <label className="block text-sm font-medium text-zinc-700 dark:text-zinc-300 mb-2">
+                  Field of View: {fov}°
+                </label>
+                <input
+                  type="range"
+                  min="20"
+                  max="120"
+                  value={fov}
+                  onChange={(e) => setFov(Number(e.target.value))}
+                  className="w-full h-2 bg-zinc-300 dark:bg-zinc-700 rounded-lg appearance-none cursor-pointer slider"
+                />
+                <div className="flex justify-between text-xs text-zinc-500 dark:text-zinc-400 mt-1">
+                  <span>Narrow</span>
+                  <span>Wide</span>
+                </div>
               </div>
             </div>
 
@@ -364,6 +381,7 @@ export const ViewPointsPanel: React.FC<ViewPointsPanelProps> = ({
                 setHorizontalAngle(39);
                 setVerticalAngle(38);
                 setZoomLevel(51);
+                setFov(45);
               }}
               className="w-full py-2 rounded-lg font-medium text-zinc-700 dark:text-zinc-300 bg-zinc-200 dark:bg-zinc-800 hover:bg-zinc-300 dark:hover:bg-zinc-700 transition-colors"
             >
@@ -393,31 +411,6 @@ export const ViewPointsPanel: React.FC<ViewPointsPanelProps> = ({
           cursor: pointer;
           border: none;
           box-shadow: 0 2px 4px rgba(0,0,0,0.2);
-        }
-
-        .zoom-slider::-webkit-slider-thumb {
-          appearance: none;
-          width: 20px;
-          height: 20px;
-          border-radius: 50%;
-          background: #ffffff;
-          cursor: pointer;
-          box-shadow: 0 2px 4px rgba(0,0,0,0.3);
-        }
-
-        .zoom-slider::-moz-range-thumb {
-          width: 20px;
-          height: 20px;
-          border-radius: 50%;
-          background: #ffffff;
-          cursor: pointer;
-          border: none;
-          box-shadow: 0 2px 4px rgba(0,0,0,0.3);
-        }
-
-        .zoom-slider {
-          background: linear-gradient(to top, #27272a 0%, #3f3f46 100%);
-          border-radius: 4px;
         }
       `}</style>
     </div>
