@@ -340,12 +340,26 @@ export const MixboardView: React.FC<MixboardViewProps> = ({ theme, onImageGenera
   const handleZoomIn = () => setZoom(prev => Math.min(prev + 0.1, 3));
   const handleZoomOut = () => setZoom(prev => Math.max(prev - 0.1, 0.1));
 
+  // Scroll to zoom
+  const handleWheel = (e: React.WheelEvent) => {
+    e.preventDefault();
+    const delta = e.deltaY > 0 ? -0.05 : 0.05;
+    setZoom(prev => Math.max(0.1, Math.min(3, prev + delta)));
+  };
+
   // Keyboard shortcuts
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Delete' || e.key === 'Backspace') {
+      // Check if user is typing in an input or textarea
+      const activeElement = document.activeElement;
+      const isTyping = activeElement?.tagName === 'INPUT' ||
+                       activeElement?.tagName === 'TEXTAREA' ||
+                       activeElement?.hasAttribute('contenteditable');
+
+      if ((e.key === 'Delete' || e.key === 'Backspace') && !isTyping) {
+        e.preventDefault();
         handleDeleteSelected();
-      } else if (e.key === 'a' && (e.ctrlKey || e.metaKey)) {
+      } else if (e.key === 'a' && (e.ctrlKey || e.metaKey) && !isTyping) {
         e.preventDefault();
         setCanvasImages(prev => prev.map(img => ({ ...img, selected: true })));
       }
@@ -353,7 +367,7 @@ export const MixboardView: React.FC<MixboardViewProps> = ({ theme, onImageGenera
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, []);
+  }, [canvasImages]);
 
   const selectedCount = canvasImages.filter(img => img.selected).length;
 
@@ -391,6 +405,7 @@ export const MixboardView: React.FC<MixboardViewProps> = ({ theme, onImageGenera
           onMouseLeave={handleMouseUp}
           onDrop={handleDrop}
           onDragOver={handleDragOver}
+          onWheel={handleWheel}
         >
           {/* Canvas Images */}
           {canvasImages.map(image => (
@@ -603,8 +618,8 @@ export const MixboardView: React.FC<MixboardViewProps> = ({ theme, onImageGenera
               <li>Click to select, Ctrl+Click for multi-select</li>
               <li>Drag to move, resize from bottom-right corner</li>
               <li>Selected images are used in generation</li>
-              <li>Shift+Drag to pan canvas</li>
-              <li>Delete key to remove selected images</li>
+              <li>Scroll to zoom, Shift+Drag to pan canvas</li>
+              <li>Delete key to remove selected images (not while typing)</li>
             </ul>
           </div>
         </div>
