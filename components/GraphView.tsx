@@ -1,13 +1,14 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Session, SessionGeneration, GenerationConfig, GraphNode, GraphEdge } from '../types';
+import { Session, SessionGeneration, MixboardSession, MixboardGeneration, GenerationConfig, GraphNode, GraphEdge } from '../types';
 import { FileText, Settings, Image as ImageIcon, ZoomIn, ZoomOut, Maximize2 } from 'lucide-react';
 import { StorageService } from '../services/newStorageService';
 
 interface GraphViewProps {
-  sessions: Session[];
+  sessions: (Session | MixboardSession)[];
   theme: 'dark' | 'light';
   loadImage: (role: 'control' | 'reference' | 'output', id: string, filename: string) => string | null;
   onGenerateFromNode?: (prompt: string, config: GenerationConfig, controlImages?: string[], referenceImages?: string[]) => Promise<void>;
+  isMixboardMode?: boolean;  // NEW: Flag for Mixboard rendering
 }
 
 type Node = GraphNode;
@@ -57,7 +58,7 @@ const themeTokens = {
   }
 };
 
-const GraphView: React.FC<GraphViewProps> = ({ sessions, theme, loadImage, onGenerateFromNode }) => {
+const GraphView: React.FC<GraphViewProps> = ({ sessions, theme, loadImage, onGenerateFromNode, isMixboardMode = false }) => {
   const svgRef = useRef<SVGSVGElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const palette = themeTokens[theme];
@@ -146,8 +147,8 @@ const GraphView: React.FC<GraphViewProps> = ({ sessions, theme, loadImage, onGen
       return;
     }
 
-    // Collect all generations
-    const allGenerations: Array<{ session: Session; generation: SessionGeneration }> = [];
+    // Collect all generations (support both legacy and Mixboard formats)
+    const allGenerations: Array<{ session: Session | MixboardSession; generation: SessionGeneration | MixboardGeneration }> = [];
     filteredSessions.forEach(session => {
       session.generations.forEach(generation => {
         allGenerations.push({ session, generation });
@@ -205,67 +206,104 @@ const GraphView: React.FC<GraphViewProps> = ({ sessions, theme, loadImage, onGen
         });
       }
 
-      // 2. Handle Control Images (deduplicate by ID)
+      // 2. Handle Input Images (supports both legacy and Mixboard formats)
       const controlImageIds: string[] = [];
-      (generation.control_images || []).forEach((img) => {
-        const imageKey = getImageKey(img.id);
-        let imageNodeId = imageGroups.get(imageKey);
-        let imageInfo = imageNodeInfoMap.get(img.id);
-
-        if (!imageInfo) {
-          // First time seeing this image
-          imageNodeId = `image-${img.id}`;
-          imageGroups.set(imageKey, imageNodeId);
-          const imageData = loadImage('control', img.id, img.filename);
-
-          imageInfo = {
-            nodeId: imageNodeId,
-            roles: new Set(['control']),
-            imageData,
-            meta: img,
-            firstSeenGenIndex: genIndex,
-            firstSeenYOffset: yOffset
-          };
-          imageNodeInfoMap.set(img.id, imageInfo);
-        } else {
-          // Image already exists, add control role
-          imageInfo.roles.add('control');
-          imageNodeId = imageInfo.nodeId;
-        }
-
-        controlImageIds.push(imageNodeId);
-      });
-
-      // 3. Handle Reference Images (deduplicate by ID)
       const referenceImageIds: string[] = [];
-      (generation.reference_images || []).forEach((img) => {
-        const imageKey = getImageKey(img.id);
-        let imageNodeId = imageGroups.get(imageKey);
-        let imageInfo = imageNodeInfoMap.get(img.id);
 
-        if (!imageInfo) {
-          // First time seeing this image
-          imageNodeId = `image-${img.id}`;
-          imageGroups.set(imageKey, imageNodeId);
-          const imageData = loadImage('reference', img.id, img.filename);
+      // Check if this is a Mixboard generation (has input_images)
+      const isMixboardGen = 'input_images' in generation && generation.input_images !== undefined;
 
-          imageInfo = {
-            nodeId: imageNodeId,
-            roles: new Set(['reference']),
-            imageData,
-            meta: img,
-            firstSeenGenIndex: genIndex,
-            firstSeenYOffset: yOffset
-          };
-          imageNodeInfoMap.set(img.id, imageInfo);
-        } else {
-          // Image already exists, add reference role
-          imageInfo.roles.add('reference');
-          imageNodeId = imageInfo.nodeId;
-        }
+      if (isMixboardGen) {
+        // Mixboard format: All images in input_images (no control/reference distinction)
+        (generation.input_images || []).forEach((img) => {
+          const imageKey = getImageKey(img.id);
+          let imageNodeId = imageGroups.get(imageKey);
+          let imageInfo = imageNodeInfoMap.get(img.id);
 
-        referenceImageIds.push(imageNodeId);
-      });
+          if (!imageInfo) {
+            // First time seeing this image
+            imageNodeId = `image-${img.id}`;
+            imageGroups.set(imageKey, imageNodeId);
+            // Try loading as different roles (storage may have it as any role)
+            const imageData = loadImage('output', img.id, img.filename) ||
+                            loadImage('reference', img.id, img.filename) ||
+                            loadImage('control', img.id, img.filename);
+
+            imageInfo = {
+              nodeId: imageNodeId,
+              roles: new Set(['reference']),  // Treat all as reference in Mixboard
+              imageData,
+              meta: img,
+              firstSeenGenIndex: genIndex,
+              firstSeenYOffset: yOffset
+            };
+            imageNodeInfoMap.set(img.id, imageInfo);
+          } else {
+            // Image already exists
+            imageInfo.roles.add('reference');
+            imageNodeId = imageInfo.nodeId;
+          }
+
+          referenceImageIds.push(imageNodeId);
+        });
+      } else {
+        // Legacy format: Separate control_images and reference_images
+        // Handle Control Images
+        ((generation as SessionGeneration).control_images || []).forEach((img) => {
+          const imageKey = getImageKey(img.id);
+          let imageNodeId = imageGroups.get(imageKey);
+          let imageInfo = imageNodeInfoMap.get(img.id);
+
+          if (!imageInfo) {
+            imageNodeId = `image-${img.id}`;
+            imageGroups.set(imageKey, imageNodeId);
+            const imageData = loadImage('control', img.id, img.filename);
+
+            imageInfo = {
+              nodeId: imageNodeId,
+              roles: new Set(['control']),
+              imageData,
+              meta: img,
+              firstSeenGenIndex: genIndex,
+              firstSeenYOffset: yOffset
+            };
+            imageNodeInfoMap.set(img.id, imageInfo);
+          } else {
+            imageInfo.roles.add('control');
+            imageNodeId = imageInfo.nodeId;
+          }
+
+          controlImageIds.push(imageNodeId);
+        });
+
+        // Handle Reference Images
+        ((generation as SessionGeneration).reference_images || []).forEach((img) => {
+          const imageKey = getImageKey(img.id);
+          let imageNodeId = imageGroups.get(imageKey);
+          let imageInfo = imageNodeInfoMap.get(img.id);
+
+          if (!imageInfo) {
+            imageNodeId = `image-${img.id}`;
+            imageGroups.set(imageKey, imageNodeId);
+            const imageData = loadImage('reference', img.id, img.filename);
+
+            imageInfo = {
+              nodeId: imageNodeId,
+              roles: new Set(['reference']),
+              imageData,
+              meta: img,
+              firstSeenGenIndex: genIndex,
+              firstSeenYOffset: yOffset
+            };
+            imageNodeInfoMap.set(img.id, imageInfo);
+          } else {
+            imageInfo.roles.add('reference');
+            imageNodeId = imageInfo.nodeId;
+          }
+
+          referenceImageIds.push(imageNodeId);
+        });
+      }
 
       // 4. Handle Workflow Node (group by exact match of all inputs)
       const workflowGroupKey = getWorkflowGroupKey(
