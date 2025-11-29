@@ -724,6 +724,118 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
             )}
           </button>
 
+          {/* Generation History */}
+          {currentSession && currentSession.generations.length > 0 && (
+            <div className="mt-6">
+              <h4 className="text-sm font-bold mb-3 text-zinc-900 dark:text-zinc-100">
+                Recent Generations ({currentSession.generations.length})
+              </h4>
+              <div className="space-y-3 max-h-96 overflow-y-auto">
+                {currentSession.generations.slice().reverse().map((gen, idx) => {
+                  const outputImage = gen.output_images && gen.output_images.length > 0
+                    ? gen.output_images[0]
+                    : null;
+                  const outputDataUri = outputImage
+                    ? StorageService.loadImage('output', outputImage.id, outputImage.filename)
+                    : null;
+
+                  return (
+                    <div
+                      key={gen.generation_id}
+                      className="p-3 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded"
+                    >
+                      {/* Generation Info */}
+                      <div className="flex items-start justify-between mb-2">
+                        <div className="flex-1">
+                          <p className="text-xs text-zinc-500 dark:text-zinc-400 mb-1">
+                            {new Date(gen.timestamp).toLocaleTimeString()}
+                          </p>
+                          <p className="text-xs text-zinc-700 dark:text-zinc-300 line-clamp-2">
+                            {gen.prompt}
+                          </p>
+                        </div>
+                        <span className={`text-xs px-2 py-0.5 rounded ${
+                          gen.status === 'completed'
+                            ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400'
+                            : gen.status === 'failed'
+                            ? 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400'
+                            : 'bg-yellow-100 dark:bg-yellow-900/30 text-yellow-700 dark:text-yellow-400'
+                        }`}>
+                          {gen.status}
+                        </span>
+                      </div>
+
+                      {/* Output Image Preview */}
+                      {outputDataUri && (
+                        <div className="mb-2">
+                          <img
+                            src={outputDataUri}
+                            alt="Generated output"
+                            className="w-full rounded border border-zinc-300 dark:border-zinc-700"
+                          />
+                        </div>
+                      )}
+
+                      {/* Actions */}
+                      <div className="flex gap-2">
+                        {outputDataUri && (
+                          <button
+                            onClick={() => {
+                              if (!outputImage) return;
+                              const img = new Image();
+                              img.onload = () => {
+                                const newCanvasImage: CanvasImage = {
+                                  id: `img-${Date.now()}`,
+                                  dataUri: outputDataUri,
+                                  x: 150 + (canvasImages.length * 30),
+                                  y: 150 + (canvasImages.length * 30),
+                                  width: 300,
+                                  height: (300 * img.height) / img.width,
+                                  selected: false,
+                                  originalWidth: img.width,
+                                  originalHeight: img.height,
+                                  generationId: gen.generation_id,
+                                  imageMetaId: outputImage.id
+                                };
+                                setCanvasImages(prev => [...prev, newCanvasImage]);
+                              };
+                              img.src = outputDataUri;
+                            }}
+                            className="flex-1 py-1.5 px-3 bg-orange-500 text-white text-xs rounded hover:bg-orange-600 transition-colors"
+                          >
+                            Add to Canvas
+                          </button>
+                        )}
+                        {gen.canvas_state && (
+                          <button
+                            onClick={() => {
+                              if (gen.canvas_state) {
+                                setCanvasImages(gen.canvas_state.images);
+                                setZoom(gen.canvas_state.zoom);
+                                setPanOffset(gen.canvas_state.panOffset);
+                              }
+                            }}
+                            className="flex-1 py-1.5 px-3 border border-zinc-300 dark:border-zinc-700 text-zinc-700 dark:text-zinc-300 text-xs rounded hover:bg-zinc-50 dark:hover:bg-zinc-800 transition-colors"
+                          >
+                            Restore Canvas
+                          </button>
+                        )}
+                      </div>
+
+                      {/* Metadata */}
+                      <div className="mt-2 pt-2 border-t border-zinc-200 dark:border-zinc-700 flex justify-between text-xs text-zinc-500 dark:text-zinc-400">
+                        <span>{gen.input_images.length} inputs</span>
+                        {gen.generation_time_ms && (
+                          <span>{gen.generation_time_ms}ms</span>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
           {/* Instructions */}
           <div className="mt-6 p-4 bg-zinc-100 dark:bg-zinc-800 rounded text-xs text-zinc-600 dark:text-zinc-400 space-y-2">
             <p className="font-medium text-zinc-700 dark:text-zinc-300">Tips:</p>
