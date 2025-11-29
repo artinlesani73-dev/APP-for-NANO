@@ -17,6 +17,7 @@ import { StorageService } from './services/newStorageService';
 import { GeminiService } from './services/geminiService';
 import { LoggerService } from './services/logger';
 import { AdminService } from './services/adminService';
+import { MigrationService } from './services/migrationService';
 import { Session, SessionGeneration, GenerationConfig, UploadedImagePayload, MixboardSession } from './types';
 import { Zap, Database, Key, ExternalLink, History, ShieldCheck, Network, Sparkles } from 'lucide-react';
 
@@ -242,6 +243,62 @@ function AppContent() {
       cancelled = true;
     };
   }, [currentUser]);
+
+  // Check for migration needs and prompt user
+  useEffect(() => {
+    if (!currentUser) return;
+
+    const checkMigration = async () => {
+      if (MigrationService.needsMigration()) {
+        const confirmed = window.confirm(
+          'Your sessions need to be migrated to the new Mixboard format.\n\n' +
+          'This will:\n' +
+          '• Combine control and reference images into a single unified input format\n' +
+          '• Preserve all your existing generations and data\n' +
+          '• Enable new Mixboard features like canvas state preservation\n' +
+          '• Create a backup before migration\n\n' +
+          'Continue with migration?'
+        );
+
+        if (confirmed) {
+          try {
+            const result = MigrationService.migrateAllSessions();
+
+            if (result.failed > 0) {
+              console.error('Migration errors:', result.errors);
+              alert(
+                `Migration completed with some errors.\n\n` +
+                `✓ Migrated: ${result.migrated}\n` +
+                `✗ Failed: ${result.failed}\n` +
+                `○ Skipped (already migrated): ${result.skipped}\n\n` +
+                `Check console for details. The page will reload now.`
+              );
+            } else {
+              alert(
+                `Migration successful!\n\n` +
+                `✓ Migrated: ${result.migrated} session(s)\n` +
+                `○ Skipped: ${result.skipped} (already in new format)\n\n` +
+                `The page will reload now.`
+              );
+            }
+
+            // Reload to pick up migrated sessions
+            window.location.reload();
+          } catch (error) {
+            console.error('Migration failed:', error);
+            alert(
+              `Migration failed: ${(error as Error).message}\n\n` +
+              `Your data has not been modified. Please contact support.`
+            );
+          }
+        }
+      }
+    };
+
+    // Run migration check after a short delay to let sessions load
+    const timer = setTimeout(checkMigration, 500);
+    return () => clearTimeout(timer);
+  }, [currentUser, sessions]);
 
   // --- HANDLERS ---
   const handleLogin = (user: { displayName: string; id: string }, persist = true) => {

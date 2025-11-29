@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Sparkles, Image as ImageIcon, Type, Trash2, ZoomIn, ZoomOut, Move } from 'lucide-react';
+import { Sparkles, Image as ImageIcon, Type, Trash2, ZoomIn, ZoomOut, Move, Download } from 'lucide-react';
 import { GeminiService } from '../services/geminiService';
 import { StorageService } from '../services/newStorageService';
 import { GenerationConfig, CanvasImage, MixboardSession, MixboardGeneration, StoredImageMeta } from '../types';
@@ -701,6 +701,49 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
             >
               <ImageIcon size={16} />
               Upload Images
+            </button>
+          </div>
+
+          {/* Session Management */}
+          <div className="mb-4 pb-4 border-b border-zinc-200 dark:border-zinc-700 space-y-2">
+            <button
+              onClick={() => {
+                if (!currentSession) return;
+                const dataStr = JSON.stringify(currentSession, null, 2);
+                const blob = new Blob([dataStr], { type: 'application/json' });
+                const url = URL.createObjectURL(blob);
+                const link = document.createElement('a');
+                link.href = url;
+                link.download = `mixboard-session-${currentSession.session_id}.json`;
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+                URL.revokeObjectURL(url);
+              }}
+              className="w-full py-2 px-4 border border-zinc-300 dark:border-zinc-700 rounded text-zinc-700 dark:text-zinc-300 text-sm hover:bg-zinc-50 dark:hover:bg-zinc-800 transition-colors flex items-center justify-center gap-2"
+            >
+              <Download size={14} />
+              Export Session
+            </button>
+            <button
+              onClick={() => {
+                if (window.confirm('Clear all images from canvas? This cannot be undone.')) {
+                  setCanvasImages([]);
+                  if (currentSession) {
+                    const updatedSession: MixboardSession = {
+                      ...currentSession,
+                      canvas_images: [],
+                      updated_at: new Date().toISOString()
+                    };
+                    StorageService.saveSession(updatedSession as any);
+                    onSessionUpdate(updatedSession);
+                  }
+                }
+              }}
+              className="w-full py-2 px-4 border border-red-300 dark:border-red-700 rounded text-red-600 dark:text-red-400 text-sm hover:bg-red-50 dark:hover:bg-red-950/30 transition-colors flex items-center justify-center gap-2"
+            >
+              <Trash2 size={14} />
+              Clear Canvas
             </button>
           </div>
 
