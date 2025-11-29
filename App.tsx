@@ -63,7 +63,6 @@ function AppContent() {
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
   const [showGraphView, setShowGraphView] = useState(false);
-  const [showMixboard, setShowMixboard] = useState(false);
   const [theme, setTheme] = useState<'dark' | 'light'>('dark');
   const [isAdminLogsOpen, setIsAdminLogsOpen] = useState(false);
   const [isAdminDashboardOpen, setIsAdminDashboardOpen] = useState(false);
@@ -378,12 +377,12 @@ function AppContent() {
     return newSession;
   };
 
-  // Initialize Mixboard session when switching to Mixboard view
+  // Initialize Mixboard session on app load
   useEffect(() => {
-    if (showMixboard && !mixboardSession && currentUser) {
+    if (!mixboardSession && currentUser && !showGraphView && !showHistory) {
       handleCreateMixboardSession();
     }
-  }, [showMixboard, currentUser]);
+  }, [currentUser, showGraphView, showHistory]);
 
   const grantAdminAccess = () => {
     setIsAdminAuthorized(true);
@@ -808,39 +807,20 @@ function AppContent() {
             </div>
 
             <div className="flex items-center gap-4" style={{ WebkitAppRegion: 'no-drag' } as any}>
-                {/* Generation View (Main View) */}
+                {/* Mixboard (Main View) */}
                 <button
                   onClick={() => {
                     setShowGraphView(false);
                     setShowHistory(false);
-                    setShowMixboard(false);
                   }}
                   className={`flex items-center gap-2 text-xs px-3 py-1.5 rounded border transition-colors font-medium ${
-                    !showGraphView && !showHistory && !showMixboard
-                      ? 'bg-green-50 dark:bg-green-950/30 border-green-300 dark:border-green-900 text-green-700 dark:text-green-400'
-                      : 'bg-white dark:bg-zinc-800/50 border-zinc-300 dark:border-zinc-700 text-zinc-700 dark:text-zinc-400 hover:bg-zinc-50 dark:hover:bg-zinc-800'
-                  }`}
-                >
-                  <Zap size={12} />
-                  Generation View
-                </button>
-
-                {/* Mixboard Toggle */}
-                <button
-                  onClick={() => {
-                    setShowMixboard(!showMixboard);
-                    setShowGraphView(false);
-                    setShowHistory(false);
-                  }}
-                  className={`flex items-center gap-2 text-xs px-3 py-1.5 rounded border transition-colors font-medium ${
-                    showMixboard
+                    !showGraphView && !showHistory
                       ? 'bg-orange-50 dark:bg-orange-950/30 border-orange-300 dark:border-orange-900 text-orange-700 dark:text-orange-400'
                       : 'bg-white dark:bg-zinc-800/50 border-zinc-300 dark:border-zinc-700 text-zinc-700 dark:text-zinc-400 hover:bg-zinc-50 dark:hover:bg-zinc-800'
                   }`}
                 >
                   <Sparkles size={12} />
                   Mixboard
-                  <span className="text-[9px] px-1.5 py-0.5 bg-orange-200 dark:bg-orange-900/50 text-orange-700 dark:text-orange-400 rounded">BETA</span>
                 </button>
 
                 {/* Graph View Toggle */}
@@ -848,7 +828,6 @@ function AppContent() {
                   onClick={() => {
                     setShowGraphView(!showGraphView);
                     setShowHistory(false);
-                    setShowMixboard(false);
                   }}
                   className={`flex items-center gap-2 text-xs px-3 py-1.5 rounded border transition-colors font-medium ${
                     showGraphView
@@ -866,7 +845,6 @@ function AppContent() {
                     onClick={() => {
                       setShowHistory(!showHistory);
                       setShowGraphView(false);
-                      setShowMixboard(false);
                     }}
                     className={`flex items-center gap-2 text-xs px-3 py-1.5 rounded border transition-colors font-medium ${
                       showHistory
@@ -923,37 +901,13 @@ function AppContent() {
         </header>
 
         {/* Content Area */}
-          <div className={`flex-1 ${showGraphView || showMixboard ? 'overflow-hidden' : 'overflow-y-auto'} ${showGraphView || showMixboard ? '' : 'p-6'} bg-zinc-50 dark:bg-black/50`}>
-            {showMixboard ? (
-              <div className="h-full w-full">
-                <MixboardView
-                  theme={theme}
-                  currentSession={mixboardSession}
-                  onSessionUpdate={handleMixboardSessionUpdate}
-                  onCreateSession={handleCreateMixboardSession}
-                  currentUser={currentUser}
-                />
-              </div>
-            ) : showGraphView ? (
+          <div className={`flex-1 ${showGraphView || showHistory ? 'overflow-y-auto p-6' : 'overflow-hidden'} bg-zinc-50 dark:bg-black/50`}>
+            {showGraphView ? (
               <div className="h-full w-full">
                 <GraphView
                   sessions={sessions}
                   theme={theme}
                   loadImage={(role, id, filename) => StorageService.loadImage(role, id, filename)}
-                  onGenerateFromNode={async (prompt, config, controlImages, referenceImages) => {
-                    // Handle generation from graph node
-                    setPrompt(prompt);
-                    setConfig(config);
-                    if (controlImages) {
-                      setControlImagesData(controlImages.map(data => ({ data })));
-                    }
-                    if (referenceImages) {
-                      setReferenceImagesData(referenceImages.map(data => ({ data })));
-                    }
-                    // Switch to main view and trigger generation
-                    setShowGraphView(false);
-                    await handleGenerate();
-                  }}
                 />
               </div>
             ) : showHistory ? (
@@ -967,96 +921,14 @@ function AppContent() {
                 />
               </div>
             ) : (
-              <div className="max-w-6xl mx-auto grid grid-cols-12 gap-6">
-
-                {/* Left Column: Inputs (8/12) */}
-                <div className="col-span-12 lg:col-span-8 space-y-6">
-
-                    {/* Prompt */}
-                    <PromptPanel prompt={prompt} setPrompt={setPrompt} />
-
-                    {/* Image Controls Grid */}
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        <MultiImageUploadPanel
-                            title="Control Images"
-                            description="For structure/composition"
-                            images={controlImagesData.map(img => img.data)}
-                            onUpload={(f) => handleImageUpload(f, 'control')}
-                            onRemove={(idx) => handleImageRemove(idx, 'control')}
-                            onEdit={handleEditControlImage}
-                            onCreateBlank={handleCreateBlankControlImage}
-                            onGalleryDrop={(payload) => handleGalleryImageDrop(payload, 'control')}
-                            maxImages={5}
-                        />
-                        <MultiImageUploadPanel
-                            title="Reference Images"
-                            description="For style transfer"
-                            images={referenceImagesData.map(img => img.data)}
-                            onUpload={(f) => handleImageUpload(f, 'reference')}
-                            onRemove={(idx) => handleImageRemove(idx, 'reference')}
-                            onGalleryDrop={(payload) => handleGalleryImageDrop(payload, 'reference')}
-                            maxImages={5}
-                        />
-                    </div>
-
-                    {/* Output Area */}
-                    <div className="h-[500px]">
-                        <ResultPanel
-                            isGenerating={isGenerating}
-                            generation={currentGeneration}
-                            outputImages={(currentGeneration
-                              ? currentGeneration.output_images || (currentGeneration.output_image ? [currentGeneration.output_image] : [])
-                              : []
-                            )
-                              .map((meta, idx) => ({ dataUri: outputImagesData[idx], filename: meta.filename }))
-                              .filter(img => !!img.dataUri)}
-                            outputTexts={outputTexts}
-                        />
-                    </div>
-                </div>
-
-                {/* Right Column: Parameters (4/12) */}
-                <div className="col-span-12 lg:col-span-4 space-y-6">
-                    <ParametersPanel config={config} setConfig={setConfig} />
-
-                    <button
-                        onClick={handleGenerate}
-                        disabled={isGenerating || !prompt}
-                        className={`w-full py-4 rounded-lg font-bold text-lg flex items-center justify-center gap-2 transition-all shadow-lg
-                        ${isGenerating || !prompt
-                            ? 'bg-zinc-200 dark:bg-zinc-800 text-zinc-400 dark:text-zinc-500 cursor-not-allowed shadow-none'
-                            : 'bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white shadow-blue-500/20 dark:shadow-blue-900/20'
-                        }`}
-                    >
-                        {isGenerating ? (
-                            "Processing..."
-                        ) : (
-                            <>
-                                <Zap size={20} fill="currentColor" />
-                                Generate
-                            </>
-                        )}
-                    </button>
-
-                    {/* Meta Info */}
-                    {currentGeneration && (
-                        <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-lg p-4 text-xs space-y-2 text-zinc-500 font-mono transition-colors shadow-sm">
-                            <div className="flex justify-between">
-                                <span>ID:</span>
-                                <span className="text-zinc-700 dark:text-zinc-400">{currentGeneration.generation_id.slice(0,8)}...</span>
-                            </div>
-                            <div className="flex justify-between">
-                                <span>Status:</span>
-                                <span className="text-zinc-700 dark:text-zinc-400">{currentGeneration.status}</span>
-                            </div>
-                            <div className="flex justify-between">
-                                <span>Time:</span>
-                                <span className="text-zinc-700 dark:text-zinc-400">{currentGeneration.generation_time_ms || 0}ms</span>
-                            </div>
-                        </div>
-                    )}
-                </div>
-
+              <div className="h-full w-full">
+                <MixboardView
+                  theme={theme}
+                  currentSession={mixboardSession}
+                  onSessionUpdate={handleMixboardSessionUpdate}
+                  onCreateSession={handleCreateMixboardSession}
+                  currentUser={currentUser}
+                />
               </div>
             )}
           </div>
