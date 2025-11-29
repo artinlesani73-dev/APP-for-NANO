@@ -369,7 +369,8 @@ const GraphView: React.FC<GraphViewProps> = ({ sessions, theme, loadImage, onGen
       });
 
       // 8. Handle Output Images (deduplicate by ID)
-      const outputImages = generation.output_images || (generation.output_image ? [generation.output_image] : []);
+      const outputImages = generation.output_images ||
+        ('output_image' in generation && generation.output_image ? [generation.output_image] : []);
       outputImages.forEach((img, idx) => {
         const imageKey = getImageKey(img.id);
         let imageNodeId = imageGroups.get(imageKey);
