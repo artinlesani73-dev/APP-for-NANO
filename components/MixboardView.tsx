@@ -65,6 +65,21 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
     }
   }, [currentSession?.session_id]);
 
+  // Helper function to save current canvas state to session
+  const saveCanvasToSession = (images: CanvasImage[]) => {
+    if (!currentSession) return;
+
+    const updatedSession: MixboardSession = {
+      ...currentSession,
+      canvas_images: images,
+      updated_at: new Date().toISOString()
+    };
+
+    StorageService.saveSession(updatedSession as any);
+    onSessionUpdate(updatedSession);
+    console.log('[MixboardView] Canvas saved to session:', images.length, 'images');
+  };
+
   // Handle image generation with full history tracking
   const handleGenerate = async () => {
     if (!prompt && canvasImages.filter(img => img.selected).length === 0) return;
@@ -248,7 +263,9 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
             originalWidth: img.width,
             originalHeight: img.height
           };
-          setCanvasImages(prev => [...prev, newImage]);
+          const updatedImages = [...canvasImages, newImage];
+          setCanvasImages(updatedImages);
+          saveCanvasToSession(updatedImages);
         };
         img.src = dataUri;
       };
@@ -291,7 +308,11 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
             originalWidth: img.width,
             originalHeight: img.height
           };
-          setCanvasImages(prev => [...prev, newImage]);
+          setCanvasImages(prev => {
+            const updated = [...prev, newImage];
+            saveCanvasToSession(updated);
+            return updated;
+          });
         };
         img.src = dataUri;
       };
@@ -449,6 +470,11 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
   };
 
   const handleMouseUp = () => {
+    // Save canvas if we were dragging or resizing
+    if (draggedImage || resizingImage) {
+      saveCanvasToSession(canvasImages);
+    }
+
     setDraggedImage(null);
     setResizingImage(null);
     setIsSelecting(false);
@@ -459,7 +485,11 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
 
   // Delete selected images
   const handleDeleteSelected = () => {
-    setCanvasImages(prev => prev.filter(img => !img.selected));
+    setCanvasImages(prev => {
+      const updated = prev.filter(img => !img.selected);
+      saveCanvasToSession(updated);
+      return updated;
+    });
   };
 
   // Zoom controls
@@ -879,7 +909,11 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
                                   generationId: gen.generation_id,
                                   imageMetaId: outputImage.id
                                 };
-                                setCanvasImages(prev => [...prev, newCanvasImage]);
+                                setCanvasImages(prev => {
+                                  const updated = [...prev, newCanvasImage];
+                                  saveCanvasToSession(updated);
+                                  return updated;
+                                });
                               };
                               img.src = outputDataUri;
                             }}
@@ -895,6 +929,7 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
                                 setCanvasImages(gen.canvas_state.images);
                                 setZoom(gen.canvas_state.zoom);
                                 setPanOffset(gen.canvas_state.panOffset);
+                                saveCanvasToSession(gen.canvas_state.images);
                               }
                             }}
                             className="flex-1 py-1.5 px-3 border border-zinc-300 dark:border-zinc-700 text-zinc-700 dark:text-zinc-300 text-xs rounded hover:bg-zinc-50 dark:hover:bg-zinc-800 transition-colors"
