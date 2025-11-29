@@ -46,10 +46,22 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
   const canvasRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  // Initialize session if needed
+  useEffect(() => {
+    if (!currentSession && onCreateSession && currentUser) {
+      console.log('[MixboardView] No session found, creating new session...');
+      onCreateSession();
+    }
+  }, [currentSession, onCreateSession, currentUser]);
+
   // Load canvas from session when session changes
   useEffect(() => {
     if (currentSession && currentSession.canvas_images) {
+      console.log('[MixboardView] Loading canvas images from session:', currentSession.canvas_images.length);
       setCanvasImages(currentSession.canvas_images);
+    } else if (currentSession) {
+      console.log('[MixboardView] Session has no canvas images, starting with empty canvas');
+      setCanvasImages([]);
     }
   }, [currentSession?.session_id]);
 
@@ -454,12 +466,20 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
   const handleZoomIn = () => setZoom(prev => Math.min(prev + 0.1, 3));
   const handleZoomOut = () => setZoom(prev => Math.max(prev - 0.1, 0.1));
 
-  // Scroll to zoom
-  const handleWheel = (e: React.WheelEvent) => {
-    e.preventDefault();
-    const delta = e.deltaY > 0 ? -0.05 : 0.05;
-    setZoom(prev => Math.max(0.1, Math.min(3, prev + delta)));
-  };
+  // Scroll to zoom - use native event listener to prevent passive listener warning
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+
+    const handleWheel = (e: WheelEvent) => {
+      e.preventDefault();
+      const delta = e.deltaY > 0 ? -0.05 : 0.05;
+      setZoom(prev => Math.max(0.1, Math.min(3, prev + delta)));
+    };
+
+    canvas.addEventListener('wheel', handleWheel, { passive: false });
+    return () => canvas.removeEventListener('wheel', handleWheel);
+  }, []);
 
   // Keyboard shortcuts
   useEffect(() => {
@@ -519,8 +539,27 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
           onMouseLeave={handleMouseUp}
           onDrop={handleDrop}
           onDragOver={handleDragOver}
-          onWheel={handleWheel}
         >
+          {/* Empty Canvas Message */}
+          {canvasImages.length === 0 && (
+            <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+              <div className="text-center p-8 max-w-md">
+                <Sparkles className="mx-auto mb-4 text-zinc-400 dark:text-zinc-600" size={48} />
+                <h3 className="text-lg font-bold text-zinc-600 dark:text-zinc-400 mb-2">
+                  Your canvas is empty
+                </h3>
+                <p className="text-sm text-zinc-500 dark:text-zinc-500 mb-4">
+                  Start by generating an image or uploading images to the canvas
+                </p>
+                <div className="text-xs text-zinc-400 dark:text-zinc-600 space-y-1">
+                  <p>• Write a prompt and click Generate</p>
+                  <p>• Upload images from your computer</p>
+                  <p>• Drag & drop images onto the canvas</p>
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* Canvas Images */}
           {canvasImages.map(image => (
             <div
