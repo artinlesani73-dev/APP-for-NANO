@@ -57,7 +57,9 @@ function AppContent() {
   const [apiKeyConnected, setApiKeyConnected] = useState(false);
 
   // Mixboard State
-  const [mixboardSession, setMixboardSession] = useState<MixboardSession | null>(null);
+  const [mixboardSessions, setMixboardSessions] = useState<MixboardSession[]>([]);
+  const [currentMixboardSessionId, setCurrentMixboardSessionId] = useState<string | null>(null);
+  const mixboardSession = mixboardSessions.find(s => s.session_id === currentMixboardSessionId) || null;
 
   // Settings & Theme State
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
@@ -352,13 +354,16 @@ function AppContent() {
 
   // --- MIXBOARD HANDLERS ---
   const handleMixboardSessionUpdate = (session: MixboardSession) => {
-    setMixboardSession(session);
+    // Update the session in the array
+    setMixboardSessions(prev =>
+      prev.map(s => s.session_id === session.session_id ? session : s)
+    );
   };
 
   const handleCreateMixboardSession = (): MixboardSession => {
     const newSession: MixboardSession = {
       session_id: `mixboard-${Date.now()}`,
-      title: 'Mixboard Session',
+      title: `Mixboard ${new Date().toLocaleString()}`,
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
       generations: [],
@@ -367,7 +372,8 @@ function AppContent() {
     };
 
     StorageService.saveSession(newSession as any);
-    setMixboardSession(newSession);
+    setMixboardSessions(prev => [...prev, newSession]);
+    setCurrentMixboardSessionId(newSession.session_id);
 
     LoggerService.logAction('Created Mixboard session', {
       sessionId: newSession.session_id,
@@ -377,12 +383,46 @@ function AppContent() {
     return newSession;
   };
 
-  // Initialize Mixboard session on app load
+  const handleSelectMixboardSession = (sessionId: string) => {
+    setCurrentMixboardSessionId(sessionId);
+    console.log('[App] Switched to Mixboard session:', sessionId);
+  };
+
+  const loadMixboardSessions = () => {
+    const allSessions = StorageService.getSessions();
+
+    // Filter for Mixboard sessions (those with canvas_images property)
+    const mixboardSessions = allSessions.filter(s =>
+      'canvas_images' in s
+    ) as MixboardSession[];
+
+    // Filter by current user
+    const userMixboardSessions = currentUser
+      ? mixboardSessions.filter(s => s.user?.id === currentUser.id)
+      : [];
+
+    setMixboardSessions(userMixboardSessions);
+    console.log('[App] Loaded Mixboard sessions:', userMixboardSessions.length);
+
+    // Set current session to the most recent one
+    if (userMixboardSessions.length > 0 && !currentMixboardSessionId) {
+      setCurrentMixboardSessionId(userMixboardSessions[0].session_id);
+    }
+  };
+
+  // Load Mixboard sessions when user changes
   useEffect(() => {
-    if (!mixboardSession && currentUser && !showGraphView && !showHistory) {
+    if (currentUser) {
+      loadMixboardSessions();
+    }
+  }, [currentUser]);
+
+  // Create a session if none exist
+  useEffect(() => {
+    if (currentUser && mixboardSessions.length === 0 && !showGraphView && !showHistory) {
       handleCreateMixboardSession();
     }
-  }, [currentUser, showGraphView, showHistory]);
+  }, [currentUser, mixboardSessions.length, showGraphView, showHistory]);
 
   const grantAdminAccess = () => {
     setIsAdminAuthorized(true);
@@ -925,7 +965,9 @@ function AppContent() {
                 <MixboardView
                   theme={theme}
                   currentSession={mixboardSession}
+                  allSessions={mixboardSessions}
                   onSessionUpdate={handleMixboardSessionUpdate}
+                  onSelectSession={handleSelectMixboardSession}
                   onCreateSession={handleCreateMixboardSession}
                   currentUser={currentUser}
                 />

@@ -3,7 +3,8 @@ import {
   SessionGeneration,
   MixboardSession,
   MixboardGeneration,
-  StoredImageMeta
+  StoredImageMeta,
+  CanvasImage
 } from '../types';
 import { StorageService } from './newStorageService';
 
@@ -16,16 +17,96 @@ export class MigrationService {
    * Convert old session format to Mixboard format
    */
   static migrateSession(oldSession: Session): MixboardSession {
+    // Collect all unique images from all generations and place them on canvas
+    const canvasImages = this.populateCanvasFromLegacy(oldSession);
+
     return {
       session_id: oldSession.session_id,
       title: oldSession.title,
       created_at: oldSession.created_at,
       updated_at: oldSession.updated_at,
       generations: oldSession.generations.map(gen => this.migrateGeneration(gen)),
-      canvas_images: [],  // Cannot reconstruct old canvas state
+      canvas_images: canvasImages,
       user: oldSession.user,
       graph: oldSession.graph
     };
+  }
+
+  /**
+   * Populate canvas with all images from legacy session
+   * Collects all control, reference, and output images and places them in a grid
+   */
+  static populateCanvasFromLegacy(oldSession: Session): CanvasImage[] {
+    const canvasImages: CanvasImage[] = [];
+    const seenImages = new Set<string>(); // Track by image ID to avoid duplicates
+
+    let gridX = 100;
+    let gridY = 100;
+    const gridSpacing = 350; // Space between images
+    const imagesPerRow = 4; // 4 images per row
+    let imageCount = 0;
+
+    oldSession.generations.forEach((gen) => {
+      // Collect all images from this generation
+      const allImages: Array<{ meta: StoredImageMeta; role: 'control' | 'reference' | 'output' }> = [];
+
+      // Add control images
+      if (gen.control_images) {
+        gen.control_images.forEach(img => allImages.push({ meta: img, role: 'control' }));
+      }
+
+      // Add reference images
+      if (gen.reference_images) {
+        gen.reference_images.forEach(img => allImages.push({ meta: img, role: 'reference' }));
+      }
+
+      // Add output images
+      const outputs = gen.output_images || (gen.output_image ? [gen.output_image] : []);
+      outputs.forEach(img => allImages.push({ meta: img, role: 'output' }));
+
+      // Process each image
+      allImages.forEach(({ meta, role }) => {
+        // Skip duplicates
+        if (seenImages.has(meta.id)) return;
+        seenImages.add(meta.id);
+
+        // Try to load the image data
+        const dataUri = StorageService.loadImage(role, meta.id, meta.filename);
+        if (!dataUri) {
+          console.warn(`[Migration] Could not load image: ${role}/${meta.id}`);
+          return;
+        }
+
+        // Create a temporary image to get dimensions
+        const img = new Image();
+        img.src = dataUri;
+
+        // Calculate grid position
+        const col = imageCount % imagesPerRow;
+        const row = Math.floor(imageCount / imagesPerRow);
+        const x = gridX + (col * gridSpacing);
+        const y = gridY + (row * gridSpacing);
+
+        // Add to canvas
+        canvasImages.push({
+          id: `migrated-${meta.id}`,
+          dataUri,
+          x,
+          y,
+          width: 300,
+          height: 300, // Will be adjusted based on actual image aspect ratio
+          selected: false,
+          originalWidth: 1024, // Default, will be updated when image loads
+          originalHeight: 1024,
+          imageMetaId: meta.id
+        });
+
+        imageCount++;
+      });
+    });
+
+    console.log(`[Migration] Populated canvas with ${canvasImages.length} images from legacy session`);
+    return canvasImages;
   }
 
   /**

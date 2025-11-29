@@ -7,7 +7,9 @@ import { GenerationConfig, CanvasImage, MixboardSession, MixboardGeneration, Sto
 interface MixboardViewProps {
   theme: 'dark' | 'light';
   currentSession: MixboardSession | null;
+  allSessions: MixboardSession[];
   onSessionUpdate: (session: MixboardSession) => void;
+  onSelectSession: (sessionId: string) => void;
   onCreateSession?: () => MixboardSession;
   currentUser?: { id: string; displayName: string } | null;
 }
@@ -24,7 +26,9 @@ const DEFAULT_CONFIG: GenerationConfig = {
 export const MixboardView: React.FC<MixboardViewProps> = ({
   theme,
   currentSession,
+  allSessions,
   onSessionUpdate,
+  onSelectSession,
   onCreateSession,
   currentUser
 }) => {
@@ -667,6 +671,35 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
 
         {/* Right Sidebar - Generation Controls */}
         <div className="w-96 border-l border-zinc-200 dark:border-zinc-800 p-6 overflow-y-auto bg-zinc-50 dark:bg-zinc-900/50">
+          {/* Session Selector */}
+          <div className="mb-6 pb-4 border-b border-zinc-200 dark:border-zinc-700">
+            <div className="flex items-center justify-between mb-2">
+              <h4 className="text-sm font-bold text-zinc-700 dark:text-zinc-300">Session</h4>
+              <button
+                onClick={() => onCreateSession && onCreateSession()}
+                className="text-xs px-2 py-1 bg-orange-500 text-white rounded hover:bg-orange-600 transition-colors"
+              >
+                + New
+              </button>
+            </div>
+            <select
+              value={currentSession?.session_id || ''}
+              onChange={(e) => onSelectSession(e.target.value)}
+              className="w-full px-3 py-2 border border-zinc-300 dark:border-zinc-700 rounded bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 text-sm focus:outline-none focus:ring-2 focus:ring-orange-500"
+            >
+              {allSessions.map(session => (
+                <option key={session.session_id} value={session.session_id}>
+                  {session.title} ({session.canvas_images.length} images)
+                </option>
+              ))}
+            </select>
+            {currentSession && (
+              <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-2">
+                {currentSession.generations.length} generations • Created {new Date(currentSession.created_at).toLocaleDateString()}
+              </p>
+            )}
+          </div>
+
           <h3 className="text-lg font-bold mb-4 text-zinc-900 dark:text-zinc-100">Generation</h3>
 
           {/* Mode Toggle */}
