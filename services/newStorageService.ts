@@ -1,4 +1,4 @@
-import { Session, SessionGeneration, ImageRole, GenerationConfig, GraphNode, GraphEdge, StoredImageMeta, UploadedImagePayload } from '../types';
+import { Session, SessionGeneration, ImageRole, GenerationConfig, GraphNode, GraphEdge, StoredImageMeta, UploadedImagePayload, MixboardSession, MixboardGeneration } from '../types';
 
 // Detect Electron
 const isElectron = () => {

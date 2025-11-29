@@ -1,4 +1,7 @@
-// Session represents a single conversation/session with all its generations
+/**
+ * @deprecated Use MixboardSession instead for new implementations.
+ * Legacy session format with separate control/reference images.
+ */
 export interface Session {
   session_id: string;
   title: string;
@@ -29,6 +32,10 @@ export interface UploadedImagePayload {
   hash?: string;
 }
 
+/**
+ * @deprecated Use MixboardGeneration instead for new implementations.
+ * Legacy generation format with separate control/reference images.
+ */
 export interface SessionGeneration {
   generation_id: string;
   timestamp: string;
@@ -189,3 +196,79 @@ export interface AdminMetrics {
   sessions: number;
   timestamp: string;
 }
+
+// ============================================================================
+// MIXBOARD TYPES (New unified format)
+// ============================================================================
+
+/**
+ * Canvas image representation in Mixboard.
+ * Tracks position, size, and relationship to generations.
+ */
+export interface CanvasImage {
+  id: string;                      // Unique canvas image ID
+  dataUri: string;                 // Base64 image data
+  x: number;                       // Canvas X position
+  y: number;                       // Canvas Y position
+  width: number;                   // Display width
+  height: number;                  // Display height
+  selected: boolean;               // Selection state
+  originalWidth: number;           // Original image width
+  originalHeight: number;          // Original image height
+  generationId?: string;           // Parent generation ID (if generated)
+  imageMetaId?: string;            // Link to StoredImageMeta for persistence
+}
+
+/**
+ * Mixboard generation format with unified image inputs.
+ * Removes artificial control/reference distinction.
+ */
+export interface MixboardGeneration {
+  generation_id: string;
+  timestamp: string;
+  status: 'pending' | 'completed' | 'failed';
+
+  // Inputs
+  prompt: string;
+  input_images: StoredImageMeta[];   // UNIFIED: No control/reference split
+
+  // Parameters
+  parameters: GenerationConfig;
+
+  // Outputs
+  output_images: StoredImageMeta[];
+  output_texts?: string[];
+  generation_time_ms?: number;
+  error_message?: string;
+
+  // Canvas state preservation
+  canvas_state?: {
+    images: CanvasImage[];           // All images at generation time
+    zoom: number;                    // Canvas zoom level
+    panOffset: { x: number; y: number };  // Pan position
+  };
+
+  // Lineage tracking for graph view
+  parent_generation_ids?: string[];  // IDs of generations that created input images
+}
+
+/**
+ * Mixboard session format.
+ * Represents a complete creative session with canvas state.
+ */
+export interface MixboardSession {
+  session_id: string;
+  title: string;
+  created_at: string;
+  updated_at: string;
+  generations: MixboardGeneration[];
+  canvas_images: CanvasImage[];      // Current canvas state
+  user?: {
+    displayName: string;
+    id: string;
+  };
+  graph?: GraphState;                // Optional graph state
+}
+
+// Type alias for ImageMeta (used throughout the codebase)
+export type ImageMeta = StoredImageMeta;
