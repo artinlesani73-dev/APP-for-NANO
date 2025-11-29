@@ -1,0 +1,1005 @@
+import React, { useState, useRef, useEffect } from 'react';
+import { Sparkles, Image as ImageIcon, Type, Trash2, ZoomIn, ZoomOut, Move, Download } from 'lucide-react';
+import { GeminiService } from '../services/geminiService';
+import { StorageService } from '../services/newStorageService';
+import { GenerationConfig, CanvasImage, MixboardSession, MixboardGeneration, StoredImageMeta } from '../types';
+
+interface MixboardViewProps {
+  theme: 'dark' | 'light';
+  currentSession: MixboardSession | null;
+  allSessions: MixboardSession[];
+  onSessionUpdate: (session: MixboardSession) => void;
+  onSelectSession: (sessionId: string) => void;
+  onCreateSession?: () => MixboardSession;
+  currentUser?: { id: string; displayName: string } | null;
+}
+
+const DEFAULT_CONFIG: GenerationConfig = {
+  temperature: 0.7,
+  top_p: 0.95,
+  aspect_ratio: '1:1',
+  image_size: '1K',
+  safety_filter: 'medium',
+  model: 'gemini-2.5-flash-image'
+};
+
+export const MixboardView: React.FC<MixboardViewProps> = ({
+  theme,
+  currentSession,
+  allSessions,
+  onSessionUpdate,
+  onSelectSession,
+  onCreateSession,
+  currentUser
+}) => {
+  const [canvasImages, setCanvasImages] = useState<CanvasImage[]>([]);
+  const [prompt, setPrompt] = useState('');
+  const [config, setConfig] = useState<GenerationConfig>(DEFAULT_CONFIG);
+  const [isGenerating, setIsGenerating] = useState(false);
+  const [panOffset, setPanOffset] = useState({ x: 0, y: 0 });
+  const [zoom, setZoom] = useState(1);
+  const [draggedImage, setDraggedImage] = useState<string | null>(null);
+  const [dragStart, setDragStart] = useState<{ x: number; y: number } | null>(null);
+  const [resizingImage, setResizingImage] = useState<string | null>(null);
+  const [isSelecting, setIsSelecting] = useState(false);
+  const [selectionBox, setSelectionBox] = useState<{ startX: number; startY: number; endX: number; endY: number } | null>(null);
+  const [isPanning, setIsPanning] = useState(false);
+  const [showImageInput, setShowImageInput] = useState(false);
+  const [currentGeneration, setCurrentGeneration] = useState<MixboardGeneration | null>(null);
+
+  const canvasRef = useRef<HTMLDivElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Initialize session if needed
+  useEffect(() => {
+    if (!currentSession && onCreateSession && currentUser) {
+      console.log('[MixboardView] No session found, creating new session...');
+      onCreateSession();
+    }
+  }, [currentSession, onCreateSession, currentUser]);
+
+  // Load canvas from session when session changes
+  useEffect(() => {
+    if (currentSession && currentSession.canvas_images) {
+      console.log('[MixboardView] Loading canvas images from session:', currentSession.canvas_images.length);
+      setCanvasImages(currentSession.canvas_images);
+    } else if (currentSession) {
+      console.log('[MixboardView] Session has no canvas images, starting with empty canvas');
+      setCanvasImages([]);
+    }
+  }, [currentSession?.session_id]);
+
+  // Helper function to save current canvas state to session
+  const saveCanvasToSession = (images: CanvasImage[]) => {
+    if (!currentSession) return;
+
+    const updatedSession: MixboardSession = {
+      ...currentSession,
+      canvas_images: images,
+      updated_at: new Date().toISOString()
+    };
+
+    StorageService.saveSession(updatedSession as any);
+    onSessionUpdate(updatedSession);
+    console.log('[MixboardView] Canvas saved to session:', images.length, 'images');
+  };
+
+  // Handle image generation with full history tracking
+  const handleGenerate = async () => {
+    if (!prompt && canvasImages.filter(img => img.selected).length === 0) return;
+    if (!currentSession) {
+      alert('No active session. Please create or select a session first.');
+      return;
+    }
+
+    setIsGenerating(true);
+
+    const generationId = `gen-${Date.now()}`;
+    const selectedImages = canvasImages.filter(img => img.selected);
+    const startTime = Date.now();
+
+    try {
+      // Create generation record BEFORE API call
+      const newGeneration: MixboardGeneration = {
+        generation_id: generationId,
+        timestamp: new Date().toISOString(),
+        status: 'pending',
+        prompt: prompt || 'Continue the creative exploration',
+        input_images: [],  // Will populate after saving
+        output_images: [],
+        parameters: config,
+        canvas_state: {
+          images: canvasImages,
+          zoom,
+          panOffset
+        },
+        parent_generation_ids: selectedImages
+          .map(img => img.generationId)
+          .filter(Boolean) as string[]
+      };
+
+      setCurrentGeneration(newGeneration);
+
+      // Prepare reference images for API call
+      const referenceImages = selectedImages.length > 0
+        ? selectedImages.map(img => img.dataUri)
+        : undefined;
+
+      // Call API
+      const output = await GeminiService.generateImage(
+        newGeneration.prompt,
+        config,
+        undefined,  // No control images in Mixboard
+        referenceImages,
+        currentUser?.displayName || 'Mixboard User'
+      );
+
+      if (output.images && output.images.length > 0) {
+        const imageDataUri = `data:image/png;base64,${output.images[0]}`;
+
+        // Save input images to storage
+        const inputImageMetas: StoredImageMeta[] = [];
+        for (const selectedImg of selectedImages) {
+          if (selectedImg.imageMetaId) {
+            // Image already saved, find its metadata
+            const meta = {
+              id: selectedImg.imageMetaId,
+              filename: `input_${selectedImg.imageMetaId}.png`,
+              size_bytes: selectedImg.dataUri.length
+            };
+            inputImageMetas.push(meta);
+          } else {
+            // Save new image
+            const meta = StorageService.saveImage(selectedImg.dataUri, 'reference');
+            inputImageMetas.push(meta);
+          }
+        }
+
+        // Save output image to storage
+        const outputImageMeta = StorageService.saveImage(imageDataUri, 'output');
+
+        // Calculate duration
+        const duration = Date.now() - startTime;
+
+        // Complete generation record
+        const completedGeneration: MixboardGeneration = {
+          ...newGeneration,
+          status: 'completed',
+          input_images: inputImageMetas,
+          output_images: [outputImageMeta],
+          output_texts: output.texts,
+          generation_time_ms: duration
+        };
+
+        // Add generated image to canvas
+        const img = new Image();
+        img.onload = () => {
+          const newCanvasImage: CanvasImage = {
+            id: `img-${Date.now()}`,
+            dataUri: imageDataUri,
+            x: 100 + (canvasImages.length * 50),
+            y: 100 + (canvasImages.length * 50),
+            width: 300,
+            height: (300 * img.height) / img.width,
+            selected: false,
+            originalWidth: img.width,
+            originalHeight: img.height,
+            generationId: generationId,
+            imageMetaId: outputImageMeta.id
+          };
+
+          const updatedCanvasImages = [...canvasImages, newCanvasImage];
+          setCanvasImages(updatedCanvasImages);
+
+          // Update session with new generation and canvas state
+          const updatedSession: MixboardSession = {
+            ...currentSession,
+            generations: [...currentSession.generations, completedGeneration],
+            canvas_images: updatedCanvasImages,
+            updated_at: new Date().toISOString()
+          };
+
+          // Persist session
+          StorageService.saveSession(updatedSession as any);
+          onSessionUpdate(updatedSession);
+
+          setCurrentGeneration(completedGeneration);
+        };
+        img.src = imageDataUri;
+      }
+    } catch (error) {
+      console.error('Generation failed:', error);
+
+      // Mark generation as failed
+      const failedGeneration: MixboardGeneration = {
+        generation_id: generationId,
+        timestamp: new Date().toISOString(),
+        status: 'failed',
+        prompt: prompt || 'Continue the creative exploration',
+        input_images: [],
+        output_images: [],
+        parameters: config,
+        error_message: (error as Error).message,
+        generation_time_ms: Date.now() - startTime,
+        canvas_state: {
+          images: canvasImages,
+          zoom,
+          panOffset
+        }
+      };
+
+      // Update session with failed generation
+      const updatedSession: MixboardSession = {
+        ...currentSession,
+        generations: [...currentSession.generations, failedGeneration],
+        updated_at: new Date().toISOString()
+      };
+
+      StorageService.saveSession(updatedSession as any);
+      onSessionUpdate(updatedSession);
+
+      setCurrentGeneration(failedGeneration);
+      alert('Generation failed: ' + (error as Error).message);
+    } finally {
+      setIsGenerating(false);
+    }
+  };
+
+  // Handle file upload
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files) return;
+
+    Array.from(files).forEach(file => {
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        const dataUri = event.target?.result as string;
+        const img = new Image();
+        img.onload = () => {
+          const newImage: CanvasImage = {
+            id: `img-${Date.now()}-${Math.random()}`,
+            dataUri,
+            x: 100 + (canvasImages.length * 50),
+            y: 100 + (canvasImages.length * 50),
+            width: 300,
+            height: (300 * img.height) / img.width,
+            selected: false,
+            originalWidth: img.width,
+            originalHeight: img.height
+          };
+          const updatedImages = [...canvasImages, newImage];
+          setCanvasImages(updatedImages);
+          saveCanvasToSession(updatedImages);
+        };
+        img.src = dataUri;
+      };
+      reader.readAsDataURL(file);
+    });
+
+    e.target.value = '';
+  };
+
+  // Handle drag and drop from outside
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+
+    const files = e.dataTransfer.files;
+    if (!files || files.length === 0) return;
+
+    const canvasRect = canvasRef.current?.getBoundingClientRect();
+    if (!canvasRect) return;
+
+    Array.from(files).forEach((file, index) => {
+      if (!file.type.startsWith('image/')) return;
+
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        const dataUri = event.target?.result as string;
+        const img = new Image();
+        img.onload = () => {
+          const dropX = (e.clientX - canvasRect.left - panOffset.x) / zoom;
+          const dropY = (e.clientY - canvasRect.top - panOffset.y) / zoom;
+
+          const newImage: CanvasImage = {
+            id: `img-${Date.now()}-${index}`,
+            dataUri,
+            x: dropX,
+            y: dropY,
+            width: 300,
+            height: (300 * img.height) / img.width,
+            selected: false,
+            originalWidth: img.width,
+            originalHeight: img.height
+          };
+          setCanvasImages(prev => {
+            const updated = [...prev, newImage];
+            saveCanvasToSession(updated);
+            return updated;
+          });
+        };
+        img.src = dataUri;
+      };
+      reader.readAsDataURL(file);
+    });
+  };
+
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+  };
+
+  // Handle image selection and dragging
+  const handleImageMouseDown = (e: React.MouseEvent, imageId: string) => {
+    e.stopPropagation();
+
+    const image = canvasImages.find(img => img.id === imageId);
+    if (!image) return;
+
+    // Check if clicking on resize handle (bottom-right corner)
+    const canvasRect = canvasRef.current?.getBoundingClientRect();
+    if (!canvasRect) return;
+
+    const imageScreenX = image.x * zoom + panOffset.x;
+    const imageScreenY = image.y * zoom + panOffset.y;
+    const imageScreenWidth = image.width * zoom;
+    const imageScreenHeight = image.height * zoom;
+
+    const clickX = e.clientX - canvasRect.left;
+    const clickY = e.clientY - canvasRect.top;
+
+    const isResizeHandle =
+      clickX >= imageScreenX + imageScreenWidth - 20 &&
+      clickX <= imageScreenX + imageScreenWidth &&
+      clickY >= imageScreenY + imageScreenHeight - 20 &&
+      clickY <= imageScreenY + imageScreenHeight;
+
+    if (isResizeHandle) {
+      setResizingImage(imageId);
+      setDragStart({ x: clickX, y: clickY });
+    } else {
+      // Toggle selection with Ctrl/Cmd, otherwise select only this image
+      if (e.ctrlKey || e.metaKey) {
+        setCanvasImages(prev => prev.map(img =>
+          img.id === imageId ? { ...img, selected: !img.selected } : img
+        ));
+      } else {
+        setCanvasImages(prev => prev.map(img => ({
+          ...img,
+          selected: img.id === imageId
+        })));
+      }
+
+      setDraggedImage(imageId);
+      setDragStart({ x: clickX, y: clickY });
+    }
+  };
+
+  const handleCanvasMouseDown = (e: React.MouseEvent) => {
+    if (e.target === canvasRef.current || (e.target as HTMLElement).classList.contains('canvas-background')) {
+      // Start panning with middle mouse or space+left click
+      if (e.button === 1 || (e.button === 0 && e.shiftKey)) {
+        setIsPanning(true);
+        setDragStart({ x: e.clientX, y: e.clientY });
+      } else if (e.button === 0) {
+        // Start box selection
+        const canvasRect = canvasRef.current?.getBoundingClientRect();
+        if (!canvasRect) return;
+
+        const startX = (e.clientX - canvasRect.left - panOffset.x) / zoom;
+        const startY = (e.clientY - canvasRect.top - panOffset.y) / zoom;
+
+        setIsSelecting(true);
+        setSelectionBox({ startX, startY, endX: startX, endY: startY });
+
+        // Clear selection if not holding Ctrl/Cmd
+        if (!e.ctrlKey && !e.metaKey) {
+          setCanvasImages(prev => prev.map(img => ({ ...img, selected: false })));
+        }
+      }
+    }
+  };
+
+  const handleMouseMove = (e: React.MouseEvent) => {
+    if (isPanning && dragStart) {
+      const dx = e.clientX - dragStart.x;
+      const dy = e.clientY - dragStart.y;
+      setPanOffset(prev => ({ x: prev.x + dx, y: prev.y + dy }));
+      setDragStart({ x: e.clientX, y: e.clientY });
+    } else if (resizingImage && dragStart) {
+      const canvasRect = canvasRef.current?.getBoundingClientRect();
+      if (!canvasRect) return;
+
+      const dx = (e.clientX - canvasRect.left - dragStart.x) / zoom;
+      const dy = (e.clientY - canvasRect.top - dragStart.y) / zoom;
+
+      setCanvasImages(prev => prev.map(img => {
+        if (img.id === resizingImage) {
+          const newWidth = Math.max(50, img.width + dx);
+          const aspectRatio = img.originalHeight / img.originalWidth;
+          return {
+            ...img,
+            width: newWidth,
+            height: newWidth * aspectRatio
+          };
+        }
+        return img;
+      }));
+
+      setDragStart({ x: e.clientX - canvasRect.left, y: e.clientY - canvasRect.top });
+    } else if (draggedImage && dragStart) {
+      const canvasRect = canvasRef.current?.getBoundingClientRect();
+      if (!canvasRect) return;
+
+      const dx = (e.clientX - canvasRect.left - dragStart.x) / zoom;
+      const dy = (e.clientY - canvasRect.top - dragStart.y) / zoom;
+
+      setCanvasImages(prev => prev.map(img => {
+        if (img.selected || img.id === draggedImage) {
+          return {
+            ...img,
+            x: img.x + dx,
+            y: img.y + dy
+          };
+        }
+        return img;
+      }));
+
+      setDragStart({ x: e.clientX - canvasRect.left, y: e.clientY - canvasRect.top });
+    } else if (isSelecting && selectionBox) {
+      const canvasRect = canvasRef.current?.getBoundingClientRect();
+      if (!canvasRect) return;
+
+      const endX = (e.clientX - canvasRect.left - panOffset.x) / zoom;
+      const endY = (e.clientY - canvasRect.top - panOffset.y) / zoom;
+
+      setSelectionBox(prev => prev ? { ...prev, endX, endY } : null);
+
+      // Update selection
+      const minX = Math.min(selectionBox.startX, endX);
+      const maxX = Math.max(selectionBox.startX, endX);
+      const minY = Math.min(selectionBox.startY, endY);
+      const maxY = Math.max(selectionBox.startY, endY);
+
+      setCanvasImages(prev => prev.map(img => {
+        const imgCenterX = img.x + img.width / 2;
+        const imgCenterY = img.y + img.height / 2;
+        const intersects =
+          imgCenterX >= minX && imgCenterX <= maxX &&
+          imgCenterY >= minY && imgCenterY <= maxY;
+
+        return { ...img, selected: intersects || (e.ctrlKey || e.metaKey ? img.selected : false) };
+      }));
+    }
+  };
+
+  const handleMouseUp = () => {
+    // Save canvas if we were dragging or resizing
+    if (draggedImage || resizingImage) {
+      saveCanvasToSession(canvasImages);
+    }
+
+    setDraggedImage(null);
+    setResizingImage(null);
+    setIsSelecting(false);
+    setSelectionBox(null);
+    setIsPanning(false);
+    setDragStart(null);
+  };
+
+  // Delete selected images
+  const handleDeleteSelected = () => {
+    setCanvasImages(prev => {
+      const updated = prev.filter(img => !img.selected);
+      saveCanvasToSession(updated);
+      return updated;
+    });
+  };
+
+  // Zoom controls
+  const handleZoomIn = () => setZoom(prev => Math.min(prev + 0.1, 3));
+  const handleZoomOut = () => setZoom(prev => Math.max(prev - 0.1, 0.1));
+
+  // Scroll to zoom - use native event listener to prevent passive listener warning
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+
+    const handleWheel = (e: WheelEvent) => {
+      e.preventDefault();
+      const delta = e.deltaY > 0 ? -0.05 : 0.05;
+      setZoom(prev => Math.max(0.1, Math.min(3, prev + delta)));
+    };
+
+    canvas.addEventListener('wheel', handleWheel, { passive: false });
+    return () => canvas.removeEventListener('wheel', handleWheel);
+  }, []);
+
+  // Keyboard shortcuts
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Check if user is typing in an input or textarea
+      const activeElement = document.activeElement;
+      const isTyping = activeElement?.tagName === 'INPUT' ||
+                       activeElement?.tagName === 'TEXTAREA' ||
+                       activeElement?.hasAttribute('contenteditable');
+
+      if ((e.key === 'Delete' || e.key === 'Backspace') && !isTyping) {
+        e.preventDefault();
+        handleDeleteSelected();
+      } else if (e.key === 'a' && (e.ctrlKey || e.metaKey) && !isTyping) {
+        e.preventDefault();
+        setCanvasImages(prev => prev.map(img => ({ ...img, selected: true })));
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [canvasImages]);
+
+  const selectedCount = canvasImages.filter(img => img.selected).length;
+
+  return (
+    <div className="h-full w-full flex flex-col bg-white dark:bg-black">
+      {/* Header */}
+      <div className="p-6 border-b border-zinc-200 dark:border-zinc-800">
+        <div className="flex items-center gap-3 mb-2">
+          <Sparkles className="text-orange-500" size={24} />
+          <h1 className="text-2xl font-bold text-zinc-900 dark:text-zinc-100">Mixboard</h1>
+          <span className="text-xs px-2 py-1 bg-orange-100 dark:bg-orange-900/30 text-orange-700 dark:text-orange-400 rounded font-medium">
+            Experimental Beta
+          </span>
+        </div>
+        <p className="text-sm text-zinc-600 dark:text-zinc-400">
+          Create, compose, and remix images on an infinite canvas
+        </p>
+      </div>
+
+      <div className="flex-1 flex overflow-hidden">
+        {/* Canvas Area */}
+        <div
+          ref={canvasRef}
+          className="flex-1 relative overflow-hidden cursor-crosshair canvas-background"
+          style={{
+            backgroundImage: theme === 'dark'
+              ? 'radial-gradient(circle, #27272a 1px, transparent 1px)'
+              : 'radial-gradient(circle, #e4e4e7 1px, transparent 1px)',
+            backgroundSize: `${20 * zoom}px ${20 * zoom}px`,
+            backgroundPosition: `${panOffset.x}px ${panOffset.y}px`
+          }}
+          onMouseDown={handleCanvasMouseDown}
+          onMouseMove={handleMouseMove}
+          onMouseUp={handleMouseUp}
+          onMouseLeave={handleMouseUp}
+          onDrop={handleDrop}
+          onDragOver={handleDragOver}
+        >
+          {/* Empty Canvas Message */}
+          {canvasImages.length === 0 && (
+            <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+              <div className="text-center p-8 max-w-md">
+                <Sparkles className="mx-auto mb-4 text-zinc-400 dark:text-zinc-600" size={48} />
+                <h3 className="text-lg font-bold text-zinc-600 dark:text-zinc-400 mb-2">
+                  Your canvas is empty
+                </h3>
+                <p className="text-sm text-zinc-500 dark:text-zinc-500 mb-4">
+                  Start by generating an image or uploading images to the canvas
+                </p>
+                <div className="text-xs text-zinc-400 dark:text-zinc-600 space-y-1">
+                  <p>• Write a prompt and click Generate</p>
+                  <p>• Upload images from your computer</p>
+                  <p>• Drag & drop images onto the canvas</p>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Canvas Images */}
+          {canvasImages.map(image => (
+            <div
+              key={image.id}
+              className={`absolute cursor-move ${image.selected ? 'ring-4 ring-orange-500' : 'ring-1 ring-zinc-300 dark:ring-zinc-700'}`}
+              style={{
+                left: `${image.x * zoom + panOffset.x}px`,
+                top: `${image.y * zoom + panOffset.y}px`,
+                width: `${image.width * zoom}px`,
+                height: `${image.height * zoom}px`,
+                transformOrigin: 'top left'
+              }}
+              onMouseDown={(e) => handleImageMouseDown(e, image.id)}
+            >
+              <img
+                src={image.dataUri}
+                alt="Canvas item"
+                className="w-full h-full object-cover pointer-events-none"
+                draggable={false}
+              />
+              {image.selected && (
+                <div className="absolute bottom-0 right-0 w-4 h-4 bg-orange-500 cursor-nwse-resize" />
+              )}
+            </div>
+          ))}
+
+          {/* Selection Box */}
+          {isSelecting && selectionBox && (
+            <div
+              className="absolute border-2 border-orange-500 bg-orange-500/10 pointer-events-none"
+              style={{
+                left: `${Math.min(selectionBox.startX, selectionBox.endX) * zoom + panOffset.x}px`,
+                top: `${Math.min(selectionBox.startY, selectionBox.endY) * zoom + panOffset.y}px`,
+                width: `${Math.abs(selectionBox.endX - selectionBox.startX) * zoom}px`,
+                height: `${Math.abs(selectionBox.endY - selectionBox.startY) * zoom}px`
+              }}
+            />
+          )}
+
+          {/* Zoom Controls */}
+          <div className="absolute top-4 right-4 flex flex-col gap-2">
+            <button
+              onClick={handleZoomIn}
+              className="p-2 bg-white dark:bg-zinc-900 border border-zinc-300 dark:border-zinc-700 rounded shadow hover:bg-zinc-50 dark:hover:bg-zinc-800"
+            >
+              <ZoomIn size={16} className="text-zinc-700 dark:text-zinc-300" />
+            </button>
+            <button
+              onClick={handleZoomOut}
+              className="p-2 bg-white dark:bg-zinc-900 border border-zinc-300 dark:border-zinc-700 rounded shadow hover:bg-zinc-50 dark:hover:bg-zinc-800"
+            >
+              <ZoomOut size={16} className="text-zinc-700 dark:text-zinc-300" />
+            </button>
+            <div className="px-2 py-1 bg-white dark:bg-zinc-900 border border-zinc-300 dark:border-zinc-700 rounded shadow text-xs text-zinc-700 dark:text-zinc-300">
+              {Math.round(zoom * 100)}%
+            </div>
+          </div>
+
+          {/* Selection Info */}
+          {selectedCount > 0 && (
+            <div className="absolute bottom-4 left-4 flex gap-2">
+              <div className="px-3 py-2 bg-white dark:bg-zinc-900 border border-zinc-300 dark:border-zinc-700 rounded shadow text-sm text-zinc-700 dark:text-zinc-300">
+                {selectedCount} selected
+              </div>
+              <button
+                onClick={handleDeleteSelected}
+                className="px-3 py-2 bg-red-500 text-white rounded shadow hover:bg-red-600 flex items-center gap-2"
+              >
+                <Trash2 size={16} />
+                Delete
+              </button>
+            </div>
+          )}
+        </div>
+
+        {/* Right Sidebar - Generation Controls */}
+        <div className="w-96 border-l border-zinc-200 dark:border-zinc-800 p-6 overflow-y-auto bg-zinc-50 dark:bg-zinc-900/50">
+          {/* Session Selector */}
+          <div className="mb-6 pb-4 border-b border-zinc-200 dark:border-zinc-700">
+            <div className="flex items-center justify-between mb-2">
+              <h4 className="text-sm font-bold text-zinc-700 dark:text-zinc-300">Session</h4>
+              <button
+                onClick={() => onCreateSession && onCreateSession()}
+                className="text-xs px-2 py-1 bg-orange-500 text-white rounded hover:bg-orange-600 transition-colors"
+              >
+                + New
+              </button>
+            </div>
+            <select
+              value={currentSession?.session_id || ''}
+              onChange={(e) => onSelectSession(e.target.value)}
+              className="w-full px-3 py-2 border border-zinc-300 dark:border-zinc-700 rounded bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 text-sm focus:outline-none focus:ring-2 focus:ring-orange-500"
+            >
+              {allSessions.map(session => (
+                <option key={session.session_id} value={session.session_id}>
+                  {session.title} ({session.canvas_images.length} images)
+                </option>
+              ))}
+            </select>
+            {currentSession && (
+              <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-2">
+                {currentSession.generations.length} generations • Created {new Date(currentSession.created_at).toLocaleDateString()}
+              </p>
+            )}
+          </div>
+
+          <h3 className="text-lg font-bold mb-4 text-zinc-900 dark:text-zinc-100">Generation</h3>
+
+          {/* Mode Toggle */}
+          <div className="flex gap-2 mb-4">
+            <button
+              onClick={() => setShowImageInput(false)}
+              className={`flex-1 flex items-center justify-center gap-2 py-2 px-3 rounded border transition-colors ${
+                !showImageInput
+                  ? 'bg-orange-50 dark:bg-orange-950/30 border-orange-300 dark:border-orange-900 text-orange-700 dark:text-orange-400'
+                  : 'bg-white dark:bg-zinc-800 border-zinc-300 dark:border-zinc-700 text-zinc-700 dark:text-zinc-400'
+              }`}
+            >
+              <Type size={16} />
+              Text
+            </button>
+            <button
+              onClick={() => setShowImageInput(true)}
+              className={`flex-1 flex items-center justify-center gap-2 py-2 px-3 rounded border transition-colors ${
+                showImageInput
+                  ? 'bg-orange-50 dark:bg-orange-950/30 border-orange-300 dark:border-orange-900 text-orange-700 dark:text-orange-400'
+                  : 'bg-white dark:bg-zinc-800 border-zinc-300 dark:border-zinc-700 text-zinc-700 dark:text-zinc-400'
+              }`}
+            >
+              <ImageIcon size={16} />
+              Image
+            </button>
+          </div>
+
+          {/* Prompt Input */}
+          <div className="mb-4">
+            <label className="block text-sm font-medium mb-2 text-zinc-700 dark:text-zinc-300">
+              Prompt
+            </label>
+            <textarea
+              value={prompt}
+              onChange={(e) => setPrompt(e.target.value)}
+              placeholder={selectedCount > 0 ? "Describe how to transform selected images..." : "Describe an image to generate..."}
+              className="w-full h-32 px-3 py-2 border border-zinc-300 dark:border-zinc-700 rounded bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 placeholder-zinc-400 dark:placeholder-zinc-600 resize-none focus:outline-none focus:ring-2 focus:ring-orange-500"
+            />
+          </div>
+
+          {/* Selected Images Info */}
+          {selectedCount > 0 && (
+            <div className="mb-4 p-3 bg-orange-50 dark:bg-orange-950/30 border border-orange-200 dark:border-orange-900 rounded">
+              <p className="text-sm text-orange-700 dark:text-orange-400">
+                {selectedCount} image{selectedCount > 1 ? 's' : ''} selected and will be used as reference
+              </p>
+            </div>
+          )}
+
+          {/* Model Selection */}
+          <div className="mb-4">
+            <label className="block text-sm font-medium mb-2 text-zinc-700 dark:text-zinc-300">
+              Model
+            </label>
+            <select
+              value={config.model}
+              onChange={(e) => setConfig(prev => ({ ...prev, model: e.target.value }))}
+              className="w-full px-3 py-2 border border-zinc-300 dark:border-zinc-700 rounded bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-orange-500"
+            >
+              <option value="gemini-2.5-flash-image">Flash (Free, Fast)</option>
+              <option value="gemini-3-pro-image-preview">Pro (Paid, Higher Quality)</option>
+            </select>
+          </div>
+
+          {/* Aspect Ratio */}
+          <div className="mb-4">
+            <label className="block text-sm font-medium mb-2 text-zinc-700 dark:text-zinc-300">
+              Aspect Ratio
+            </label>
+            <div className="grid grid-cols-3 gap-2">
+              {['1:1', '16:9', '9:16', '3:4', '4:3'].map(ratio => (
+                <button
+                  key={ratio}
+                  onClick={() => setConfig(prev => ({ ...prev, aspect_ratio: ratio }))}
+                  className={`py-2 px-3 rounded border transition-colors text-sm ${
+                    config.aspect_ratio === ratio
+                      ? 'bg-orange-50 dark:bg-orange-950/30 border-orange-300 dark:border-orange-900 text-orange-700 dark:text-orange-400'
+                      : 'bg-white dark:bg-zinc-800 border-zinc-300 dark:border-zinc-700 text-zinc-700 dark:text-zinc-400'
+                  }`}
+                >
+                  {ratio}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Upload Images */}
+          <div className="mb-4">
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/*"
+              multiple
+              onChange={handleFileUpload}
+              className="hidden"
+            />
+            <button
+              onClick={() => fileInputRef.current?.click()}
+              className="w-full py-2 px-4 border-2 border-dashed border-zinc-300 dark:border-zinc-700 rounded text-zinc-600 dark:text-zinc-400 hover:border-orange-500 hover:text-orange-500 transition-colors flex items-center justify-center gap-2"
+            >
+              <ImageIcon size={16} />
+              Upload Images
+            </button>
+          </div>
+
+          {/* Session Management */}
+          <div className="mb-4 pb-4 border-b border-zinc-200 dark:border-zinc-700 space-y-2">
+            <button
+              onClick={() => {
+                if (!currentSession) return;
+                const dataStr = JSON.stringify(currentSession, null, 2);
+                const blob = new Blob([dataStr], { type: 'application/json' });
+                const url = URL.createObjectURL(blob);
+                const link = document.createElement('a');
+                link.href = url;
+                link.download = `mixboard-session-${currentSession.session_id}.json`;
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+                URL.revokeObjectURL(url);
+              }}
+              className="w-full py-2 px-4 border border-zinc-300 dark:border-zinc-700 rounded text-zinc-700 dark:text-zinc-300 text-sm hover:bg-zinc-50 dark:hover:bg-zinc-800 transition-colors flex items-center justify-center gap-2"
+            >
+              <Download size={14} />
+              Export Session
+            </button>
+            <button
+              onClick={() => {
+                if (window.confirm('Clear all images from canvas? This cannot be undone.')) {
+                  setCanvasImages([]);
+                  if (currentSession) {
+                    const updatedSession: MixboardSession = {
+                      ...currentSession,
+                      canvas_images: [],
+                      updated_at: new Date().toISOString()
+                    };
+                    StorageService.saveSession(updatedSession as any);
+                    onSessionUpdate(updatedSession);
+                  }
+                }
+              }}
+              className="w-full py-2 px-4 border border-red-300 dark:border-red-700 rounded text-red-600 dark:text-red-400 text-sm hover:bg-red-50 dark:hover:bg-red-950/30 transition-colors flex items-center justify-center gap-2"
+            >
+              <Trash2 size={14} />
+              Clear Canvas
+            </button>
+          </div>
+
+          {/* Generate Button */}
+          <button
+            onClick={handleGenerate}
+            disabled={isGenerating}
+            className={`w-full py-3 rounded font-bold flex items-center justify-center gap-2 transition-all ${
+              isGenerating
+                ? 'bg-zinc-200 dark:bg-zinc-800 text-zinc-400 dark:text-zinc-500 cursor-not-allowed'
+                : 'bg-gradient-to-r from-orange-600 to-orange-500 hover:from-orange-500 hover:to-orange-400 text-white shadow-lg'
+            }`}
+          >
+            {isGenerating ? (
+              'Generating...'
+            ) : (
+              <>
+                <Sparkles size={18} />
+                Generate
+              </>
+            )}
+          </button>
+
+          {/* Generation History */}
+          {currentSession && currentSession.generations.length > 0 && (
+            <div className="mt-6">
+              <h4 className="text-sm font-bold mb-3 text-zinc-900 dark:text-zinc-100">
+                Recent Generations ({currentSession.generations.length})
+              </h4>
+              <div className="space-y-3 max-h-96 overflow-y-auto">
+                {currentSession.generations.slice().reverse().map((gen, idx) => {
+                  const outputImage = gen.output_images && gen.output_images.length > 0
+                    ? gen.output_images[0]
+                    : null;
+                  const outputDataUri = outputImage
+                    ? StorageService.loadImage('output', outputImage.id, outputImage.filename)
+                    : null;
+
+                  return (
+                    <div
+                      key={gen.generation_id}
+                      className="p-3 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded"
+                    >
+                      {/* Generation Info */}
+                      <div className="flex items-start justify-between mb-2">
+                        <div className="flex-1">
+                          <p className="text-xs text-zinc-500 dark:text-zinc-400 mb-1">
+                            {new Date(gen.timestamp).toLocaleTimeString()}
+                          </p>
+                          <p className="text-xs text-zinc-700 dark:text-zinc-300 line-clamp-2">
+                            {gen.prompt}
+                          </p>
+                        </div>
+                        <span className={`text-xs px-2 py-0.5 rounded ${
+                          gen.status === 'completed'
+                            ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400'
+                            : gen.status === 'failed'
+                            ? 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400'
+                            : 'bg-yellow-100 dark:bg-yellow-900/30 text-yellow-700 dark:text-yellow-400'
+                        }`}>
+                          {gen.status}
+                        </span>
+                      </div>
+
+                      {/* Output Image Preview */}
+                      {outputDataUri && (
+                        <div className="mb-2">
+                          <img
+                            src={outputDataUri}
+                            alt="Generated output"
+                            className="w-full rounded border border-zinc-300 dark:border-zinc-700"
+                          />
+                        </div>
+                      )}
+
+                      {/* Actions */}
+                      <div className="flex gap-2">
+                        {outputDataUri && (
+                          <button
+                            onClick={() => {
+                              if (!outputImage) return;
+                              const img = new Image();
+                              img.onload = () => {
+                                const newCanvasImage: CanvasImage = {
+                                  id: `img-${Date.now()}`,
+                                  dataUri: outputDataUri,
+                                  x: 150 + (canvasImages.length * 30),
+                                  y: 150 + (canvasImages.length * 30),
+                                  width: 300,
+                                  height: (300 * img.height) / img.width,
+                                  selected: false,
+                                  originalWidth: img.width,
+                                  originalHeight: img.height,
+                                  generationId: gen.generation_id,
+                                  imageMetaId: outputImage.id
+                                };
+                                setCanvasImages(prev => {
+                                  const updated = [...prev, newCanvasImage];
+                                  saveCanvasToSession(updated);
+                                  return updated;
+                                });
+                              };
+                              img.src = outputDataUri;
+                            }}
+                            className="flex-1 py-1.5 px-3 bg-orange-500 text-white text-xs rounded hover:bg-orange-600 transition-colors"
+                          >
+                            Add to Canvas
+                          </button>
+                        )}
+                        {gen.canvas_state && (
+                          <button
+                            onClick={() => {
+                              if (gen.canvas_state) {
+                                setCanvasImages(gen.canvas_state.images);
+                                setZoom(gen.canvas_state.zoom);
+                                setPanOffset(gen.canvas_state.panOffset);
+                                saveCanvasToSession(gen.canvas_state.images);
+                              }
+                            }}
+                            className="flex-1 py-1.5 px-3 border border-zinc-300 dark:border-zinc-700 text-zinc-700 dark:text-zinc-300 text-xs rounded hover:bg-zinc-50 dark:hover:bg-zinc-800 transition-colors"
+                          >
+                            Restore Canvas
+                          </button>
+                        )}
+                      </div>
+
+                      {/* Metadata */}
+                      <div className="mt-2 pt-2 border-t border-zinc-200 dark:border-zinc-700 flex justify-between text-xs text-zinc-500 dark:text-zinc-400">
+                        <span>{gen.input_images.length} inputs</span>
+                        {gen.generation_time_ms && (
+                          <span>{gen.generation_time_ms}ms</span>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* Instructions */}
+          <div className="mt-6 p-4 bg-zinc-100 dark:bg-zinc-800 rounded text-xs text-zinc-600 dark:text-zinc-400 space-y-2">
+            <p className="font-medium text-zinc-700 dark:text-zinc-300">Tips:</p>
+            <ul className="space-y-1 list-disc list-inside">
+              <li>Drag & drop images from your computer</li>
+              <li>Click to select, Ctrl+Click for multi-select</li>
+              <li>Drag to move, resize from bottom-right corner</li>
+              <li>Selected images are used in generation</li>
+              <li>Scroll to zoom, Shift+Drag to pan canvas</li>
+              <li>Delete key to remove selected images (not while typing)</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};

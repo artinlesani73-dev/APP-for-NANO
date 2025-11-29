@@ -6,6 +6,7 @@ import { ParametersPanel } from './components/ParametersPanel';
 import { ResultPanel } from './components/ResultPanel';
 import { HistoryPanel, HistoryGalleryItem } from './components/HistoryPanel';
 import GraphView from './components/GraphView';
+import { MixboardView } from './components/MixboardView';
 import { SettingsModal } from './components/SettingsModal';
 import { ImageEditModal } from './components/ImageEditModal';
 import { LoginForm } from './components/LoginForm';
@@ -16,8 +17,9 @@ import { StorageService } from './services/newStorageService';
 import { GeminiService } from './services/geminiService';
 import { LoggerService } from './services/logger';
 import { AdminService } from './services/adminService';
-import { Session, SessionGeneration, GenerationConfig, UploadedImagePayload } from './types';
-import { Zap, Database, Key, ExternalLink, History, ShieldCheck, Network } from 'lucide-react';
+import { MigrationService } from './services/migrationService';
+import { Session, SessionGeneration, GenerationConfig, UploadedImagePayload, MixboardSession } from './types';
+import { Zap, Database, Key, ExternalLink, History, ShieldCheck, Network, Sparkles } from 'lucide-react';
 
 const DEFAULT_CONFIG: GenerationConfig = {
   temperature: 0.7,
@@ -53,6 +55,11 @@ function AppContent() {
 
   // API Key State
   const [apiKeyConnected, setApiKeyConnected] = useState(false);
+
+  // Mixboard State
+  const [mixboardSessions, setMixboardSessions] = useState<MixboardSession[]>([]);
+  const [currentMixboardSessionId, setCurrentMixboardSessionId] = useState<string | null>(null);
+  const mixboardSession = mixboardSessions.find(s => s.session_id === currentMixboardSessionId) || null;
 
   // Settings & Theme State
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
@@ -238,6 +245,62 @@ function AppContent() {
     };
   }, [currentUser]);
 
+  // Check for migration needs and prompt user
+  useEffect(() => {
+    if (!currentUser) return;
+
+    const checkMigration = async () => {
+      if (MigrationService.needsMigration()) {
+        const confirmed = window.confirm(
+          'Your sessions need to be migrated to the new Mixboard format.\n\n' +
+          'This will:\n' +
+          '• Combine control and reference images into a single unified input format\n' +
+          '• Preserve all your existing generations and data\n' +
+          '• Enable new Mixboard features like canvas state preservation\n' +
+          '• Create a backup before migration\n\n' +
+          'Continue with migration?'
+        );
+
+        if (confirmed) {
+          try {
+            const result = MigrationService.migrateAllSessions();
+
+            if (result.failed > 0) {
+              console.error('Migration errors:', result.errors);
+              alert(
+                `Migration completed with some errors.\n\n` +
+                `✓ Migrated: ${result.migrated}\n` +
+                `✗ Failed: ${result.failed}\n` +
+                `○ Skipped (already migrated): ${result.skipped}\n\n` +
+                `Check console for details. The page will reload now.`
+              );
+            } else {
+              alert(
+                `Migration successful!\n\n` +
+                `✓ Migrated: ${result.migrated} session(s)\n` +
+                `○ Skipped: ${result.skipped} (already in new format)\n\n` +
+                `The page will reload now.`
+              );
+            }
+
+            // Reload to pick up migrated sessions
+            window.location.reload();
+          } catch (error) {
+            console.error('Migration failed:', error);
+            alert(
+              `Migration failed: ${(error as Error).message}\n\n` +
+              `Your data has not been modified. Please contact support.`
+            );
+          }
+        }
+      }
+    };
+
+    // Run migration check after a short delay to let sessions load
+    const timer = setTimeout(checkMigration, 500);
+    return () => clearTimeout(timer);
+  }, [currentUser, sessions]);
+
   // --- HANDLERS ---
   const handleLogin = (user: { displayName: string; id: string }, persist = true) => {
     // First, let UserContext process the user and get/create the persistent ID
@@ -288,6 +351,78 @@ function AppContent() {
       document.documentElement.classList.remove('dark');
     }
   };
+
+  // --- MIXBOARD HANDLERS ---
+  const handleMixboardSessionUpdate = (session: MixboardSession) => {
+    // Update the session in the array
+    setMixboardSessions(prev =>
+      prev.map(s => s.session_id === session.session_id ? session : s)
+    );
+  };
+
+  const handleCreateMixboardSession = (): MixboardSession => {
+    const newSession: MixboardSession = {
+      session_id: `mixboard-${Date.now()}`,
+      title: `Mixboard ${new Date().toLocaleString()}`,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+      generations: [],
+      canvas_images: [],
+      user: currentUser || undefined
+    };
+
+    StorageService.saveSession(newSession as any);
+    setMixboardSessions(prev => [...prev, newSession]);
+    setCurrentMixboardSessionId(newSession.session_id);
+
+    LoggerService.logAction('Created Mixboard session', {
+      sessionId: newSession.session_id,
+      user: currentUser?.displayName
+    });
+
+    return newSession;
+  };
+
+  const handleSelectMixboardSession = (sessionId: string) => {
+    setCurrentMixboardSessionId(sessionId);
+    console.log('[App] Switched to Mixboard session:', sessionId);
+  };
+
+  const loadMixboardSessions = () => {
+    const allSessions = StorageService.getSessions();
+
+    // Filter for Mixboard sessions (those with canvas_images property)
+    const mixboardSessions = allSessions.filter(s =>
+      'canvas_images' in s
+    ) as MixboardSession[];
+
+    // Filter by current user
+    const userMixboardSessions = currentUser
+      ? mixboardSessions.filter(s => s.user?.id === currentUser.id)
+      : [];
+
+    setMixboardSessions(userMixboardSessions);
+    console.log('[App] Loaded Mixboard sessions:', userMixboardSessions.length);
+
+    // Set current session to the most recent one
+    if (userMixboardSessions.length > 0 && !currentMixboardSessionId) {
+      setCurrentMixboardSessionId(userMixboardSessions[0].session_id);
+    }
+  };
+
+  // Load Mixboard sessions when user changes
+  useEffect(() => {
+    if (currentUser) {
+      loadMixboardSessions();
+    }
+  }, [currentUser]);
+
+  // Create a session if none exist
+  useEffect(() => {
+    if (currentUser && mixboardSessions.length === 0 && !showGraphView && !showHistory) {
+      handleCreateMixboardSession();
+    }
+  }, [currentUser, mixboardSessions.length, showGraphView, showHistory]);
 
   const grantAdminAccess = () => {
     setIsAdminAuthorized(true);
@@ -712,7 +847,7 @@ function AppContent() {
             </div>
 
             <div className="flex items-center gap-4" style={{ WebkitAppRegion: 'no-drag' } as any}>
-                {/* Generation View (Main View) */}
+                {/* Mixboard (Main View) */}
                 <button
                   onClick={() => {
                     setShowGraphView(false);
@@ -720,12 +855,12 @@ function AppContent() {
                   }}
                   className={`flex items-center gap-2 text-xs px-3 py-1.5 rounded border transition-colors font-medium ${
                     !showGraphView && !showHistory
-                      ? 'bg-green-50 dark:bg-green-950/30 border-green-300 dark:border-green-900 text-green-700 dark:text-green-400'
+                      ? 'bg-orange-50 dark:bg-orange-950/30 border-orange-300 dark:border-orange-900 text-orange-700 dark:text-orange-400'
                       : 'bg-white dark:bg-zinc-800/50 border-zinc-300 dark:border-zinc-700 text-zinc-700 dark:text-zinc-400 hover:bg-zinc-50 dark:hover:bg-zinc-800'
                   }`}
                 >
-                  <Zap size={12} />
-                  Generation View
+                  <Sparkles size={12} />
+                  Mixboard
                 </button>
 
                 {/* Graph View Toggle */}
@@ -806,27 +941,13 @@ function AppContent() {
         </header>
 
         {/* Content Area */}
-          <div className={`flex-1 ${showGraphView ? 'overflow-hidden' : 'overflow-y-auto'} ${showGraphView ? '' : 'p-6'} bg-zinc-50 dark:bg-black/50`}>
+          <div className={`flex-1 ${showGraphView || showHistory ? 'overflow-y-auto p-6' : 'overflow-hidden'} bg-zinc-50 dark:bg-black/50`}>
             {showGraphView ? (
               <div className="h-full w-full">
                 <GraphView
                   sessions={sessions}
                   theme={theme}
                   loadImage={(role, id, filename) => StorageService.loadImage(role, id, filename)}
-                  onGenerateFromNode={async (prompt, config, controlImages, referenceImages) => {
-                    // Handle generation from graph node
-                    setPrompt(prompt);
-                    setConfig(config);
-                    if (controlImages) {
-                      setControlImagesData(controlImages.map(data => ({ data })));
-                    }
-                    if (referenceImages) {
-                      setReferenceImagesData(referenceImages.map(data => ({ data })));
-                    }
-                    // Switch to main view and trigger generation
-                    setShowGraphView(false);
-                    await handleGenerate();
-                  }}
                 />
               </div>
             ) : showHistory ? (
@@ -840,96 +961,16 @@ function AppContent() {
                 />
               </div>
             ) : (
-              <div className="max-w-6xl mx-auto grid grid-cols-12 gap-6">
-
-                {/* Left Column: Inputs (8/12) */}
-                <div className="col-span-12 lg:col-span-8 space-y-6">
-
-                    {/* Prompt */}
-                    <PromptPanel prompt={prompt} setPrompt={setPrompt} />
-
-                    {/* Image Controls Grid */}
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        <MultiImageUploadPanel
-                            title="Control Images"
-                            description="For structure/composition"
-                            images={controlImagesData.map(img => img.data)}
-                            onUpload={(f) => handleImageUpload(f, 'control')}
-                            onRemove={(idx) => handleImageRemove(idx, 'control')}
-                            onEdit={handleEditControlImage}
-                            onCreateBlank={handleCreateBlankControlImage}
-                            onGalleryDrop={(payload) => handleGalleryImageDrop(payload, 'control')}
-                            maxImages={5}
-                        />
-                        <MultiImageUploadPanel
-                            title="Reference Images"
-                            description="For style transfer"
-                            images={referenceImagesData.map(img => img.data)}
-                            onUpload={(f) => handleImageUpload(f, 'reference')}
-                            onRemove={(idx) => handleImageRemove(idx, 'reference')}
-                            onGalleryDrop={(payload) => handleGalleryImageDrop(payload, 'reference')}
-                            maxImages={5}
-                        />
-                    </div>
-
-                    {/* Output Area */}
-                    <div className="h-[500px]">
-                        <ResultPanel
-                            isGenerating={isGenerating}
-                            generation={currentGeneration}
-                            outputImages={(currentGeneration
-                              ? currentGeneration.output_images || (currentGeneration.output_image ? [currentGeneration.output_image] : [])
-                              : []
-                            )
-                              .map((meta, idx) => ({ dataUri: outputImagesData[idx], filename: meta.filename }))
-                              .filter(img => !!img.dataUri)}
-                            outputTexts={outputTexts}
-                        />
-                    </div>
-                </div>
-
-                {/* Right Column: Parameters (4/12) */}
-                <div className="col-span-12 lg:col-span-4 space-y-6">
-                    <ParametersPanel config={config} setConfig={setConfig} />
-
-                    <button
-                        onClick={handleGenerate}
-                        disabled={isGenerating || !prompt}
-                        className={`w-full py-4 rounded-lg font-bold text-lg flex items-center justify-center gap-2 transition-all shadow-lg
-                        ${isGenerating || !prompt
-                            ? 'bg-zinc-200 dark:bg-zinc-800 text-zinc-400 dark:text-zinc-500 cursor-not-allowed shadow-none'
-                            : 'bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white shadow-blue-500/20 dark:shadow-blue-900/20'
-                        }`}
-                    >
-                        {isGenerating ? (
-                            "Processing..."
-                        ) : (
-                            <>
-                                <Zap size={20} fill="currentColor" />
-                                Generate
-                            </>
-                        )}
-                    </button>
-
-                    {/* Meta Info */}
-                    {currentGeneration && (
-                        <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-lg p-4 text-xs space-y-2 text-zinc-500 font-mono transition-colors shadow-sm">
-                            <div className="flex justify-between">
-                                <span>ID:</span>
-                                <span className="text-zinc-700 dark:text-zinc-400">{currentGeneration.generation_id.slice(0,8)}...</span>
-                            </div>
-                            <div className="flex justify-between">
-                                <span>Status:</span>
-                                <span className="text-zinc-700 dark:text-zinc-400">{currentGeneration.status}</span>
-                            </div>
-                            <div className="flex justify-between">
-                                <span>Time:</span>
-                                <span className="text-zinc-700 dark:text-zinc-400">{currentGeneration.generation_time_ms || 0}ms</span>
-                            </div>
-                        </div>
-                    )}
-                </div>
-
+              <div className="h-full w-full">
+                <MixboardView
+                  theme={theme}
+                  currentSession={mixboardSession}
+                  allSessions={mixboardSessions}
+                  onSessionUpdate={handleMixboardSessionUpdate}
+                  onSelectSession={handleSelectMixboardSession}
+                  onCreateSession={handleCreateMixboardSession}
+                  currentUser={currentUser}
+                />
               </div>
             )}
           </div>
