@@ -1,23 +1,15 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Sparkles, Image as ImageIcon, Type, Trash2, ZoomIn, ZoomOut, Move } from 'lucide-react';
 import { GeminiService } from '../services/geminiService';
-import { GenerationConfig } from '../types';
-
-interface CanvasImage {
-  id: string;
-  dataUri: string;
-  x: number;
-  y: number;
-  width: number;
-  height: number;
-  selected: boolean;
-  originalWidth: number;
-  originalHeight: number;
-}
+import { StorageService } from '../services/newStorageService';
+import { GenerationConfig, CanvasImage, MixboardSession, MixboardGeneration, StoredImageMeta } from '../types';
 
 interface MixboardViewProps {
   theme: 'dark' | 'light';
-  onImageGenerated?: (imageDataUri: string) => void;
+  currentSession: MixboardSession | null;
+  onSessionUpdate: (session: MixboardSession) => void;
+  onCreateSession?: () => MixboardSession;
+  currentUser?: { id: string; displayName: string } | null;
 }
 
 const DEFAULT_CONFIG: GenerationConfig = {
@@ -29,7 +21,13 @@ const DEFAULT_CONFIG: GenerationConfig = {
   model: 'gemini-2.5-flash-image'
 };
 
-export const MixboardView: React.FC<MixboardViewProps> = ({ theme, onImageGenerated }) => {
+export const MixboardView: React.FC<MixboardViewProps> = ({
+  theme,
+  currentSession,
+  onSessionUpdate,
+  onCreateSession,
+  currentUser
+}) => {
   const [canvasImages, setCanvasImages] = useState<CanvasImage[]>([]);
   const [prompt, setPrompt] = useState('');
   const [config, setConfig] = useState<GenerationConfig>(DEFAULT_CONFIG);
@@ -43,37 +41,109 @@ export const MixboardView: React.FC<MixboardViewProps> = ({ theme, onImageGenera
   const [selectionBox, setSelectionBox] = useState<{ startX: number; startY: number; endX: number; endY: number } | null>(null);
   const [isPanning, setIsPanning] = useState(false);
   const [showImageInput, setShowImageInput] = useState(false);
+  const [currentGeneration, setCurrentGeneration] = useState<MixboardGeneration | null>(null);
 
   const canvasRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // Handle image generation
+  // Load canvas from session when session changes
+  useEffect(() => {
+    if (currentSession && currentSession.canvas_images) {
+      setCanvasImages(currentSession.canvas_images);
+    }
+  }, [currentSession?.session_id]);
+
+  // Handle image generation with full history tracking
   const handleGenerate = async () => {
     if (!prompt && canvasImages.filter(img => img.selected).length === 0) return;
+    if (!currentSession) {
+      alert('No active session. Please create or select a session first.');
+      return;
+    }
 
     setIsGenerating(true);
 
+    const generationId = `gen-${Date.now()}`;
+    const selectedImages = canvasImages.filter(img => img.selected);
+    const startTime = Date.now();
+
     try {
-      const selectedImages = canvasImages.filter(img => img.selected);
+      // Create generation record BEFORE API call
+      const newGeneration: MixboardGeneration = {
+        generation_id: generationId,
+        timestamp: new Date().toISOString(),
+        status: 'pending',
+        prompt: prompt || 'Continue the creative exploration',
+        input_images: [],  // Will populate after saving
+        output_images: [],
+        parameters: config,
+        canvas_state: {
+          images: canvasImages,
+          zoom,
+          panOffset
+        },
+        parent_generation_ids: selectedImages
+          .map(img => img.generationId)
+          .filter(Boolean) as string[]
+      };
+
+      setCurrentGeneration(newGeneration);
+
+      // Prepare reference images for API call
       const referenceImages = selectedImages.length > 0
         ? selectedImages.map(img => img.dataUri)
         : undefined;
 
+      // Call API
       const output = await GeminiService.generateImage(
-        prompt || 'Continue the creative exploration',
+        newGeneration.prompt,
         config,
-        undefined,
+        undefined,  // No control images in Mixboard
         referenceImages,
-        'Mixboard User'
+        currentUser?.displayName || 'Mixboard User'
       );
 
       if (output.images && output.images.length > 0) {
         const imageDataUri = `data:image/png;base64,${output.images[0]}`;
 
+        // Save input images to storage
+        const inputImageMetas: StoredImageMeta[] = [];
+        for (const selectedImg of selectedImages) {
+          if (selectedImg.imageMetaId) {
+            // Image already saved, find its metadata
+            const meta = {
+              id: selectedImg.imageMetaId,
+              filename: `input_${selectedImg.imageMetaId}.png`,
+              size_bytes: selectedImg.dataUri.length
+            };
+            inputImageMetas.push(meta);
+          } else {
+            // Save new image
+            const meta = StorageService.saveImage(selectedImg.dataUri, 'reference');
+            inputImageMetas.push(meta);
+          }
+        }
+
+        // Save output image to storage
+        const outputImageMeta = StorageService.saveImage(imageDataUri, 'output');
+
+        // Calculate duration
+        const duration = Date.now() - startTime;
+
+        // Complete generation record
+        const completedGeneration: MixboardGeneration = {
+          ...newGeneration,
+          status: 'completed',
+          input_images: inputImageMetas,
+          output_images: [outputImageMeta],
+          output_texts: output.texts,
+          generation_time_ms: duration
+        };
+
         // Add generated image to canvas
         const img = new Image();
         img.onload = () => {
-          const newImage: CanvasImage = {
+          const newCanvasImage: CanvasImage = {
             id: `img-${Date.now()}`,
             dataUri: imageDataUri,
             x: 100 + (canvasImages.length * 50),
@@ -82,18 +152,62 @@ export const MixboardView: React.FC<MixboardViewProps> = ({ theme, onImageGenera
             height: (300 * img.height) / img.width,
             selected: false,
             originalWidth: img.width,
-            originalHeight: img.height
+            originalHeight: img.height,
+            generationId: generationId,
+            imageMetaId: outputImageMeta.id
           };
-          setCanvasImages(prev => [...prev, newImage]);
 
-          if (onImageGenerated) {
-            onImageGenerated(imageDataUri);
-          }
+          const updatedCanvasImages = [...canvasImages, newCanvasImage];
+          setCanvasImages(updatedCanvasImages);
+
+          // Update session with new generation and canvas state
+          const updatedSession: MixboardSession = {
+            ...currentSession,
+            generations: [...currentSession.generations, completedGeneration],
+            canvas_images: updatedCanvasImages,
+            updated_at: new Date().toISOString()
+          };
+
+          // Persist session
+          StorageService.saveSession(updatedSession as any);
+          onSessionUpdate(updatedSession);
+
+          setCurrentGeneration(completedGeneration);
         };
         img.src = imageDataUri;
       }
     } catch (error) {
       console.error('Generation failed:', error);
+
+      // Mark generation as failed
+      const failedGeneration: MixboardGeneration = {
+        generation_id: generationId,
+        timestamp: new Date().toISOString(),
+        status: 'failed',
+        prompt: prompt || 'Continue the creative exploration',
+        input_images: [],
+        output_images: [],
+        parameters: config,
+        error_message: (error as Error).message,
+        generation_time_ms: Date.now() - startTime,
+        canvas_state: {
+          images: canvasImages,
+          zoom,
+          panOffset
+        }
+      };
+
+      // Update session with failed generation
+      const updatedSession: MixboardSession = {
+        ...currentSession,
+        generations: [...currentSession.generations, failedGeneration],
+        updated_at: new Date().toISOString()
+      };
+
+      StorageService.saveSession(updatedSession as any);
+      onSessionUpdate(updatedSession);
+
+      setCurrentGeneration(failedGeneration);
       alert('Generation failed: ' + (error as Error).message);
     } finally {
       setIsGenerating(false);

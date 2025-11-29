@@ -17,7 +17,7 @@ import { StorageService } from './services/newStorageService';
 import { GeminiService } from './services/geminiService';
 import { LoggerService } from './services/logger';
 import { AdminService } from './services/adminService';
-import { Session, SessionGeneration, GenerationConfig, UploadedImagePayload } from './types';
+import { Session, SessionGeneration, GenerationConfig, UploadedImagePayload, MixboardSession } from './types';
 import { Zap, Database, Key, ExternalLink, History, ShieldCheck, Network, Sparkles } from 'lucide-react';
 
 const DEFAULT_CONFIG: GenerationConfig = {
@@ -54,6 +54,9 @@ function AppContent() {
 
   // API Key State
   const [apiKeyConnected, setApiKeyConnected] = useState(false);
+
+  // Mixboard State
+  const [mixboardSession, setMixboardSession] = useState<MixboardSession | null>(null);
 
   // Settings & Theme State
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
@@ -290,6 +293,40 @@ function AppContent() {
       document.documentElement.classList.remove('dark');
     }
   };
+
+  // --- MIXBOARD HANDLERS ---
+  const handleMixboardSessionUpdate = (session: MixboardSession) => {
+    setMixboardSession(session);
+  };
+
+  const handleCreateMixboardSession = (): MixboardSession => {
+    const newSession: MixboardSession = {
+      session_id: `mixboard-${Date.now()}`,
+      title: 'Mixboard Session',
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+      generations: [],
+      canvas_images: [],
+      user: currentUser || undefined
+    };
+
+    StorageService.saveSession(newSession as any);
+    setMixboardSession(newSession);
+
+    LoggerService.logAction('Created Mixboard session', {
+      sessionId: newSession.session_id,
+      user: currentUser?.displayName
+    });
+
+    return newSession;
+  };
+
+  // Initialize Mixboard session when switching to Mixboard view
+  useEffect(() => {
+    if (showMixboard && !mixboardSession && currentUser) {
+      handleCreateMixboardSession();
+    }
+  }, [showMixboard, currentUser]);
 
   const grantAdminAccess = () => {
     setIsAdminAuthorized(true);
@@ -832,7 +869,13 @@ function AppContent() {
           <div className={`flex-1 ${showGraphView || showMixboard ? 'overflow-hidden' : 'overflow-y-auto'} ${showGraphView || showMixboard ? '' : 'p-6'} bg-zinc-50 dark:bg-black/50`}>
             {showMixboard ? (
               <div className="h-full w-full">
-                <MixboardView theme={theme} />
+                <MixboardView
+                  theme={theme}
+                  currentSession={mixboardSession}
+                  onSessionUpdate={handleMixboardSessionUpdate}
+                  onCreateSession={handleCreateMixboardSession}
+                  currentUser={currentUser}
+                />
               </div>
             ) : showGraphView ? (
               <div className="h-full w-full">
