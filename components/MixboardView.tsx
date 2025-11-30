@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { Sparkles, Image as ImageIcon, Type, Trash2, ZoomIn, ZoomOut, Move, Download, Edit2, Check, X } from 'lucide-react';
+import { Sparkles, Image as ImageIcon, Type, Trash2, ZoomIn, ZoomOut, Move, Download, Edit2, Check, X, LayoutTemplate, Bold, Italic } from 'lucide-react';
 import { GeminiService } from '../services/geminiService';
 import { StorageService } from '../services/newStorageService';
 import { GenerationConfig, CanvasImage, MixboardSession, MixboardGeneration, StoredImageMeta } from '../types';
@@ -48,6 +48,8 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
   const [currentGeneration, setCurrentGeneration] = useState<MixboardGeneration | null>(null);
   const [editingSessionId, setEditingSessionId] = useState<string | null>(null);
   const [editingSessionTitle, setEditingSessionTitle] = useState('');
+  const [textToolbar, setTextToolbar] = useState<{ targetId: string | null; x: number; y: number }>({ targetId: null, x: 0, y: 0 });
+  const [draftFontSize, setDraftFontSize] = useState(16);
   const [contextMenu, setContextMenu] = useState({
     visible: false,
     x: 0,
@@ -58,6 +60,7 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
 
   const canvasRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const textToolbarRef = useRef<HTMLDivElement>(null);
 
   const closeContextMenu = useCallback(() => {
     setContextMenu({
@@ -93,6 +96,7 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
     const handleEscape = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
         closeContextMenu();
+        setTextToolbar({ targetId: null, x: 0, y: 0 });
       }
     };
 
@@ -104,6 +108,17 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
       window.removeEventListener('keydown', handleEscape);
     };
   }, [closeContextMenu]);
+
+  useEffect(() => {
+    const handleOutsideClick = (event: MouseEvent) => {
+      if (textToolbar.targetId && textToolbarRef.current && !textToolbarRef.current.contains(event.target as Node)) {
+        setTextToolbar({ targetId: null, x: 0, y: 0 });
+      }
+    };
+
+    window.addEventListener('mousedown', handleOutsideClick);
+    return () => window.removeEventListener('mousedown', handleOutsideClick);
+  }, [textToolbar.targetId]);
 
   // Helper function to save current canvas state to session
   const saveCanvasToSession = (images: CanvasImage[]) => {
@@ -133,7 +148,7 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
     setIsGenerating(true);
 
     const generationId = `gen-${Date.now()}`;
-    const selectedImages = canvasImages.filter(img => img.selected && img.type !== 'text');
+    const selectedImages = canvasImages.filter(img => img.selected && (!img.type || img.type === 'image'));
     const prepareSelectedImages = () => {
       const inputImageMetas: StoredImageMeta[] = [];
       const referenceImageData: string[] = [];
@@ -283,6 +298,9 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
             type: 'text',
             text: output.text,
             fontSize: fontSize,
+            fontWeight: 'normal',
+            fontStyle: 'normal',
+            fontFamily: 'Inter, system-ui, sans-serif',
             x: 100 + (canvasImages.length * 50),
             y: 100 + (canvasImages.length * 50),
             width: textWidth,
@@ -366,6 +384,9 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
         type: 'text',
         text: trimmed,
         fontSize: fontSize,
+        fontWeight: 'normal',
+        fontStyle: 'normal',
+        fontFamily: 'Inter, system-ui, sans-serif',
         x: baseX,
         y: baseY,
         width: textWidth,
@@ -376,6 +397,14 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
       };
 
       const updated = [...prev, newCanvasText];
+      saveCanvasToSession(updated);
+      return updated;
+    });
+  };
+
+  const updateTextEntity = (id: string, updates: Partial<CanvasImage>) => {
+    setCanvasImages(prev => {
+      const updated = prev.map(img => img.id === id ? { ...img, ...updates } : img);
       saveCanvasToSession(updated);
       return updated;
     });
@@ -482,6 +511,47 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
     }
   };
 
+  const handleAddWhiteboardFromContext = (e?: React.MouseEvent) => {
+    e?.stopPropagation();
+    const { canvasX, canvasY } = contextMenu;
+    closeContextMenu();
+
+    const boardWidth = 640;
+    const boardHeight = 420;
+
+    setCanvasImages(prev => {
+      const newBoard: CanvasImage = {
+        id: `board-${Date.now()}`,
+        type: 'board',
+        backgroundColor: '#ffffff',
+        x: canvasX,
+        y: canvasY,
+        width: boardWidth,
+        height: boardHeight,
+        selected: false,
+        originalWidth: boardWidth,
+        originalHeight: boardHeight
+      };
+
+      const updated = [...prev, newBoard];
+      saveCanvasToSession(updated);
+      return updated;
+    });
+  };
+
+  const handleTextDoubleClick = (e: React.MouseEvent, image: CanvasImage) => {
+    e.stopPropagation();
+    const canvasRect = canvasRef.current?.getBoundingClientRect();
+    if (!canvasRect) return;
+
+    setDraftFontSize(image.fontSize || 16);
+    setTextToolbar({
+      targetId: image.id,
+      x: e.clientX - canvasRect.left + 10,
+      y: e.clientY - canvasRect.top - 10
+    });
+  };
+
   // Handle image selection and dragging
   const handleImageMouseDown = (e: React.MouseEvent, imageId: string) => {
     e.stopPropagation();
@@ -530,6 +600,7 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
 
   const handleCanvasMouseDown = (e: React.MouseEvent) => {
     closeContextMenu();
+    setTextToolbar({ targetId: null, x: 0, y: 0 });
     if (e.target === canvasRef.current || (e.target as HTMLElement).classList.contains('canvas-background')) {
       // Start panning with middle mouse or space+left click
       if (e.button === 1 || (e.button === 0 && e.shiftKey)) {
@@ -920,17 +991,30 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
                 transformOrigin: 'top left'
               }}
               onMouseDown={(e) => handleImageMouseDown(e, image.id)}
+              onDoubleClick={(e) => {
+                if (image.type === 'text') {
+                  handleTextDoubleClick(e, image);
+                }
+              }}
             >
               {image.type === 'text' ? (
                 <div
                   className="w-full h-full p-3 bg-white dark:bg-zinc-900 text-zinc-900 dark:text-zinc-100 overflow-auto pointer-events-none"
                   style={{
                     fontSize: `${(image.fontSize || 16) * zoom}px`,
-                    lineHeight: '1.5'
+                    lineHeight: '1.5',
+                    fontWeight: image.fontWeight || 'normal',
+                    fontStyle: image.fontStyle || 'normal',
+                    fontFamily: image.fontFamily || 'Inter, system-ui, sans-serif'
                   }}
                 >
                   {image.text}
                 </div>
+              ) : image.type === 'board' ? (
+                <div
+                  className="w-full h-full border border-dashed border-zinc-300 dark:border-zinc-700 bg-white/90 dark:bg-zinc-900/80 pointer-events-none"
+                  style={{ backgroundColor: image.backgroundColor || '#ffffff' }}
+                />
               ) : (
                 <img
                   src={image.dataUri}
@@ -993,6 +1077,65 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
             </div>
           )}
 
+          {textToolbar.targetId && (() => {
+            const textTarget = canvasImages.find(img => img.id === textToolbar.targetId && img.type === 'text');
+            if (!textTarget) return null;
+
+            return (
+              <div
+                ref={textToolbarRef}
+                className="absolute z-50 w-72 p-3 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 rounded shadow-lg space-y-2"
+                style={{ left: textToolbar.x, top: textToolbar.y }}
+                onMouseDown={(e) => e.stopPropagation()}
+              >
+                <div className="flex items-center justify-between gap-2">
+                  <label className="text-xs text-zinc-500 dark:text-zinc-400">Font size</label>
+                  <input
+                    type="number"
+                    min={10}
+                    max={72}
+                    value={draftFontSize}
+                    onChange={(e) => {
+                      const value = Number(e.target.value) || 10;
+                      setDraftFontSize(value);
+                      updateTextEntity(textTarget.id, { fontSize: value });
+                    }}
+                    className="w-20 px-2 py-1 text-xs bg-white dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-700 rounded focus:outline-none focus:border-orange-500"
+                  />
+                  <div className="flex items-center gap-1">
+                    <button
+                      onClick={() => updateTextEntity(textTarget.id, { fontWeight: textTarget.fontWeight === 'bold' ? 'normal' : 'bold' })}
+                      className={`p-1 rounded border ${textTarget.fontWeight === 'bold' ? 'bg-orange-100 dark:bg-orange-900/40 border-orange-300 dark:border-orange-800 text-orange-700 dark:text-orange-300' : 'border-zinc-300 dark:border-zinc-700 text-zinc-600 dark:text-zinc-300'}`}
+                      aria-label="Toggle bold"
+                    >
+                      <Bold size={14} />
+                    </button>
+                    <button
+                      onClick={() => updateTextEntity(textTarget.id, { fontStyle: textTarget.fontStyle === 'italic' ? 'normal' : 'italic' })}
+                      className={`p-1 rounded border ${textTarget.fontStyle === 'italic' ? 'bg-orange-100 dark:bg-orange-900/40 border-orange-300 dark:border-orange-800 text-orange-700 dark:text-orange-300' : 'border-zinc-300 dark:border-zinc-700 text-zinc-600 dark:text-zinc-300'}`}
+                      aria-label="Toggle italic"
+                    >
+                      <Italic size={14} />
+                    </button>
+                  </div>
+                </div>
+                <textarea
+                  value={textTarget.text || ''}
+                  onChange={(e) => updateTextEntity(textTarget.id, { text: e.target.value })}
+                  className="w-full h-24 text-sm px-2 py-1 bg-white dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-700 rounded focus:outline-none focus:border-orange-500 text-zinc-800 dark:text-zinc-100"
+                />
+                <div className="flex justify-end">
+                  <button
+                    onClick={() => setTextToolbar({ targetId: null, x: 0, y: 0 })}
+                    className="px-2 py-1 text-xs bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 rounded border border-zinc-300 dark:border-zinc-700 hover:bg-zinc-200 dark:hover:bg-zinc-700"
+                  >
+                    Close
+                  </button>
+                </div>
+              </div>
+            );
+          })()}
+
           {contextMenu.visible && (
             <div
               className="fixed z-50 w-48 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 rounded shadow-lg overflow-hidden"
@@ -1014,6 +1157,13 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
               >
                 <Type size={16} />
                 Add text
+              </button>
+              <button
+                onClick={handleAddWhiteboardFromContext}
+                className="w-full flex items-center gap-2 px-3 py-2 text-sm text-zinc-800 dark:text-zinc-100 hover:bg-zinc-100 dark:hover:bg-zinc-800"
+              >
+                <LayoutTemplate size={16} />
+                Add whiteboard
               </button>
             </div>
           )}
