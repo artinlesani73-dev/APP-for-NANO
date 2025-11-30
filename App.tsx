@@ -1,16 +1,11 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { lazy, Suspense, useState, useEffect, useMemo } from 'react';
 import { PromptPanel } from './components/PromptPanel';
 import { MultiImageUploadPanel } from './components/MultiImageUploadPanel';
 import { ParametersPanel } from './components/ParametersPanel';
 import { ResultPanel } from './components/ResultPanel';
-import { HistoryPanel, HistoryGalleryItem } from './components/HistoryPanel';
-import GraphView from './components/GraphView';
-import { MixboardView } from './components/MixboardView';
-import { SettingsModal } from './components/SettingsModal';
-import { ImageEditModal } from './components/ImageEditModal';
+import type { HistoryGalleryItem } from './components/HistoryPanel';
 import { LoginForm } from './components/LoginForm';
 import { UserProvider, useUser } from './components/UserContext';
-import { AdminDashboard } from './components/AdminDashboard';
 import { StorageService } from './services/newStorageService';
 import { GeminiService } from './services/geminiService';
 import { LoggerService } from './services/logger';
@@ -18,6 +13,13 @@ import { AdminService } from './services/adminService';
 import { MigrationService } from './services/migrationService';
 import { Session, SessionGeneration, GenerationConfig, UploadedImagePayload, MixboardSession } from './types';
 import { Zap, Database, Key, ExternalLink, History, Network, Sparkles, Settings } from 'lucide-react';
+
+const HistoryPanel = lazy(() => import('./components/HistoryPanel').then(module => ({ default: module.HistoryPanel })));
+const GraphView = lazy(() => import('./components/GraphView'));
+const MixboardView = lazy(() => import('./components/MixboardView').then(module => ({ default: module.MixboardView })));
+const SettingsModal = lazy(() => import('./components/SettingsModal').then(module => ({ default: module.SettingsModal })));
+const ImageEditModal = lazy(() => import('./components/ImageEditModal').then(module => ({ default: module.ImageEditModal })));
+const AdminDashboard = lazy(() => import('./components/AdminDashboard').then(module => ({ default: module.AdminDashboard })));
 
 const DEFAULT_CONFIG: GenerationConfig = {
   temperature: 0.7,
@@ -862,61 +864,69 @@ function AppContent() {
 
         {/* Content Area */}
           <div className={`flex-1 ${showGraphView || showHistory ? 'overflow-y-auto p-6' : 'overflow-hidden'} bg-zinc-50 dark:bg-black/50`}>
-            {showGraphView ? (
-              <div className="h-full w-full">
-                <GraphView
-                  sessions={sessions}
-                  theme={theme}
-                  loadImage={(role, id, filename) => StorageService.loadImage(role, id, filename)}
-                />
-              </div>
-            ) : showHistory ? (
-              <div className="max-w-7xl mx-auto h-full min-h-[calc(100vh-6rem)]">
-                <HistoryPanel
-                  items={historyItems}
-                  onSelectGeneration={handleSelectGeneration}
-                  selectedGenerationId={currentGeneration?.generation_id}
-                  onExportImage={handleExportImage}
-                  loadImage={(role, id, filename) => StorageService.loadImage(role, id, filename)}
-                />
-              </div>
-            ) : (
-              <div className="h-full w-full">
-                <MixboardView
-                  theme={theme}
-                  currentSession={mixboardSession}
-                  allSessions={mixboardSessions}
-                  onSessionUpdate={handleMixboardSessionUpdate}
-                  onSelectSession={handleSelectMixboardSession}
-                  onCreateSession={handleCreateMixboardSession}
-                  currentUser={currentUser}
-                />
-              </div>
-            )}
+            <Suspense fallback={<div className="flex h-full items-center justify-center text-sm text-zinc-500">Loading workspace...</div>}>
+              {showGraphView ? (
+                <div className="h-full w-full">
+                  <GraphView
+                    sessions={sessions}
+                    theme={theme}
+                    loadImage={(role, id, filename) => StorageService.loadImage(role, id, filename)}
+                  />
+                </div>
+              ) : showHistory ? (
+                <div className="max-w-7xl mx-auto h-full min-h-[calc(100vh-6rem)]">
+                  <HistoryPanel
+                    items={historyItems}
+                    onSelectGeneration={handleSelectGeneration}
+                    selectedGenerationId={currentGeneration?.generation_id}
+                    onExportImage={handleExportImage}
+                    loadImage={(role, id, filename) => StorageService.loadImage(role, id, filename)}
+                  />
+                </div>
+              ) : (
+                <div className="h-full w-full">
+                  <MixboardView
+                    theme={theme}
+                    currentSession={mixboardSession}
+                    allSessions={mixboardSessions}
+                    onSessionUpdate={handleMixboardSessionUpdate}
+                    onSelectSession={handleSelectMixboardSession}
+                    onCreateSession={handleCreateMixboardSession}
+                    currentUser={currentUser}
+                  />
+                </div>
+              )}
+            </Suspense>
           </div>
       </div>
 
-      <ImageEditModal
-        isOpen={editingControlIndex !== null}
-        image={editingControlImage}
-        onClose={() => setEditingControlIndex(null)}
-        onSave={handleSaveEditedControl}
-      />
+      <Suspense fallback={null}>
+        <ImageEditModal
+          isOpen={editingControlIndex !== null}
+          image={editingControlImage}
+          onClose={() => setEditingControlIndex(null)}
+          onSave={handleSaveEditedControl}
+        />
+      </Suspense>
 
-      <SettingsModal
-        isOpen={isSettingsOpen}
-        onClose={() => setIsSettingsOpen(false)}
-        theme={theme}
-        toggleTheme={toggleTheme}
-        onApiKeyUpdate={handleApiKeyUpdate}
-        onLogout={handleLogout}
-      />
-      <AdminDashboard
-        isOpen={isAdminDashboardOpen}
-        isAuthorized={isAdminAuthorized}
-        onAuthorize={handleAdminAuthorize}
-        onClose={() => setIsAdminDashboardOpen(false)}
-      />
+      <Suspense fallback={null}>
+        <SettingsModal
+          isOpen={isSettingsOpen}
+          onClose={() => setIsSettingsOpen(false)}
+          theme={theme}
+          toggleTheme={toggleTheme}
+          onApiKeyUpdate={handleApiKeyUpdate}
+          onLogout={handleLogout}
+        />
+      </Suspense>
+      <Suspense fallback={null}>
+        <AdminDashboard
+          isOpen={isAdminDashboardOpen}
+          isAuthorized={isAdminAuthorized}
+          onAuthorize={handleAdminAuthorize}
+          onClose={() => setIsAdminDashboardOpen(false)}
+        />
+      </Suspense>
     </div>
   );
 }
