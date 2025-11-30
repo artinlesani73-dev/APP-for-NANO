@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { Sparkles, Image as ImageIcon, Type, Trash2, ZoomIn, ZoomOut, Move, Download, Edit2, Check, X } from 'lucide-react';
 import { GeminiService } from '../services/geminiService';
 import { StorageService } from '../services/newStorageService';
@@ -48,9 +48,26 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
   const [currentGeneration, setCurrentGeneration] = useState<MixboardGeneration | null>(null);
   const [editingSessionId, setEditingSessionId] = useState<string | null>(null);
   const [editingSessionTitle, setEditingSessionTitle] = useState('');
+  const [contextMenu, setContextMenu] = useState({
+    visible: false,
+    x: 0,
+    y: 0,
+    canvasX: 0,
+    canvasY: 0
+  });
 
   const canvasRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const closeContextMenu = useCallback(() => {
+    setContextMenu({
+      visible: false,
+      x: 0,
+      y: 0,
+      canvasX: 0,
+      canvasY: 0
+    });
+  }, []);
 
   // Initialize session if needed
   useEffect(() => {
@@ -70,6 +87,23 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
       setCanvasImages([]);
     }
   }, [currentSession?.session_id]);
+
+  useEffect(() => {
+    const handleGlobalClick = () => closeContextMenu();
+    const handleEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        closeContextMenu();
+      }
+    };
+
+    window.addEventListener('click', handleGlobalClick);
+    window.addEventListener('keydown', handleEscape);
+
+    return () => {
+      window.removeEventListener('click', handleGlobalClick);
+      window.removeEventListener('keydown', handleEscape);
+    };
+  }, [closeContextMenu]);
 
   // Helper function to save current canvas state to session
   const saveCanvasToSession = (images: CanvasImage[]) => {
@@ -98,6 +132,31 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
 
     const generationId = `gen-${Date.now()}`;
     const selectedImages = canvasImages.filter(img => img.selected && img.type !== 'text');
+    const prepareSelectedImages = () => {
+      const inputImageMetas: StoredImageMeta[] = [];
+      const referenceImageData: string[] = [];
+
+      for (const selectedImg of selectedImages) {
+        if (!selectedImg.dataUri) continue;
+
+        referenceImageData.push(selectedImg.dataUri);
+
+        if (selectedImg.imageMetaId) {
+          inputImageMetas.push({
+            id: selectedImg.imageMetaId,
+            filename: `input_${selectedImg.imageMetaId}.png`,
+            size_bytes: selectedImg.dataUri.length
+          });
+        } else {
+          const meta = StorageService.saveImage(selectedImg.dataUri, 'reference');
+          inputImageMetas.push(meta);
+        }
+      }
+
+      return { inputImageMetas, referenceImageData };
+    };
+
+    const { inputImageMetas, referenceImageData } = prepareSelectedImages();
     const startTime = Date.now();
 
     try {
@@ -107,7 +166,7 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
         timestamp: new Date().toISOString(),
         status: 'pending',
         prompt: prompt || (showImageInput ? 'Continue the creative exploration' : 'Generate text'),
-        input_images: [],  // Will populate after saving
+        input_images: inputImageMetas,  // Save selected images even for text requests
         output_images: [],
         parameters: config,
         canvas_state: {
@@ -124,41 +183,17 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
 
       if (showImageInput) {
         // IMAGE MODE: Generate image
-        const referenceImages = selectedImages.length > 0
-          ? selectedImages.map(img => img.dataUri).filter(Boolean) as string[]
-          : undefined;
-
         // Call API for image generation
         const output = await GeminiService.generateImage(
           newGeneration.prompt,
           config,
           undefined,  // No control images in Mixboard
-          referenceImages,
-          currentUser?.displayName || 'Mixboard User'
+          referenceImageData,
+          currentUser?.displayName
         );
 
       if (output.images && output.images.length > 0) {
         const imageDataUri = `data:image/png;base64,${output.images[0]}`;
-
-        // Save input images to storage
-        const inputImageMetas: StoredImageMeta[] = [];
-        for (const selectedImg of selectedImages) {
-          if (!selectedImg.dataUri) continue; // Skip if no dataUri (shouldn't happen for images)
-
-          if (selectedImg.imageMetaId) {
-            // Image already saved, find its metadata
-            const meta = {
-              id: selectedImg.imageMetaId,
-              filename: `input_${selectedImg.imageMetaId}.png`,
-              size_bytes: selectedImg.dataUri.length
-            };
-            inputImageMetas.push(meta);
-          } else {
-            // Save new image
-            const meta = StorageService.saveImage(selectedImg.dataUri, 'reference');
-            inputImageMetas.push(meta);
-          }
-        }
 
         // Save output image to storage
         const outputImageMeta = StorageService.saveImage(imageDataUri, 'output');
@@ -218,7 +253,8 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
           newGeneration.prompt,
           config,
           150,  // Max 150 words
-          currentUser?.displayName || 'Mixboard User'
+          currentUser?.displayName,
+          referenceImageData
         );
 
         if (output.text) {
@@ -229,7 +265,7 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
           const completedGeneration: MixboardGeneration = {
             ...newGeneration,
             status: 'completed',
-            input_images: [],
+            input_images: inputImageMetas,
             output_images: [],
             output_texts: [output.text],
             generation_time_ms: duration
@@ -282,7 +318,7 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
         timestamp: new Date().toISOString(),
         status: 'failed',
         prompt: prompt || 'Continue the creative exploration',
-        input_images: [],
+        input_images: inputImageMetas,
         output_images: [],
         parameters: config,
         error_message: (error as Error).message,
@@ -309,6 +345,38 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
     } finally {
       setIsGenerating(false);
     }
+  };
+
+  const addTextToCanvas = (text: string, x?: number, y?: number) => {
+    const trimmed = text.trim();
+    if (!trimmed) return;
+
+    const textWidth = 400;
+    const textHeight = 200;
+    const fontSize = 16;
+
+    setCanvasImages(prev => {
+      const baseX = typeof x === 'number' ? x : 100 + (prev.length * 50);
+      const baseY = typeof y === 'number' ? y : 100 + (prev.length * 50);
+
+      const newCanvasText: CanvasImage = {
+        id: `text-${Date.now()}`,
+        type: 'text',
+        text: trimmed,
+        fontSize: fontSize,
+        x: baseX,
+        y: baseY,
+        width: textWidth,
+        height: textHeight,
+        selected: false,
+        originalWidth: textWidth,
+        originalHeight: textHeight
+      };
+
+      const updated = [...prev, newCanvasText];
+      saveCanvasToSession(updated);
+      return updated;
+    });
   };
 
   // Handle file upload
@@ -395,6 +463,23 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
     e.stopPropagation();
   };
 
+  const handleOpenUploadFromContext = (e?: React.MouseEvent) => {
+    e?.stopPropagation();
+    closeContextMenu();
+    fileInputRef.current?.click();
+  };
+
+  const handleAddTextFromContext = (e?: React.MouseEvent) => {
+    e?.stopPropagation();
+    const { canvasX, canvasY } = contextMenu;
+    closeContextMenu();
+
+    const manualText = window.prompt('Enter text to add to the canvas:');
+    if (manualText && manualText.trim()) {
+      addTextToCanvas(manualText, canvasX, canvasY);
+    }
+  };
+
   // Handle image selection and dragging
   const handleImageMouseDown = (e: React.MouseEvent, imageId: string) => {
     e.stopPropagation();
@@ -442,6 +527,7 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
   };
 
   const handleCanvasMouseDown = (e: React.MouseEvent) => {
+    closeContextMenu();
     if (e.target === canvasRef.current || (e.target as HTMLElement).classList.contains('canvas-background')) {
       // Start panning with middle mouse or space+left click
       if (e.button === 1 || (e.button === 0 && e.shiftKey)) {
@@ -464,6 +550,23 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
         }
       }
     }
+  };
+
+  const handleCanvasContextMenu = (e: React.MouseEvent) => {
+    e.preventDefault();
+    const canvasRect = canvasRef.current?.getBoundingClientRect();
+    if (!canvasRect) return;
+
+    const canvasX = (e.clientX - canvasRect.left - panOffset.x) / zoom;
+    const canvasY = (e.clientY - canvasRect.top - panOffset.y) / zoom;
+
+    setContextMenu({
+      visible: true,
+      x: e.clientX,
+      y: e.clientY,
+      canvasX,
+      canvasY
+    });
   };
 
   const handleMouseMove = (e: React.MouseEvent) => {
@@ -607,6 +710,14 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
 
   return (
     <div className="h-full w-full flex bg-white dark:bg-black">
+      <input
+        type="file"
+        accept="image/*"
+        multiple
+        ref={fileInputRef}
+        className="hidden"
+        onChange={handleFileUpload}
+      />
       {/* Left Sidebar - Session & History */}
       <div className="w-72 border-r border-zinc-200 dark:border-zinc-800 flex flex-col bg-zinc-50 dark:bg-zinc-900/50">
         {/* Header */}
@@ -772,6 +883,7 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
           onMouseLeave={handleMouseUp}
           onDrop={handleDrop}
           onDragOver={handleDragOver}
+          onContextMenu={handleCanvasContextMenu}
         >
           {/* Empty Canvas Message */}
           {canvasImages.length === 0 && (
@@ -875,6 +987,31 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
               >
                 <Trash2 size={16} />
                 Delete
+              </button>
+            </div>
+          )}
+
+          {contextMenu.visible && (
+            <div
+              className="fixed z-50 w-48 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 rounded shadow-lg overflow-hidden"
+              style={{ left: contextMenu.x, top: contextMenu.y }}
+              onClick={(e) => e.stopPropagation()}
+              onMouseDown={(e) => e.stopPropagation()}
+              onContextMenu={(e) => e.preventDefault()}
+            >
+              <button
+                onClick={handleOpenUploadFromContext}
+                className="w-full flex items-center gap-2 px-3 py-2 text-sm text-zinc-800 dark:text-zinc-100 hover:bg-zinc-100 dark:hover:bg-zinc-800"
+              >
+                <ImageIcon size={16} />
+                Upload image
+              </button>
+              <button
+                onClick={handleAddTextFromContext}
+                className="w-full flex items-center gap-2 px-3 py-2 text-sm text-zinc-800 dark:text-zinc-100 hover:bg-zinc-100 dark:hover:bg-zinc-800"
+              >
+                <Type size={16} />
+                Add text
               </button>
             </div>
           )}

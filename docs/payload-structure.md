@@ -14,7 +14,7 @@ The request sent to the Gemini API keeps control and reference images separate a
       { "inlineData": { "mimeType": "image/png", "data": "<reference-2-base64>" } },
       { "inlineData": { "mimeType": "image/png", "data": "<reference-3-base64>" } },
       {
-        "text": "Context images: control images (parts 1-2) for structure/composition; reference images (parts 3-5) for style. Preserve order across both groups.\n\nCreate a cozy living room scene in watercolor."
+        "text": "Context images: control images (parts 1-2); reference images (parts 3-5). Analyse the content of context images and respond to the requests.\n\nCreate a cozy living room scene in watercolor."
       }
     ]
   },
@@ -25,7 +25,7 @@ The request sent to the Gemini API keeps control and reference images separate a
   },
   "requestOptions": {
     "headers": {
-      "X-User-Name": "alice"
+      "X-User-Name": "<display-name>"
     }
   }
 }
@@ -33,4 +33,4 @@ The request sent to the Gemini API keeps control and reference images separate a
 
 - Replace `data` values with base64 strings **without** the `data:image/png;base64,` prefix.
 - When using `gemini-3-pro-image-preview`, include an `"imageSize": "<width>x<height>"` property under `config.imageConfig`.
-- If no user name is needed, omit `requestOptions` entirely.
+- The `X-User-Name` header always carries the display name the user entered when starting their session.

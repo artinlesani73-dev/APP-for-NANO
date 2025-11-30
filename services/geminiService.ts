@@ -126,16 +126,19 @@ export const GeminiService = {
       const hasReferences = referenceImages.length > 0;
 
       const controlRange = hasControls
-        ? `control image${controlImages.length === 1 ? '' : 's'} (parts 1-${controlImages.length}) for structure/composition`
+        ? `control image${controlImages.length === 1 ? '' : 's'} (parts 1-${controlImages.length})`
         : '';
 
       const referenceStart = controlImages.length + 1;
       const referenceRange = hasReferences
-        ? `reference image${referenceImages.length === 1 ? '' : 's'} (parts ${referenceStart}-${referenceStart + referenceImages.length - 1}) for style`
+        ? `reference image${referenceImages.length === 1 ? '' : 's'} (parts ${referenceStart}-${referenceStart + referenceImages.length - 1})`
         : '';
 
       const rangeSummary = [controlRange, referenceRange].filter(Boolean).join('; ');
-      finalPrompt = `Context images: ${rangeSummary}. Preserve order across both groups.\n\n${prompt}`;
+      const contextNote = rangeSummary
+        ? `Context images: ${rangeSummary}. Analyse the content of context images and respond to the requests.`
+        : '';
+      finalPrompt = `${contextNote ? `${contextNote}\n\n` : ''}${prompt}`;
     }
 
     parts.push({ text: finalPrompt });
@@ -202,7 +205,8 @@ export const GeminiService = {
     prompt: string,
     config: GenerationConfig,
     maxWords: number = 150,
-    userName?: string
+    userName?: string,
+    referenceImageBase64?: string[] | string
   ): Promise<{ text: string }> => {
 
     // Get API key based on environment
@@ -226,8 +230,30 @@ export const GeminiService = {
     // Use a text model for text generation
     const textModel = 'gemini-2.0-flash-exp';
 
+    const parts: Part[] = [];
+
+    const referenceImages = referenceImageBase64
+      ? Array.isArray(referenceImageBase64)
+        ? referenceImageBase64
+        : [referenceImageBase64]
+      : [];
+
+    referenceImages.forEach(image => {
+      parts.push({
+        inlineData: {
+          mimeType: 'image/png',
+          data: stripBase64Header(image)
+        }
+      });
+    });
+
+    const rangeSummary =
+      referenceImages.length > 0
+        ? `Context images provided (parts 1-${referenceImages.length}). Analyse the content of context images and respond to the requests.`
+        : '';
+
     // Construct prompt with word limit
-    const finalPrompt = `${prompt}\n\n(Generate a concise response in ${maxWords} words or less)`;
+    const finalPrompt = `${rangeSummary ? `${rangeSummary}\n\n` : ''}${prompt}\n\n(Generate a concise response in ${maxWords} words or less)`;
 
     const requestOptions = userName
       ? {
@@ -237,9 +263,11 @@ export const GeminiService = {
         }
       : undefined;
 
+    parts.push({ text: finalPrompt });
+
     const response = await ai.models.generateContent({
       model: textModel,
-      contents: { parts: [{ text: finalPrompt }] },
+      contents: { parts },
       config: {
         maxOutputTokens: Math.ceil(maxWords * 1.5), // Approximate tokens from words
         temperature: config.temperature || 0.7,
