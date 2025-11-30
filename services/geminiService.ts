@@ -221,7 +221,7 @@ export const GeminiService = {
       }
     }
 
-    const ai = new GoogleGenAI(apiKey);
+    const ai = new GoogleGenAI({ apiKey });
 
     // Use a text model for text generation
     const textModel = 'gemini-2.0-flash-exp';

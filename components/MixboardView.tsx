@@ -143,6 +143,8 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
         // Save input images to storage
         const inputImageMetas: StoredImageMeta[] = [];
         for (const selectedImg of selectedImages) {
+          if (!selectedImg.dataUri) continue; // Skip if no dataUri (shouldn't happen for images)
+
           if (selectedImg.imageMetaId) {
             // Image already saved, find its metadata
             const meta = {
