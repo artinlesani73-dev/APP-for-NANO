@@ -1,7 +1,9 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Activity, AlertTriangle, BarChart2, Battery, Cpu, HardDrive, Lock, RefreshCcw, Server, ShieldCheck, Timer, Users, X } from 'lucide-react';
 import { AdminService } from '../services/adminService';
-import { AdminMetrics, LogEntry } from '../types';
+import { AdminMetrics } from '../types';
+import { useAdminDataStore } from './AdminDataProvider';
+import { cancelIdleTask, scheduleIdleTask } from './idleUtils';
 
 interface AdminDashboardProps {
   isOpen: boolean;
@@ -27,39 +29,55 @@ const formatDuration = (seconds: number) => {
 export const AdminDashboard: React.FC<AdminDashboardProps> = ({ isOpen, isAuthorized, onAuthorize, onClose }) => {
   const [passphrase, setPassphrase] = useState('');
   const [error, setError] = useState('');
-  const [metrics, setMetrics] = useState<AdminMetrics | null>(null);
-  const [logs, setLogs] = useState<LogEntry[]>([]);
   const [isLoading, setIsLoading] = useState(false);
+  const { metrics, activityLogs, setMetrics, setActivityLogs, lastFetchedAt, updateLastFetchedAt } = useAdminDataStore();
 
   useEffect(() => {
+    if (!isOpen || !isAuthorized) return;
+
+    let cancelled = false;
     let interval: ReturnType<typeof setInterval> | undefined;
+    let idleHandle: number | null = null;
 
     const loadData = async () => {
-      if (!isAuthorized) return;
+      if (cancelled) return;
       setIsLoading(true);
       const [metricPayload, activity] = await Promise.all([
         AdminService.fetchMetrics(),
         AdminService.fetchActivityLogs()
       ]);
+      if (cancelled) return;
       setMetrics(metricPayload);
-      setLogs(activity);
+      setActivityLogs(activity);
+      updateLastFetchedAt(Date.now());
       setIsLoading(false);
     };
 
-    if (isAuthorized) {
-      loadData();
-      interval = setInterval(loadData, 5000);
-    }
+    const scheduleFetch = () => {
+      idleHandle = scheduleIdleTask(() => {
+        if (cancelled) return;
+        const shouldFetchNow = !lastFetchedAt || Date.now() - lastFetchedAt > 5000;
+        if (shouldFetchNow) {
+          void loadData();
+        }
+        interval = setInterval(loadData, 5000);
+      }, 300);
+    };
+
+    scheduleFetch();
 
     return () => {
+      cancelled = true;
       if (interval) clearInterval(interval);
+      if (idleHandle) cancelIdleTask(idleHandle);
     };
-  }, [isAuthorized]);
+  }, [isOpen, isAuthorized, setMetrics, setActivityLogs, updateLastFetchedAt, lastFetchedAt]);
 
   const refreshMetrics = async () => {
     setIsLoading(true);
     const data = await AdminService.fetchMetrics();
     setMetrics(data);
+    updateLastFetchedAt(Date.now());
     setIsLoading(false);
   };
 
@@ -74,9 +92,9 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ isOpen, isAuthor
   };
 
   const logSummary = useMemo(() => {
-    const recent = logs.slice(0, 10);
+    const recent = activityLogs.slice(0, 10);
     return recent;
-  }, [logs]);
+  }, [activityLogs]);
 
   if (!isOpen) return null;
 

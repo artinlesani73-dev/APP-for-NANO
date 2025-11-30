@@ -2,7 +2,8 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { ShieldCheck, X, RefreshCw, Lock } from 'lucide-react';
 import { LoggerService } from '../services/logger';
 import { AppConfig } from '../services/config';
-import { LogEntry } from '../types';
+import { useAdminDataStore } from './AdminDataProvider';
+import { cancelIdleTask, scheduleIdleTask } from './idleUtils';
 
 interface AdminLogsProps {
   isOpen: boolean;
@@ -13,10 +14,10 @@ export const AdminLogs: React.FC<AdminLogsProps> = ({ isOpen, onClose }) => {
   const [authorized, setAuthorized] = useState(false);
   const [passphrase, setPassphrase] = useState('');
   const [error, setError] = useState('');
-  const [logs, setLogs] = useState<LogEntry[]>([]);
   const [userFilter, setUserFilter] = useState('');
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
+  const { activityLogs, setActivityLogs, lastFetchedAt, updateLastFetchedAt } = useAdminDataStore();
 
   const adminPassphrase = AppConfig.getAdminPassphrase();
 
@@ -25,7 +26,6 @@ export const AdminLogs: React.FC<AdminLogsProps> = ({ isOpen, onClose }) => {
       setAuthorized(false);
       setPassphrase('');
       setError('');
-      setLogs([]);
       setUserFilter('');
       setStartDate('');
       setEndDate('');
@@ -33,25 +33,42 @@ export const AdminLogs: React.FC<AdminLogsProps> = ({ isOpen, onClose }) => {
   }, [isOpen]);
 
   useEffect(() => {
-    if (authorized) {
-      refreshLogs();
-    }
-  }, [authorized]);
+    if (!authorized || !isOpen) return;
 
-  const refreshLogs = async () => {
-    const fetched = await LoggerService.fetchLogs();
-    setLogs(fetched.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()));
-  };
+    let cancelled = false;
+    let idleHandle: number | null = null;
+
+    const refreshLogs = async () => {
+      if (cancelled) return;
+      const fetched = await LoggerService.fetchLogs();
+      if (cancelled) return;
+      setActivityLogs(fetched.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()));
+      updateLastFetchedAt(Date.now());
+    };
+
+    idleHandle = scheduleIdleTask(() => {
+      if (cancelled) return;
+      const shouldFetch = !lastFetchedAt || Date.now() - lastFetchedAt > 30000 || activityLogs.length === 0;
+      if (shouldFetch) {
+        void refreshLogs();
+      }
+    }, 300);
+
+    return () => {
+      cancelled = true;
+      if (idleHandle) cancelIdleTask(idleHandle);
+    };
+  }, [authorized, isOpen, activityLogs.length, lastFetchedAt, setActivityLogs, updateLastFetchedAt]);
 
   const filteredLogs = useMemo(() => {
-    return logs.filter((log) => {
+    return activityLogs.filter((log) => {
       const matchesUser = userFilter ? log.user.toLowerCase().includes(userFilter.toLowerCase()) : true;
       const time = new Date(log.timestamp).getTime();
       const afterStart = startDate ? time >= new Date(startDate).getTime() : true;
       const beforeEnd = endDate ? time <= new Date(endDate).getTime() : true;
       return matchesUser && afterStart && beforeEnd;
     });
-  }, [logs, userFilter, startDate, endDate]);
+  }, [activityLogs, userFilter, startDate, endDate]);
 
   const handleAuthorize = () => {
     if (!adminPassphrase) {
@@ -157,7 +174,11 @@ export const AdminLogs: React.FC<AdminLogsProps> = ({ isOpen, onClose }) => {
               </div>
               <div className="flex items-center gap-2">
                 <button
-                  onClick={refreshLogs}
+                  onClick={async () => {
+                    const fetched = await LoggerService.fetchLogs();
+                    setActivityLogs(fetched.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()));
+                    updateLastFetchedAt(Date.now());
+                  }}
                   className="flex items-center gap-2 px-3 py-2 rounded-lg border border-zinc-300 dark:border-zinc-700 text-sm text-zinc-700 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800"
                 >
                   <RefreshCw size={16} /> Refresh

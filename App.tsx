@@ -10,6 +10,7 @@ import { SettingsModal } from './components/SettingsModal';
 import { ImageEditModal } from './components/ImageEditModal';
 import { LoginForm } from './components/LoginForm';
 import { UserProvider, useUser } from './components/UserContext';
+import { AdminDataProvider } from './components/AdminDataProvider';
 import { AdminDashboard } from './components/AdminDashboard';
 import { StorageService } from './services/newStorageService';
 import { GeminiService } from './services/geminiService';
@@ -924,7 +925,9 @@ function AppContent() {
 export default function App() {
   return (
     <UserProvider>
-      <AppContent />
+      <AdminDataProvider>
+        <AppContent />
+      </AdminDataProvider>
     </UserProvider>
   );
 }
