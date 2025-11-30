@@ -196,5 +196,73 @@ export const GeminiService = {
     }
 
     return { images, texts };
+  },
+
+  generateText: async (
+    prompt: string,
+    config: GenerationConfig,
+    maxWords: number = 150,
+    userName?: string
+  ): Promise<{ text: string }> => {
+
+    // Get API key based on environment
+    let apiKey: string | undefined;
+
+    if (isElectron()) {
+      const storedKey = localStorage.getItem('gemini_api_key');
+      if (!storedKey || !storedKey.trim()) {
+        throw new Error("API Key not configured. Please go to Settings to enter your Google AI API key.");
+      }
+      apiKey = storedKey.trim();
+    } else {
+      apiKey = AppConfig.getSharedApiKey();
+      if (!apiKey) {
+        throw new Error("Shared API key not configured.");
+      }
+    }
+
+    const ai = new GoogleGenAI(apiKey);
+
+    // Use a text model for text generation
+    const textModel = 'gemini-2.0-flash-exp';
+
+    // Construct prompt with word limit
+    const finalPrompt = `${prompt}\n\n(Generate a concise response in ${maxWords} words or less)`;
+
+    const requestOptions = userName
+      ? {
+          headers: {
+            'X-User-Name': userName
+          }
+        }
+      : undefined;
+
+    const response = await ai.models.generateContent({
+      model: textModel,
+      contents: { parts: [{ text: finalPrompt }] },
+      config: {
+        maxOutputTokens: Math.ceil(maxWords * 1.5), // Approximate tokens from words
+        temperature: config.temperature || 0.7,
+        topP: config.top_p || 0.95
+      },
+      // @ts-expect-error Request options are allowed at runtime
+      requestOptions
+    });
+
+    // Extract text from response
+    let text = '';
+    response.candidates?.forEach(candidate => {
+      candidate.content?.parts?.forEach(part => {
+        if (typeof part.text === 'string') {
+          text += part.text;
+        }
+      });
+    });
+
+    if (!text || text.trim().length === 0) {
+      throw new Error("No text generated");
+    }
+
+    return { text: text.trim() };
   }
 };

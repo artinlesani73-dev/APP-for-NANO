@@ -44,7 +44,7 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
   const [isSelecting, setIsSelecting] = useState(false);
   const [selectionBox, setSelectionBox] = useState<{ startX: number; startY: number; endX: number; endY: number } | null>(null);
   const [isPanning, setIsPanning] = useState(false);
-  const [showImageInput, setShowImageInput] = useState(false);
+  const [showImageInput, setShowImageInput] = useState(true);  // Default to Image mode
   const [currentGeneration, setCurrentGeneration] = useState<MixboardGeneration | null>(null);
   const [editingSessionId, setEditingSessionId] = useState<string | null>(null);
   const [editingSessionTitle, setEditingSessionTitle] = useState('');
@@ -86,7 +86,7 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
     console.log('[MixboardView] Canvas saved to session:', images.length, 'images');
   };
 
-  // Handle image generation with full history tracking
+  // Handle generation (image or text) with full history tracking
   const handleGenerate = async () => {
     if (!prompt && canvasImages.filter(img => img.selected).length === 0) return;
     if (!currentSession) {
@@ -97,7 +97,7 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
     setIsGenerating(true);
 
     const generationId = `gen-${Date.now()}`;
-    const selectedImages = canvasImages.filter(img => img.selected);
+    const selectedImages = canvasImages.filter(img => img.selected && img.type !== 'text');
     const startTime = Date.now();
 
     try {
@@ -106,7 +106,7 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
         generation_id: generationId,
         timestamp: new Date().toISOString(),
         status: 'pending',
-        prompt: prompt || 'Continue the creative exploration',
+        prompt: prompt || (showImageInput ? 'Continue the creative exploration' : 'Generate text'),
         input_images: [],  // Will populate after saving
         output_images: [],
         parameters: config,
@@ -122,19 +122,20 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
 
       setCurrentGeneration(newGeneration);
 
-      // Prepare reference images for API call
-      const referenceImages = selectedImages.length > 0
-        ? selectedImages.map(img => img.dataUri)
-        : undefined;
+      if (showImageInput) {
+        // IMAGE MODE: Generate image
+        const referenceImages = selectedImages.length > 0
+          ? selectedImages.map(img => img.dataUri).filter(Boolean) as string[]
+          : undefined;
 
-      // Call API
-      const output = await GeminiService.generateImage(
-        newGeneration.prompt,
-        config,
-        undefined,  // No control images in Mixboard
-        referenceImages,
-        currentUser?.displayName || 'Mixboard User'
-      );
+        // Call API for image generation
+        const output = await GeminiService.generateImage(
+          newGeneration.prompt,
+          config,
+          undefined,  // No control images in Mixboard
+          referenceImages,
+          currentUser?.displayName || 'Mixboard User'
+        );
 
       if (output.images && output.images.length > 0) {
         const imageDataUri = `data:image/png;base64,${output.images[0]}`;
@@ -208,6 +209,67 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
           setCurrentGeneration(completedGeneration);
         };
         img.src = imageDataUri;
+      }
+      } else {
+        // TEXT MODE: Generate text
+        const output = await GeminiService.generateText(
+          newGeneration.prompt,
+          config,
+          150,  // Max 150 words
+          currentUser?.displayName || 'Mixboard User'
+        );
+
+        if (output.text) {
+          // Calculate duration
+          const duration = Date.now() - startTime;
+
+          // Complete generation record (no output images for text)
+          const completedGeneration: MixboardGeneration = {
+            ...newGeneration,
+            status: 'completed',
+            input_images: [],
+            output_images: [],
+            output_texts: [output.text],
+            generation_time_ms: duration
+          };
+
+          // Add generated text to canvas
+          const textWidth = 400;
+          const textHeight = 200;
+          const fontSize = 16;
+
+          const newCanvasText: CanvasImage = {
+            id: `text-${Date.now()}`,
+            type: 'text',
+            text: output.text,
+            fontSize: fontSize,
+            x: 100 + (canvasImages.length * 50),
+            y: 100 + (canvasImages.length * 50),
+            width: textWidth,
+            height: textHeight,
+            selected: false,
+            originalWidth: textWidth,
+            originalHeight: textHeight,
+            generationId: generationId
+          };
+
+          const updatedCanvasImages = [...canvasImages, newCanvasText];
+          setCanvasImages(updatedCanvasImages);
+
+          // Update session with new generation and canvas state
+          const updatedSession: MixboardSession = {
+            ...currentSession,
+            generations: [...currentSession.generations, completedGeneration],
+            canvas_images: updatedCanvasImages,
+            updated_at: new Date().toISOString()
+          };
+
+          // Persist session
+          StorageService.saveSession(updatedSession as any);
+          onSessionUpdate(updatedSession);
+
+          setCurrentGeneration(completedGeneration);
+        }
       }
     } catch (error) {
       console.error('Generation failed:', error);
@@ -729,7 +791,7 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
             </div>
           )}
 
-          {/* Canvas Images */}
+          {/* Canvas Images & Text */}
           {canvasImages.map(image => (
             <div
               key={image.id}
@@ -743,12 +805,24 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
               }}
               onMouseDown={(e) => handleImageMouseDown(e, image.id)}
             >
-              <img
-                src={image.dataUri}
-                alt="Canvas item"
-                className="w-full h-full object-cover pointer-events-none"
-                draggable={false}
-              />
+              {image.type === 'text' ? (
+                <div
+                  className="w-full h-full p-3 bg-white dark:bg-zinc-900 text-zinc-900 dark:text-zinc-100 overflow-auto pointer-events-none"
+                  style={{
+                    fontSize: `${(image.fontSize || 16) * zoom}px`,
+                    lineHeight: '1.5'
+                  }}
+                >
+                  {image.text}
+                </div>
+              ) : (
+                <img
+                  src={image.dataUri}
+                  alt="Canvas item"
+                  className="w-full h-full object-cover pointer-events-none"
+                  draggable={false}
+                />
+              )}
               {image.selected && (
                 <div className="absolute bottom-0 right-0 w-4 h-4 bg-orange-500 cursor-nwse-resize" />
               )}

@@ -207,14 +207,17 @@ export interface AdminMetrics {
  */
 export interface CanvasImage {
   id: string;                      // Unique canvas image ID
-  dataUri: string;                 // Base64 image data
+  type?: 'image' | 'text';         // Entity type (default: 'image')
+  dataUri?: string;                // Base64 image data (for images)
+  text?: string;                   // Text content (for text entities)
+  fontSize?: number;               // Font size (for text)
   x: number;                       // Canvas X position
   y: number;                       // Canvas Y position
   width: number;                   // Display width
   height: number;                  // Display height
   selected: boolean;               // Selection state
-  originalWidth: number;           // Original image width
-  originalHeight: number;          // Original image height
+  originalWidth: number;           // Original image width / text box width
+  originalHeight: number;          // Original image height / text box height
   generationId?: string;           // Parent generation ID (if generated)
   imageMetaId?: string;            // Link to StoredImageMeta for persistence
 }
