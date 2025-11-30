@@ -4,6 +4,56 @@ import { GeminiService } from '../services/geminiService';
 import { StorageService } from '../services/newStorageService';
 import { GenerationConfig, CanvasImage, MixboardSession, MixboardGeneration, StoredImageMeta } from '../types';
 
+type CanvasEngine = {
+  attach: (element: HTMLDivElement, options: { onZoom: (delta: number) => void }) => void;
+  detach: () => void;
+  registerPlugin: (name: string, plugin: unknown) => void;
+  plugins: Record<string, unknown>;
+  pluginsLoaded: boolean;
+};
+
+const createCanvasEngine = (): CanvasEngine => {
+  let attachedElement: HTMLDivElement | null = null;
+  let cleanupCallbacks: Array<() => void> = [];
+  const plugins: Record<string, unknown> = {};
+
+  const detach = () => {
+    cleanupCallbacks.forEach(fn => fn());
+    cleanupCallbacks = [];
+    attachedElement = null;
+  };
+
+  const attach = (element: HTMLDivElement, options: { onZoom: (delta: number) => void }) => {
+    if (attachedElement === element && cleanupCallbacks.length) return;
+
+    detach();
+    attachedElement = element;
+
+    const handleWheel = (e: WheelEvent) => {
+      e.preventDefault();
+      const delta = e.deltaY > 0 ? -0.05 : 0.05;
+      options.onZoom(delta);
+    };
+
+    element.addEventListener('wheel', handleWheel, { passive: false });
+    cleanupCallbacks.push(() => element.removeEventListener('wheel', handleWheel));
+  };
+
+  const registerPlugin = (name: string, plugin: unknown) => {
+    plugins[name] = plugin;
+  };
+
+  return {
+    attach,
+    detach,
+    registerPlugin,
+    plugins,
+    pluginsLoaded: false
+  };
+};
+
+let persistentCanvasEngine: CanvasEngine | null = null;
+
 interface MixboardViewProps {
   theme: 'dark' | 'light';
   currentSession: MixboardSession | null;
@@ -61,6 +111,7 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
   const canvasRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const textToolbarRef = useRef<HTMLDivElement>(null);
+  const canvasEngineRef = useRef<CanvasEngine | null>(persistentCanvasEngine);
 
   const closeContextMenu = useCallback(() => {
     setContextMenu({
@@ -119,6 +170,53 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
     window.addEventListener('mousedown', handleOutsideClick);
     return () => window.removeEventListener('mousedown', handleOutsideClick);
   }, [textToolbar.targetId]);
+
+  useEffect(() => {
+    const engine = canvasEngineRef.current ?? createCanvasEngine();
+    canvasEngineRef.current = engine;
+    persistentCanvasEngine = engine;
+
+    const canvasElement = canvasRef.current;
+    if (!canvasElement) return;
+
+    const schedule = 'requestIdleCallback' in window
+      ? (window as any).requestIdleCallback
+      : (cb: IdleRequestCallback) => window.setTimeout(() => cb({} as IdleDeadline), 0);
+
+    const scheduleId = schedule(() => {
+      engine.attach(canvasElement, {
+        onZoom: (delta) => setZoom(prev => Math.max(0.1, Math.min(3, prev + delta)))
+      });
+    });
+
+    let cancelled = false;
+
+    const loadPlugins = async () => {
+      if (engine.pluginsLoaded) return;
+
+      try {
+        const { loadOptionalCanvasPlugins } = await import('../services/canvasPlugins');
+        if (!cancelled) {
+          await loadOptionalCanvasPlugins(engine);
+          engine.pluginsLoaded = true;
+        }
+      } catch (error) {
+        console.warn('[MixboardView] Optional canvas plugins failed to load', error);
+      }
+    };
+
+    loadPlugins();
+
+    return () => {
+      cancelled = true;
+      if (typeof (window as any).cancelIdleCallback === 'function') {
+        (window as any).cancelIdleCallback(scheduleId as number);
+      } else {
+        clearTimeout(scheduleId as number);
+      }
+      engine.detach();
+    };
+  }, []);
 
   // Helper function to save current canvas state to session
   const saveCanvasToSession = (images: CanvasImage[]) => {
@@ -746,21 +844,6 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
   // Zoom controls
   const handleZoomIn = () => setZoom(prev => Math.min(prev + 0.1, 3));
   const handleZoomOut = () => setZoom(prev => Math.max(prev - 0.1, 0.1));
-
-  // Scroll to zoom - use native event listener to prevent passive listener warning
-  useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-
-    const handleWheel = (e: WheelEvent) => {
-      e.preventDefault();
-      const delta = e.deltaY > 0 ? -0.05 : 0.05;
-      setZoom(prev => Math.max(0.1, Math.min(3, prev + delta)));
-    };
-
-    canvas.addEventListener('wheel', handleWheel, { passive: false });
-    return () => canvas.removeEventListener('wheel', handleWheel);
-  }, []);
 
   // Keyboard shortcuts
   useEffect(() => {
