@@ -9,6 +9,7 @@ interface GraphViewProps {
   loadImage: (role: 'control' | 'reference' | 'output', id: string, filename: string) => string | null;
   onGenerateFromNode?: (prompt: string, config: GenerationConfig, controlImages?: string[], referenceImages?: string[]) => Promise<void>;
   isMixboardMode?: boolean;  // NEW: Flag for Mixboard rendering
+  selectedSessionId?: string | null;
 }
 
 type Node = GraphNode;
@@ -58,7 +59,7 @@ const themeTokens = {
   }
 };
 
-const GraphView: React.FC<GraphViewProps> = ({ sessions, theme, loadImage, onGenerateFromNode, isMixboardMode = false }) => {
+const GraphView: React.FC<GraphViewProps> = ({ sessions, theme, loadImage, onGenerateFromNode, isMixboardMode = false, selectedSessionId: externalSelectedSessionId }) => {
   const svgRef = useRef<SVGSVGElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const palette = themeTokens[theme];
@@ -79,7 +80,7 @@ const GraphView: React.FC<GraphViewProps> = ({ sessions, theme, loadImage, onGen
   const [draggingNode, setDraggingNode] = useState<string | null>(null);
   const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
   const [editingNode, setEditingNode] = useState<string | null>(null);
-  const [selectedSessionId, setSelectedSessionId] = useState<string | 'all'>('all');
+  const selectedSessionId: string | 'all' = externalSelectedSessionId ?? 'all';
 
   useEffect(() => {
     generateGraphLayout();
@@ -111,6 +112,10 @@ const GraphView: React.FC<GraphViewProps> = ({ sessions, theme, loadImage, onGen
     control: nodeAccents['control-image'].solid,
     reference: nodeAccents['reference-image'].solid
   } as const;
+
+  const selectedSessionLabel = selectedSessionId === 'all'
+    ? `All Sessions (${sessions.length})`
+    : (sessions.find(s => s.session_id === selectedSessionId)?.title || 'Session');
 
   // Helper function to create a unique key for workflow grouping
   const getWorkflowGroupKey = (
@@ -990,31 +995,14 @@ const GraphView: React.FC<GraphViewProps> = ({ sessions, theme, loadImage, onGen
             </div>
 
             <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3 pt-2">
-              <select
-                value={selectedSessionId}
-                onChange={(e) => setSelectedSessionId(e.target.value as string)}
-                className={`px-3 py-2 text-sm rounded-xl border transition-all ${
-                  isDark
-                    ? 'bg-[#0d0b14]/95 border-white/10 text-zinc-100 hover:bg-white/5'
-                    : 'bg-white border-zinc-200 text-zinc-700 hover:bg-zinc-50'
-                }`}
-              >
-                <option
-                  value="all"
-                  style={{ backgroundColor: isDark ? '#0d0b14' : '#ffffff', color: isDark ? '#e5e7eb' : '#1f2937' }}
-                >
-                  All Sessions ({sessions.length})
-                </option>
-                {sessions.map(session => (
-                  <option
-                    key={session.session_id}
-                    value={session.session_id}
-                    style={{ backgroundColor: isDark ? '#0d0b14' : '#ffffff', color: isDark ? '#e5e7eb' : '#1f2937' }}
-                  >
-                    {session.title} ({session.generations.length})
-                  </option>
-                ))}
-              </select>
+              <div className={`inline-flex items-center gap-2 px-3 py-2 text-sm rounded-xl border ${
+                isDark
+                  ? 'bg-[#0d0b14]/95 border-white/10 text-zinc-100'
+                  : 'bg-white border-zinc-200 text-zinc-700'
+              }`}>
+                <div className={`w-2 h-2 rounded-full ${selectedSessionId === 'all' ? 'bg-purple-400' : 'bg-emerald-400'}`} />
+                <span className="font-medium">{selectedSessionLabel}</span>
+              </div>
 
               <div className="flex flex-wrap items-center gap-2">
                 {legendItems.map(item => (

@@ -1,5 +1,5 @@
 import React from 'react';
-import { SessionGeneration, StoredImageMeta } from '../types';
+import { SessionGeneration, StoredImageMeta, MixboardGeneration } from '../types';
 import { Clock, Image, Download, TextQuote, FileText } from 'lucide-react';
 
 export type HistoryGalleryItem =
@@ -7,7 +7,7 @@ export type HistoryGalleryItem =
       kind: 'image';
       sessionId: string;
       sessionTitle: string;
-      generation: SessionGeneration;
+      generation: SessionGeneration | MixboardGeneration;
       output: StoredImageMeta;
       outputIndex: number;
       texts: string[];
@@ -16,13 +16,13 @@ export type HistoryGalleryItem =
       kind: 'text';
       sessionId: string;
       sessionTitle: string;
-      generation: SessionGeneration;
+      generation: SessionGeneration | MixboardGeneration;
       texts: string[];
     };
 
 interface HistoryPanelProps {
   items: HistoryGalleryItem[];
-  onSelectGeneration: (sessionId: string, generation: SessionGeneration) => void;
+  onSelectGeneration: (sessionId: string, generation: SessionGeneration | MixboardGeneration) => void;
   selectedGenerationId?: string;
   onExportImage: (filename: string) => void;
   loadImage: (role: 'control' | 'reference' | 'output', id: string, filename: string) => string | null;

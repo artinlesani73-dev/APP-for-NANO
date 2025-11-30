@@ -1,4 +1,5 @@
 import { Session, SessionGeneration, ImageRole, GenerationConfig, GraphNode, GraphEdge, StoredImageMeta, UploadedImagePayload, MixboardSession, MixboardGeneration } from '../types';
+import { LegacySessionConverter } from './legacySessionConverter';
 
 // Detect Electron
 const isElectron = () => {
@@ -42,11 +43,23 @@ const normalizeImagePayload = (payload: string | UploadedImagePayload): Uploaded
 
 const INPUT_LOG_KEY = 'input_image_log';
 
-const ensureGraphState = (session: Session): Session => {
-  if (!session.graph) {
-    session.graph = { nodes: [], edges: [] };
+const ensureGraphState = <T extends Session | MixboardSession>(session: T): T => {
+  if (!(session as any).graph) {
+    (session as any).graph = { nodes: [], edges: [] };
   }
   return session;
+};
+
+const normalizeSession = (session: Session | MixboardSession): MixboardSession | Session => {
+  const hydrated = ensureGraphState(session);
+
+  if (LegacySessionConverter.isLegacySession(hydrated)) {
+    const migrated = LegacySessionConverter.migrateSession(hydrated, StorageService.loadImage);
+    StorageService.saveSession(migrated as any, { preserveUpdatedAt: true });
+    return migrated;
+  }
+
+  return hydrated;
 };
 
 export const StorageService = {
@@ -87,63 +100,64 @@ export const StorageService = {
   },
 
   // Save session to storage
-  saveSession: (session: Session) => {
-    session.updated_at = new Date().toISOString();
-    ensureGraphState(session);
+  saveSession: (session: Session | MixboardSession, options?: { preserveUpdatedAt?: boolean }) => {
+    const normalized = ensureGraphState(session);
 
-    if (isElectron()) {
-      // @ts-ignore
-      window.electron.saveSessionSync(session.session_id, session);
-    } else {
-      // For web, store in localStorage
-      localStorage.setItem(`session_${session.session_id}`, JSON.stringify(session));
+    if (!options?.preserveUpdatedAt) {
+      normalized.updated_at = new Date().toISOString();
     }
-  },
 
-  // Load session from storage
-  loadSession: (sessionId: string): Session | null => {
-    if (isElectron()) {
-      // @ts-ignore
-      const loaded = window.electron.loadSessionSync(sessionId);
-      return loaded ? ensureGraphState(loaded) : null;
-    } else {
-      const data = localStorage.getItem(`session_${sessionId}`);
-      return data ? ensureGraphState(JSON.parse(data)) : null;
-    }
-  },
+      if (isElectron()) {
+        // @ts-ignore
+        window.electron.saveSessionSync(normalized.session_id, normalized);
+      } else {
+        // For web, store in localStorage
+        localStorage.setItem(`session_${normalized.session_id}`, JSON.stringify(normalized));
+      }
+    },
 
-  // Get all sessions
-  getSessions: (): Session[] => {
-    if (isElectron()) {
-      // @ts-ignore
-      const sessions = window.electron.listSessionsSync();
-      sessions.forEach((session: Session) => ensureGraphState(session));
-      return sessions.sort((a: Session, b: Session) =>
-        new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime()
-      );
-    } else {
-      const sessions: Session[] = [];
-      for (let i = 0; i < localStorage.length; i++) {
-        const key = localStorage.key(i);
-        if (key && key.startsWith('session_')) {
-          const data = localStorage.getItem(key);
-          if (data) sessions.push(ensureGraphState(JSON.parse(data)));
+    // Load session from storage
+    loadSession: (sessionId: string): (Session | MixboardSession) | null => {
+      if (isElectron()) {
+        // @ts-ignore
+        const loaded = window.electron.loadSessionSync(sessionId);
+        return loaded ? normalizeSession(loaded) : null;
+      } else {
+        const data = localStorage.getItem(`session_${sessionId}`);
+        return data ? normalizeSession(JSON.parse(data)) : null;
+      }
+    },
+
+    // Get all sessions
+    getSessions: (): (Session | MixboardSession)[] => {
+      const sessions: Array<Session | MixboardSession> = [];
+
+      if (isElectron()) {
+        // @ts-ignore
+        const loadedSessions = window.electron.listSessionsSync();
+        loadedSessions.forEach((session: Session) => sessions.push(normalizeSession(session)));
+      } else {
+        for (let i = 0; i < localStorage.length; i++) {
+          const key = localStorage.key(i);
+          if (key && key.startsWith('session_')) {
+            const data = localStorage.getItem(key);
+            if (data) sessions.push(normalizeSession(JSON.parse(data)));
+          }
         }
       }
+
       return sessions.sort((a, b) =>
         new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime()
       );
-    }
-  },
-
-  // Rename a session
-  renameSession: (sessionId: string, newTitle: string) => {
-    const session = StorageService.loadSession(sessionId);
-    if (session) {
-      session.title = newTitle;
-      StorageService.saveSession(session);
-    }
-  },
+    },
+    // Rename a session
+    renameSession: (sessionId: string, newTitle: string) => {
+      const session = StorageService.loadSession(sessionId);
+      if (session) {
+        session.title = newTitle;
+        StorageService.saveSession(session);
+      }
+    },
 
   // Delete a session (only if empty)
   deleteSession: (sessionId: string) => {
@@ -317,13 +331,13 @@ export const StorageService = {
     config: GenerationConfig,
     controlImagesData?: UploadedImagePayload[],
     referenceImagesData?: UploadedImagePayload[]
-  ): SessionGeneration => {
-    const generation: SessionGeneration = {
-      generation_id: generateUUID(),
-      timestamp: new Date().toISOString(),
-      status: 'pending',
-      prompt,
-      parameters: config
+    ): SessionGeneration => {
+      const generation: SessionGeneration = {
+        generation_id: generateUUID(),
+        timestamp: new Date().toISOString(),
+        status: 'pending',
+        prompt,
+        parameters: config
     };
 
     // Save control images if provided
@@ -341,11 +355,16 @@ export const StorageService = {
     }
 
     // Add generation to session
-    const session = StorageService.loadSession(sessionId);
-    if (session) {
-      session.generations.push(generation);
-      StorageService.saveSession(session);
-    }
+      const session = StorageService.loadSession(sessionId);
+      if (session) {
+        if ('canvas_images' in session) {
+          const migratedGeneration = LegacySessionConverter.migrateGeneration(generation);
+          (session as MixboardSession).generations.push(migratedGeneration);
+        } else {
+          (session as Session).generations.push(generation);
+        }
+        StorageService.saveSession(session);
+      }
 
     return generation;
   },
@@ -372,16 +391,18 @@ export const StorageService = {
 
     const imageInfos = imageDataList.map(image => StorageService.saveImage(image, 'output'));
 
-    if (imageInfos.length > 0) {
-      generation.output_image = imageInfos[0];
-      generation.output_images = imageInfos;
-    }
+      if (imageInfos.length > 0) {
+        if ('output_image' in generation) {
+          (generation as SessionGeneration).output_image = imageInfos[0];
+        }
+        generation.output_images = imageInfos;
+      }
 
     if (outputTextData) {
       generation.output_texts = Array.isArray(outputTextData) ? outputTextData : [outputTextData];
     }
     generation.generation_time_ms = timeMs;
-    generation.status = 'completed';
+      generation.status = 'completed';
 
     StorageService.saveSession(session);
   },
@@ -394,19 +415,23 @@ export const StorageService = {
     const generation = session.generations.find(g => g.generation_id === generationId);
     if (!generation) return;
 
-    generation.status = 'failed';
-    generation.error = error;
+      generation.status = 'failed';
+      if ('error_message' in generation) {
+        generation.error_message = error;
+      } else {
+        (generation as SessionGeneration).error = error;
+      }
 
     StorageService.saveSession(session);
   },
 
   // Get specific generation from session
-  getGeneration: (sessionId: string, generationId: string): SessionGeneration | null => {
-    const session = StorageService.loadSession(sessionId);
-    if (!session) return null;
+    getGeneration: (sessionId: string, generationId: string): SessionGeneration | MixboardGeneration | null => {
+      const session = StorageService.loadSession(sessionId);
+      if (!session) return null;
 
-    return session.generations.find(g => g.generation_id === generationId) || null;
-  },
+      return session.generations.find(g => g.generation_id === generationId) || null;
+    },
 
   // =======================
   // EXPORT / IMPORT
