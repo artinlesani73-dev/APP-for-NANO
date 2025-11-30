@@ -657,8 +657,18 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
 
       setCanvasImages(prev => prev.map(img => {
         if (img.id === resizingImage) {
-          const newWidth = Math.max(50, img.width + dx);
+          const minSize = 50;
+
+          if (img.type === 'text') {
+            return {
+              ...img,
+              width: Math.max(minSize, img.width + dx),
+              height: Math.max(minSize, img.height + dy)
+            };
+          }
+
           const aspectRatio = img.originalHeight / img.originalWidth;
+          const newWidth = Math.max(minSize, img.width + dx);
           return {
             ...img,
             width: newWidth,
