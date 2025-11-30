@@ -1,5 +1,4 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { Sidebar, GalleryImage } from './components/Sidebar';
 import { PromptPanel } from './components/PromptPanel';
 import { MultiImageUploadPanel } from './components/MultiImageUploadPanel';
 import { ParametersPanel } from './components/ParametersPanel';
@@ -19,7 +18,7 @@ import { LoggerService } from './services/logger';
 import { AdminService } from './services/adminService';
 import { MigrationService } from './services/migrationService';
 import { Session, SessionGeneration, GenerationConfig, UploadedImagePayload, MixboardSession } from './types';
-import { Zap, Database, Key, ExternalLink, History, ShieldCheck, Network, Sparkles } from 'lucide-react';
+import { Zap, Database, Key, ExternalLink, History, ShieldCheck, Network, Sparkles, Settings } from 'lucide-react';
 
 const DEFAULT_CONFIG: GenerationConfig = {
   temperature: 0.7,
@@ -106,64 +105,6 @@ function AppContent() {
         })
       )
       .sort((a, b) => new Date(b.generation.timestamp).getTime() - new Date(a.generation.timestamp).getTime());
-  }, [sessions]);
-
-  // Gallery images for sidebar (all images from all sessions, most recent first)
-  const galleryImages = useMemo<GalleryImage[]>(() => {
-    const images: GalleryImage[] = [];
-
-    sessions.forEach(session => {
-      session.generations.forEach(gen => {
-        // Add control images
-        if (gen.control_images) {
-          gen.control_images.forEach(img => {
-            const dataUri = StorageService.loadImage('control', img.id, img.filename);
-            if (dataUri) {
-              images.push({
-                meta: img,
-                role: 'control',
-                dataUri,
-                timestamp: gen.timestamp
-              });
-            }
-          });
-        }
-
-        // Add reference images
-        if (gen.reference_images) {
-          gen.reference_images.forEach(img => {
-            const dataUri = StorageService.loadImage('reference', img.id, img.filename);
-            if (dataUri) {
-              images.push({
-                meta: img,
-                role: 'reference',
-                dataUri,
-                timestamp: gen.timestamp
-              });
-            }
-          });
-        }
-
-        // Add output images
-        const outputs = gen.output_images || (gen.output_image ? [gen.output_image] : []);
-        outputs.forEach(img => {
-          const dataUri = StorageService.loadImage('output', img.id, img.filename);
-          if (dataUri) {
-            images.push({
-              meta: img,
-              role: 'output',
-              dataUri,
-              timestamp: gen.timestamp
-            });
-          }
-        });
-      });
-    });
-
-    // Sort by timestamp (most recent first) and deduplicate by ID
-    return images
-      .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
-      .filter((img, idx, arr) => arr.findIndex(i => i.meta.id === img.meta.id) === idx);
   }, [sessions]);
 
   // Get current session
@@ -810,25 +751,6 @@ function AppContent() {
 
   return (
     <div className={`flex h-screen w-screen overflow-hidden font-sans selection:bg-blue-500/30 transition-colors duration-200 ${theme === 'dark' ? 'bg-black text-zinc-100' : 'bg-white text-zinc-900'}`}>
-      
-      {/* SIDEBAR */}
-      <Sidebar
-        chats={sessions.map(s => ({
-          chat_id: s.session_id,
-          created_at: s.created_at,
-          updated_at: s.updated_at,
-          title: s.title,
-          description: '',
-          generation_ids: s.generations.map(g => g.generation_id)
-        }))}
-        currentChatId={currentSessionId}
-        onSelectChat={handleSelectSession}
-        onNewChat={handleNewSession}
-        onDeleteChat={handleDeleteSession}
-        onRenameChat={handleRenameSession}
-        onOpenSettings={() => setIsSettingsOpen(true)}
-        galleryImages={galleryImages}
-      />
 
       {/* MAIN WORKSPACE */}
       <div className="flex-1 flex flex-col min-w-0 bg-white dark:bg-black">
@@ -903,6 +825,14 @@ function AppContent() {
                 >
                   <ShieldCheck size={12} />
                   Admin Logs
+                </button>
+
+                <button
+                  onClick={() => setIsSettingsOpen(true)}
+                  className="flex items-center gap-2 text-xs px-3 py-1.5 rounded border bg-white dark:bg-zinc-800/50 border-zinc-300 dark:border-zinc-700 text-zinc-700 dark:text-zinc-300 hover:bg-zinc-50 dark:hover:bg-zinc-800 transition-colors"
+                >
+                  <Settings size={12} />
+                  Settings
                 </button>
 
                 {config.model === 'gemini-3-pro-image-preview' && (
