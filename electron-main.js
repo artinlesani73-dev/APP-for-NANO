@@ -1,8 +1,38 @@
-const { app, BrowserWindow, dialog, ipcMain, nativeImage } = require('electron');
+const { app, BrowserWindow, dialog, ipcMain, nativeImage, protocol } = require('electron');
 const { autoUpdater } = require('electron-updater');
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
+const { Readable } = require('stream');
+
+protocol.registerSchemesAsPrivileged([
+  {
+    scheme: 'app',
+    privileges: {
+      secure: true,
+      standard: true,
+      supportFetchAPI: true,
+      corsEnabled: true
+    }
+  }
+]);
+
+const distPath = path.join(__dirname, 'dist');
+const cacheableExtensions = new Set(['.js', '.css', '.woff2', '.png', '.jpg', '.jpeg', '.svg', '.ico']);
+const mimeTypes = {
+  '.js': 'application/javascript',
+  '.css': 'text/css',
+  '.html': 'text/html',
+  '.json': 'application/json',
+  '.png': 'image/png',
+  '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.svg': 'image/svg+xml',
+  '.ico': 'image/x-icon',
+  '.woff2': 'font/woff2'
+};
+
+const getMimeType = (filePath) => mimeTypes[path.extname(filePath)] || 'application/octet-stream';
 
 const resolveAppIcon = () => {
   const candidatePaths = [
@@ -41,6 +71,54 @@ const loadDotEnv = () => {
 
 loadDotEnv();
 
+const toDistPath = (pathname = '/') => {
+  const safePath = pathname === '/' ? 'index.html' : pathname.replace(/^\//, '');
+  return path.resolve(distPath, safePath);
+};
+
+const createNotFoundResponse = () => ({
+  statusCode: 404,
+  headers: { 'Content-Type': 'text/plain' },
+  data: Readable.from('Not found')
+});
+
+const registerAppProtocol = () => {
+  protocol.registerStreamProtocol('app', (request, callback) => {
+    try {
+      const url = new URL(request.url);
+      const targetPath = toDistPath(url.pathname);
+
+      if (!targetPath.startsWith(distPath)) {
+        callback(createNotFoundResponse());
+        return;
+      }
+
+      if (!fs.existsSync(targetPath)) {
+        callback(createNotFoundResponse());
+        return;
+      }
+
+      const ext = path.extname(targetPath);
+      const stream = fs.createReadStream(targetPath);
+      const cacheHeaders = cacheableExtensions.has(ext)
+        ? { 'Cache-Control': 'public, max-age=31536000, immutable' }
+        : { 'Cache-Control': 'no-cache' };
+
+      callback({
+        statusCode: 200,
+        headers: {
+          'Content-Type': getMimeType(targetPath),
+          ...cacheHeaders
+        },
+        data: stream
+      });
+    } catch (err) {
+      console.error('Failed to serve asset', err);
+      callback(createNotFoundResponse());
+    }
+  });
+};
+
 let mainWindow;
 let adminWindow;
 
@@ -67,8 +145,8 @@ function createWindow() {
     }
   });
 
-  // Load from the 'dist' directory created by Vite build
-  mainWindow.loadFile(path.join(__dirname, 'dist', 'index.html'));
+  // Load from the 'dist' directory created by Vite build using cache-aware protocol
+  mainWindow.loadURL('app://index.html');
 }
 
 function createAdminWindow() {
@@ -98,9 +176,7 @@ function createAdminWindow() {
     }
   });
 
-  adminWindow.loadFile(path.join(__dirname, 'dist', 'index.html'), {
-    query: { admin: '1' }
-  });
+  adminWindow.loadURL('app://index.html?admin=1');
 
   adminWindow.on('closed', () => {
     adminWindow = undefined;
@@ -335,6 +411,7 @@ ipcMain.on('list-files-sync', (event, prefix) => {
 });
 
 app.whenReady().then(() => {
+  registerAppProtocol();
   createWindow();
   autoUpdater.checkForUpdatesAndNotify();
 

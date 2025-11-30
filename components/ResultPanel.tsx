@@ -50,7 +50,7 @@ export const ResultPanel: React.FC<ResultPanelProps> = ({ isGenerating, generati
   return (
     <div className="h-full w-full bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-lg flex flex-col overflow-hidden shadow-sm">
       <div className="flex-1 relative bg-zinc-100 dark:bg-zinc-950 overflow-y-auto p-4 space-y-4">
-        <div className="absolute inset-0 opacity-[0.03] bg-[url('https://www.transparenttextures.com/patterns/dark-matter.png')]"></div>
+        <div className="pointer-events-none absolute inset-0 opacity-60 bg-[radial-gradient(circle_at_20%_20%,_rgba(59,130,246,0.12),_transparent_35%),radial-gradient(circle_at_80%_0%,_rgba(236,72,153,0.1),_transparent_30%),radial-gradient(circle_at_50%_80%,_rgba(14,165,233,0.08),_transparent_35%)]"></div>
 
         {hasImages && (
           <div className="relative space-y-3">
@@ -68,6 +68,7 @@ export const ResultPanel: React.FC<ResultPanelProps> = ({ isGenerating, generati
                       src={image.dataUri}
                       alt={`Generated Output ${idx + 1}`}
                       className="max-h-80 w-full object-contain rounded"
+                      loading="lazy"
                     />
                   </div>
                   <div className="flex items-center justify-between px-3 py-2 border-t border-zinc-200 dark:border-zinc-800">

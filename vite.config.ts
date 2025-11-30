@@ -23,6 +23,22 @@ export default defineConfig(({ mode }) => {
       alias: {
         '@': path.resolve(__dirname, '.'),
       }
+    },
+    build: {
+      assetsDir: 'assets',
+      rollupOptions: {
+        output: {
+          entryFileNames: 'assets/[name]-[hash].js',
+          chunkFileNames: 'assets/[name]-[hash].js',
+          assetFileNames: ({ name }) => {
+            const ext = name ? path.extname(name) : '';
+            if (ext === '.ico' || ext === '.png') {
+              return 'assets/icons/[name]-[hash][extname]';
+            }
+            return 'assets/[name]-[hash][extname]';
+          }
+        }
+      }
     }
   };
 });
