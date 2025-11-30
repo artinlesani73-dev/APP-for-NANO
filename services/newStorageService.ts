@@ -125,7 +125,8 @@ export const StorageService = {
       const sessions: Session[] = [];
       for (let i = 0; i < localStorage.length; i++) {
         const key = localStorage.key(i);
-        if (key && key.startsWith('session_')) {
+        // Skip legacy session keys (created during migration)
+        if (key && key.startsWith('session_') && !key.endsWith('_legacy')) {
           const data = localStorage.getItem(key);
           if (data) sessions.push(ensureGraphState(JSON.parse(data)));
         }

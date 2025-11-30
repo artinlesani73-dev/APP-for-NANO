@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Sparkles, Image as ImageIcon, Type, Trash2, ZoomIn, ZoomOut, Move, Download } from 'lucide-react';
+import { Sparkles, Image as ImageIcon, Type, Trash2, ZoomIn, ZoomOut, Move, Download, Edit2, Check, X } from 'lucide-react';
 import { GeminiService } from '../services/geminiService';
 import { StorageService } from '../services/newStorageService';
 import { GenerationConfig, CanvasImage, MixboardSession, MixboardGeneration, StoredImageMeta } from '../types';
@@ -44,8 +44,10 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
   const [isSelecting, setIsSelecting] = useState(false);
   const [selectionBox, setSelectionBox] = useState<{ startX: number; startY: number; endX: number; endY: number } | null>(null);
   const [isPanning, setIsPanning] = useState(false);
-  const [showImageInput, setShowImageInput] = useState(false);
+  const [showImageInput, setShowImageInput] = useState(true);  // Default to Image mode
   const [currentGeneration, setCurrentGeneration] = useState<MixboardGeneration | null>(null);
+  const [editingSessionId, setEditingSessionId] = useState<string | null>(null);
+  const [editingSessionTitle, setEditingSessionTitle] = useState('');
 
   const canvasRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -84,7 +86,7 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
     console.log('[MixboardView] Canvas saved to session:', images.length, 'images');
   };
 
-  // Handle image generation with full history tracking
+  // Handle generation (image or text) with full history tracking
   const handleGenerate = async () => {
     if (!prompt && canvasImages.filter(img => img.selected).length === 0) return;
     if (!currentSession) {
@@ -95,7 +97,7 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
     setIsGenerating(true);
 
     const generationId = `gen-${Date.now()}`;
-    const selectedImages = canvasImages.filter(img => img.selected);
+    const selectedImages = canvasImages.filter(img => img.selected && img.type !== 'text');
     const startTime = Date.now();
 
     try {
@@ -104,7 +106,7 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
         generation_id: generationId,
         timestamp: new Date().toISOString(),
         status: 'pending',
-        prompt: prompt || 'Continue the creative exploration',
+        prompt: prompt || (showImageInput ? 'Continue the creative exploration' : 'Generate text'),
         input_images: [],  // Will populate after saving
         output_images: [],
         parameters: config,
@@ -120,19 +122,20 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
 
       setCurrentGeneration(newGeneration);
 
-      // Prepare reference images for API call
-      const referenceImages = selectedImages.length > 0
-        ? selectedImages.map(img => img.dataUri)
-        : undefined;
+      if (showImageInput) {
+        // IMAGE MODE: Generate image
+        const referenceImages = selectedImages.length > 0
+          ? selectedImages.map(img => img.dataUri).filter(Boolean) as string[]
+          : undefined;
 
-      // Call API
-      const output = await GeminiService.generateImage(
-        newGeneration.prompt,
-        config,
-        undefined,  // No control images in Mixboard
-        referenceImages,
-        currentUser?.displayName || 'Mixboard User'
-      );
+        // Call API for image generation
+        const output = await GeminiService.generateImage(
+          newGeneration.prompt,
+          config,
+          undefined,  // No control images in Mixboard
+          referenceImages,
+          currentUser?.displayName || 'Mixboard User'
+        );
 
       if (output.images && output.images.length > 0) {
         const imageDataUri = `data:image/png;base64,${output.images[0]}`;
@@ -140,6 +143,8 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
         // Save input images to storage
         const inputImageMetas: StoredImageMeta[] = [];
         for (const selectedImg of selectedImages) {
+          if (!selectedImg.dataUri) continue; // Skip if no dataUri (shouldn't happen for images)
+
           if (selectedImg.imageMetaId) {
             // Image already saved, find its metadata
             const meta = {
@@ -206,6 +211,67 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
           setCurrentGeneration(completedGeneration);
         };
         img.src = imageDataUri;
+      }
+      } else {
+        // TEXT MODE: Generate text
+        const output = await GeminiService.generateText(
+          newGeneration.prompt,
+          config,
+          150,  // Max 150 words
+          currentUser?.displayName || 'Mixboard User'
+        );
+
+        if (output.text) {
+          // Calculate duration
+          const duration = Date.now() - startTime;
+
+          // Complete generation record (no output images for text)
+          const completedGeneration: MixboardGeneration = {
+            ...newGeneration,
+            status: 'completed',
+            input_images: [],
+            output_images: [],
+            output_texts: [output.text],
+            generation_time_ms: duration
+          };
+
+          // Add generated text to canvas
+          const textWidth = 400;
+          const textHeight = 200;
+          const fontSize = 16;
+
+          const newCanvasText: CanvasImage = {
+            id: `text-${Date.now()}`,
+            type: 'text',
+            text: output.text,
+            fontSize: fontSize,
+            x: 100 + (canvasImages.length * 50),
+            y: 100 + (canvasImages.length * 50),
+            width: textWidth,
+            height: textHeight,
+            selected: false,
+            originalWidth: textWidth,
+            originalHeight: textHeight,
+            generationId: generationId
+          };
+
+          const updatedCanvasImages = [...canvasImages, newCanvasText];
+          setCanvasImages(updatedCanvasImages);
+
+          // Update session with new generation and canvas state
+          const updatedSession: MixboardSession = {
+            ...currentSession,
+            generations: [...currentSession.generations, completedGeneration],
+            canvas_images: updatedCanvasImages,
+            updated_at: new Date().toISOString()
+          };
+
+          // Persist session
+          StorageService.saveSession(updatedSession as any);
+          onSessionUpdate(updatedSession);
+
+          setCurrentGeneration(completedGeneration);
+        }
       }
     } catch (error) {
       console.error('Generation failed:', error);
@@ -540,20 +606,153 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
   const selectedCount = canvasImages.filter(img => img.selected).length;
 
   return (
-    <div className="h-full w-full flex flex-col bg-white dark:bg-black">
-      {/* Header */}
-      <div className="p-6 border-b border-zinc-200 dark:border-zinc-800">
-        <div className="flex items-center gap-3 mb-2">
-          <Sparkles className="text-orange-500" size={24} />
-          <h1 className="text-2xl font-bold text-zinc-900 dark:text-zinc-100">Mixboard</h1>
-          <span className="text-xs px-2 py-1 bg-orange-100 dark:bg-orange-900/30 text-orange-700 dark:text-orange-400 rounded font-medium">
-            Experimental Beta
-          </span>
+    <div className="h-full w-full flex bg-white dark:bg-black">
+      {/* Left Sidebar - Session & History */}
+      <div className="w-72 border-r border-zinc-200 dark:border-zinc-800 flex flex-col bg-zinc-50 dark:bg-zinc-900/50">
+        {/* Header */}
+        <div className="p-4 border-b border-zinc-200 dark:border-zinc-800">
+          <div className="flex items-center gap-2 mb-3">
+            <Sparkles className="text-orange-500" size={20} />
+            <h2 className="text-lg font-bold text-zinc-900 dark:text-zinc-100">Mixboard</h2>
+            <span className="text-[10px] px-1.5 py-0.5 bg-orange-100 dark:bg-orange-900/30 text-orange-700 dark:text-orange-400 rounded font-medium">
+              Beta
+            </span>
+          </div>
         </div>
-        <p className="text-sm text-zinc-600 dark:text-zinc-400">
-          Create, compose, and remix images on an infinite canvas
-        </p>
+
+        {/* Sessions List */}
+        <div className="flex items-center justify-between px-4 py-3 border-b border-zinc-200 dark:border-zinc-700">
+          <h4 className="text-xs font-bold text-zinc-700 dark:text-zinc-300">Sessions</h4>
+          <button
+            onClick={() => onCreateSession && onCreateSession()}
+            className="text-xs px-2 py-1 bg-orange-500 text-white rounded hover:bg-orange-600 transition-colors"
+          >
+            + New
+          </button>
+        </div>
+
+        <div className="flex-1 overflow-y-auto">
+          {allSessions.map(session => (
+            <div
+              key={session.session_id}
+              className={`group px-4 py-2 border-b border-zinc-200 dark:border-zinc-700 ${
+                currentSession?.session_id === session.session_id
+                  ? 'bg-orange-50 dark:bg-orange-950/30'
+                  : 'hover:bg-zinc-100 dark:hover:bg-zinc-800'
+              }`}
+            >
+              {editingSessionId === session.session_id ? (
+                <div className="flex items-center gap-2">
+                  <input
+                    type="text"
+                    value={editingSessionTitle}
+                    onChange={(e) => setEditingSessionTitle(e.target.value)}
+                    className="flex-1 px-2 py-1 text-xs bg-white dark:bg-zinc-900 border border-zinc-300 dark:border-zinc-700 rounded text-zinc-900 dark:text-zinc-100 focus:outline-none focus:border-orange-500"
+                    autoFocus
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        StorageService.renameSession(session.session_id, editingSessionTitle);
+                        setEditingSessionId(null);
+                        // Update the session in the parent component
+                        const updatedSession = { ...session, title: editingSessionTitle };
+                        onSessionUpdate(updatedSession as MixboardSession);
+                      } else if (e.key === 'Escape') {
+                        setEditingSessionId(null);
+                      }
+                    }}
+                  />
+                  <button
+                    onClick={() => {
+                      StorageService.renameSession(session.session_id, editingSessionTitle);
+                      setEditingSessionId(null);
+                      const updatedSession = { ...session, title: editingSessionTitle };
+                      onSessionUpdate(updatedSession as MixboardSession);
+                    }}
+                    className="p-1 text-green-600 dark:text-green-400 hover:bg-green-100 dark:hover:bg-green-900/30 rounded"
+                  >
+                    <Check size={14} />
+                  </button>
+                  <button
+                    onClick={() => setEditingSessionId(null)}
+                    className="p-1 text-zinc-500 dark:text-zinc-400 hover:bg-zinc-200 dark:hover:bg-zinc-700 rounded"
+                  >
+                    <X size={14} />
+                  </button>
+                </div>
+              ) : (
+                <div className="flex items-center justify-between">
+                  <button
+                    onClick={() => onSelectSession(session.session_id)}
+                    className="flex-1 text-left text-xs text-zinc-900 dark:text-zinc-100 truncate"
+                  >
+                    {session.title}
+                  </button>
+                  <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                    <button
+                      onClick={() => {
+                        setEditingSessionId(session.session_id);
+                        setEditingSessionTitle(session.title);
+                      }}
+                      className="p-1 text-zinc-600 dark:text-zinc-400 hover:bg-zinc-200 dark:hover:bg-zinc-700 rounded"
+                    >
+                      <Edit2 size={12} />
+                    </button>
+                    <button
+                      onClick={() => {
+                        if (session.generations.length > 0) {
+                          alert('Cannot delete session with generations. Please clear the session first.');
+                          return;
+                        }
+                        if (window.confirm(`Delete session "${session.title}"?`)) {
+                          StorageService.deleteSession(session.session_id);
+                          // If deleting current session, select another one
+                          if (currentSession?.session_id === session.session_id) {
+                            const otherSession = allSessions.find(s => s.session_id !== session.session_id);
+                            if (otherSession) {
+                              onSelectSession(otherSession.session_id);
+                            }
+                          }
+                          // Force a re-render by updating parent
+                          window.location.reload();
+                        }
+                      }}
+                      className="p-1 text-red-600 dark:text-red-400 hover:bg-red-100 dark:hover:bg-red-900/30 rounded"
+                    >
+                      <Trash2 size={12} />
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+
+        {/* Export Session */}
+        <div className="p-4 border-t border-zinc-200 dark:border-zinc-700">
+          <button
+            onClick={() => {
+              if (!currentSession) return;
+              const dataStr = JSON.stringify(currentSession, null, 2);
+              const blob = new Blob([dataStr], { type: 'application/json' });
+              const url = URL.createObjectURL(blob);
+              const link = document.createElement('a');
+              link.href = url;
+              link.download = `mixboard-session-${currentSession.session_id}.json`;
+              document.body.appendChild(link);
+              link.click();
+              document.body.removeChild(link);
+              URL.revokeObjectURL(url);
+            }}
+            className="w-full py-2 px-3 border border-zinc-300 dark:border-zinc-700 rounded text-zinc-700 dark:text-zinc-300 text-xs hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors flex items-center justify-center gap-2"
+          >
+            <Download size={14} />
+            Export Session
+          </button>
+        </div>
       </div>
+
+      {/* Main Content */}
+      <div className="flex-1 flex flex-col">
 
       <div className="flex-1 flex overflow-hidden">
         {/* Canvas Area */}
@@ -583,18 +782,18 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
                   Your canvas is empty
                 </h3>
                 <p className="text-sm text-zinc-500 dark:text-zinc-500 mb-4">
-                  Start by generating an image or uploading images to the canvas
+                  Start by generating an image or drag & drop images to the canvas
                 </p>
                 <div className="text-xs text-zinc-400 dark:text-zinc-600 space-y-1">
                   <p>• Write a prompt and click Generate</p>
-                  <p>• Upload images from your computer</p>
-                  <p>• Drag & drop images onto the canvas</p>
+                  <p>• Drag & drop images from your computer</p>
+                  <p>• Select images and generate to create variations</p>
                 </div>
               </div>
             </div>
           )}
 
-          {/* Canvas Images */}
+          {/* Canvas Images & Text */}
           {canvasImages.map(image => (
             <div
               key={image.id}
@@ -608,12 +807,24 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
               }}
               onMouseDown={(e) => handleImageMouseDown(e, image.id)}
             >
-              <img
-                src={image.dataUri}
-                alt="Canvas item"
-                className="w-full h-full object-cover pointer-events-none"
-                draggable={false}
-              />
+              {image.type === 'text' ? (
+                <div
+                  className="w-full h-full p-3 bg-white dark:bg-zinc-900 text-zinc-900 dark:text-zinc-100 overflow-auto pointer-events-none"
+                  style={{
+                    fontSize: `${(image.fontSize || 16) * zoom}px`,
+                    lineHeight: '1.5'
+                  }}
+                >
+                  {image.text}
+                </div>
+              ) : (
+                <img
+                  src={image.dataUri}
+                  alt="Canvas item"
+                  className="w-full h-full object-cover pointer-events-none"
+                  draggable={false}
+                />
+              )}
               {image.selected && (
                 <div className="absolute bottom-0 right-0 w-4 h-4 bg-orange-500 cursor-nwse-resize" />
               )}
@@ -671,36 +882,7 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
 
         {/* Right Sidebar - Generation Controls */}
         <div className="w-96 border-l border-zinc-200 dark:border-zinc-800 p-6 overflow-y-auto bg-zinc-50 dark:bg-zinc-900/50">
-          {/* Session Selector */}
-          <div className="mb-6 pb-4 border-b border-zinc-200 dark:border-zinc-700">
-            <div className="flex items-center justify-between mb-2">
-              <h4 className="text-sm font-bold text-zinc-700 dark:text-zinc-300">Session</h4>
-              <button
-                onClick={() => onCreateSession && onCreateSession()}
-                className="text-xs px-2 py-1 bg-orange-500 text-white rounded hover:bg-orange-600 transition-colors"
-              >
-                + New
-              </button>
-            </div>
-            <select
-              value={currentSession?.session_id || ''}
-              onChange={(e) => onSelectSession(e.target.value)}
-              className="w-full px-3 py-2 border border-zinc-300 dark:border-zinc-700 rounded bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 text-sm focus:outline-none focus:ring-2 focus:ring-orange-500"
-            >
-              {allSessions.map(session => (
-                <option key={session.session_id} value={session.session_id}>
-                  {session.title} ({session.canvas_images.length} images)
-                </option>
-              ))}
-            </select>
-            {currentSession && (
-              <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-2">
-                {currentSession.generations.length} generations • Created {new Date(currentSession.created_at).toLocaleDateString()}
-              </p>
-            )}
-          </div>
-
-          <h3 className="text-lg font-bold mb-4 text-zinc-900 dark:text-zinc-100">Generation</h3>
+          <h3 className="text-lg font-bold mb-4 text-zinc-900 dark:text-zinc-100">Generate</h3>
 
           {/* Mode Toggle */}
           <div className="flex gap-2 mb-4">
@@ -787,68 +969,6 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
             </div>
           </div>
 
-          {/* Upload Images */}
-          <div className="mb-4">
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept="image/*"
-              multiple
-              onChange={handleFileUpload}
-              className="hidden"
-            />
-            <button
-              onClick={() => fileInputRef.current?.click()}
-              className="w-full py-2 px-4 border-2 border-dashed border-zinc-300 dark:border-zinc-700 rounded text-zinc-600 dark:text-zinc-400 hover:border-orange-500 hover:text-orange-500 transition-colors flex items-center justify-center gap-2"
-            >
-              <ImageIcon size={16} />
-              Upload Images
-            </button>
-          </div>
-
-          {/* Session Management */}
-          <div className="mb-4 pb-4 border-b border-zinc-200 dark:border-zinc-700 space-y-2">
-            <button
-              onClick={() => {
-                if (!currentSession) return;
-                const dataStr = JSON.stringify(currentSession, null, 2);
-                const blob = new Blob([dataStr], { type: 'application/json' });
-                const url = URL.createObjectURL(blob);
-                const link = document.createElement('a');
-                link.href = url;
-                link.download = `mixboard-session-${currentSession.session_id}.json`;
-                document.body.appendChild(link);
-                link.click();
-                document.body.removeChild(link);
-                URL.revokeObjectURL(url);
-              }}
-              className="w-full py-2 px-4 border border-zinc-300 dark:border-zinc-700 rounded text-zinc-700 dark:text-zinc-300 text-sm hover:bg-zinc-50 dark:hover:bg-zinc-800 transition-colors flex items-center justify-center gap-2"
-            >
-              <Download size={14} />
-              Export Session
-            </button>
-            <button
-              onClick={() => {
-                if (window.confirm('Clear all images from canvas? This cannot be undone.')) {
-                  setCanvasImages([]);
-                  if (currentSession) {
-                    const updatedSession: MixboardSession = {
-                      ...currentSession,
-                      canvas_images: [],
-                      updated_at: new Date().toISOString()
-                    };
-                    StorageService.saveSession(updatedSession as any);
-                    onSessionUpdate(updatedSession);
-                  }
-                }
-              }}
-              className="w-full py-2 px-4 border border-red-300 dark:border-red-700 rounded text-red-600 dark:text-red-400 text-sm hover:bg-red-50 dark:hover:bg-red-950/30 transition-colors flex items-center justify-center gap-2"
-            >
-              <Trash2 size={14} />
-              Clear Canvas
-            </button>
-          </div>
-
           {/* Generate Button */}
           <button
             onClick={handleGenerate}
@@ -868,137 +988,8 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
               </>
             )}
           </button>
-
-          {/* Generation History */}
-          {currentSession && currentSession.generations.length > 0 && (
-            <div className="mt-6">
-              <h4 className="text-sm font-bold mb-3 text-zinc-900 dark:text-zinc-100">
-                Recent Generations ({currentSession.generations.length})
-              </h4>
-              <div className="space-y-3 max-h-96 overflow-y-auto">
-                {currentSession.generations.slice().reverse().map((gen, idx) => {
-                  const outputImage = gen.output_images && gen.output_images.length > 0
-                    ? gen.output_images[0]
-                    : null;
-                  const outputDataUri = outputImage
-                    ? StorageService.loadImage('output', outputImage.id, outputImage.filename)
-                    : null;
-
-                  return (
-                    <div
-                      key={gen.generation_id}
-                      className="p-3 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded"
-                    >
-                      {/* Generation Info */}
-                      <div className="flex items-start justify-between mb-2">
-                        <div className="flex-1">
-                          <p className="text-xs text-zinc-500 dark:text-zinc-400 mb-1">
-                            {new Date(gen.timestamp).toLocaleTimeString()}
-                          </p>
-                          <p className="text-xs text-zinc-700 dark:text-zinc-300 line-clamp-2">
-                            {gen.prompt}
-                          </p>
-                        </div>
-                        <span className={`text-xs px-2 py-0.5 rounded ${
-                          gen.status === 'completed'
-                            ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400'
-                            : gen.status === 'failed'
-                            ? 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400'
-                            : 'bg-yellow-100 dark:bg-yellow-900/30 text-yellow-700 dark:text-yellow-400'
-                        }`}>
-                          {gen.status}
-                        </span>
-                      </div>
-
-                      {/* Output Image Preview */}
-                      {outputDataUri && (
-                        <div className="mb-2">
-                          <img
-                            src={outputDataUri}
-                            alt="Generated output"
-                            className="w-full rounded border border-zinc-300 dark:border-zinc-700"
-                          />
-                        </div>
-                      )}
-
-                      {/* Actions */}
-                      <div className="flex gap-2">
-                        {outputDataUri && (
-                          <button
-                            onClick={() => {
-                              if (!outputImage) return;
-                              const img = new Image();
-                              img.onload = () => {
-                                const newCanvasImage: CanvasImage = {
-                                  id: `img-${Date.now()}`,
-                                  dataUri: outputDataUri,
-                                  x: 150 + (canvasImages.length * 30),
-                                  y: 150 + (canvasImages.length * 30),
-                                  width: 300,
-                                  height: (300 * img.height) / img.width,
-                                  selected: false,
-                                  originalWidth: img.width,
-                                  originalHeight: img.height,
-                                  generationId: gen.generation_id,
-                                  imageMetaId: outputImage.id
-                                };
-                                setCanvasImages(prev => {
-                                  const updated = [...prev, newCanvasImage];
-                                  saveCanvasToSession(updated);
-                                  return updated;
-                                });
-                              };
-                              img.src = outputDataUri;
-                            }}
-                            className="flex-1 py-1.5 px-3 bg-orange-500 text-white text-xs rounded hover:bg-orange-600 transition-colors"
-                          >
-                            Add to Canvas
-                          </button>
-                        )}
-                        {gen.canvas_state && (
-                          <button
-                            onClick={() => {
-                              if (gen.canvas_state) {
-                                setCanvasImages(gen.canvas_state.images);
-                                setZoom(gen.canvas_state.zoom);
-                                setPanOffset(gen.canvas_state.panOffset);
-                                saveCanvasToSession(gen.canvas_state.images);
-                              }
-                            }}
-                            className="flex-1 py-1.5 px-3 border border-zinc-300 dark:border-zinc-700 text-zinc-700 dark:text-zinc-300 text-xs rounded hover:bg-zinc-50 dark:hover:bg-zinc-800 transition-colors"
-                          >
-                            Restore Canvas
-                          </button>
-                        )}
-                      </div>
-
-                      {/* Metadata */}
-                      <div className="mt-2 pt-2 border-t border-zinc-200 dark:border-zinc-700 flex justify-between text-xs text-zinc-500 dark:text-zinc-400">
-                        <span>{gen.input_images.length} inputs</span>
-                        {gen.generation_time_ms && (
-                          <span>{gen.generation_time_ms}ms</span>
-                        )}
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          )}
-
-          {/* Instructions */}
-          <div className="mt-6 p-4 bg-zinc-100 dark:bg-zinc-800 rounded text-xs text-zinc-600 dark:text-zinc-400 space-y-2">
-            <p className="font-medium text-zinc-700 dark:text-zinc-300">Tips:</p>
-            <ul className="space-y-1 list-disc list-inside">
-              <li>Drag & drop images from your computer</li>
-              <li>Click to select, Ctrl+Click for multi-select</li>
-              <li>Drag to move, resize from bottom-right corner</li>
-              <li>Selected images are used in generation</li>
-              <li>Scroll to zoom, Shift+Drag to pan canvas</li>
-              <li>Delete key to remove selected images (not while typing)</li>
-            </ul>
-          </div>
         </div>
+      </div>
       </div>
     </div>
   );

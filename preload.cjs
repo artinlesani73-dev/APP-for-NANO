@@ -23,6 +23,7 @@ contextBridge.exposeInMainWorld('electron', {
   saveSessionSync: (sessionId, sessionData) => ipcRenderer.sendSync('save-session-sync', sessionId, sessionData),
   loadSessionSync: (sessionId) => ipcRenderer.sendSync('load-session-sync', sessionId),
   deleteSessionSync: (sessionId) => ipcRenderer.sendSync('delete-session-sync', sessionId),
+  renameSessionFileSync: (sessionId, newExtension) => ipcRenderer.sendSync('rename-session-file-sync', sessionId, newExtension),
   syncUserData: () => ipcRenderer.invoke('sync-user-data'),
 
   // Logging
