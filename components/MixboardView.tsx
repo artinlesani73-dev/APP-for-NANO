@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Sparkles, Image as ImageIcon, Type, Trash2, ZoomIn, ZoomOut, Move, Download } from 'lucide-react';
+import { Sparkles, Image as ImageIcon, Type, Trash2, ZoomIn, ZoomOut, Move, Download, Edit2, Check, X } from 'lucide-react';
 import { GeminiService } from '../services/geminiService';
 import { StorageService } from '../services/newStorageService';
 import { GenerationConfig, CanvasImage, MixboardSession, MixboardGeneration, StoredImageMeta } from '../types';
@@ -46,6 +46,8 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
   const [isPanning, setIsPanning] = useState(false);
   const [showImageInput, setShowImageInput] = useState(false);
   const [currentGeneration, setCurrentGeneration] = useState<MixboardGeneration | null>(null);
+  const [editingSessionId, setEditingSessionId] = useState<string | null>(null);
+  const [editingSessionTitle, setEditingSessionTitle] = useState('');
 
   const canvasRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -554,32 +556,115 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
           </div>
         </div>
 
-        {/* Session Selector */}
-        <div className="p-4 border-b border-zinc-200 dark:border-zinc-700">
-          <div className="flex items-center justify-between mb-2">
-            <h4 className="text-xs font-bold text-zinc-700 dark:text-zinc-300">Session</h4>
-            <button
-              onClick={() => onCreateSession && onCreateSession()}
-              className="text-xs px-2 py-1 bg-orange-500 text-white rounded hover:bg-orange-600 transition-colors"
-            >
-              + New
-            </button>
-          </div>
-          <select
-            value={currentSession?.session_id || ''}
-            onChange={(e) => onSelectSession(e.target.value)}
-            className="w-full px-3 py-2 text-sm bg-white dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-700 rounded text-zinc-900 dark:text-zinc-100 focus:outline-none focus:border-orange-500"
+        {/* Sessions List */}
+        <div className="flex items-center justify-between px-4 py-3 border-b border-zinc-200 dark:border-zinc-700">
+          <h4 className="text-xs font-bold text-zinc-700 dark:text-zinc-300">Sessions</h4>
+          <button
+            onClick={() => onCreateSession && onCreateSession()}
+            className="text-xs px-2 py-1 bg-orange-500 text-white rounded hover:bg-orange-600 transition-colors"
           >
-            {allSessions.map(session => (
-              <option key={session.session_id} value={session.session_id}>
-                {session.title}
-              </option>
-            ))}
-          </select>
+            + New
+          </button>
+        </div>
+
+        <div className="flex-1 overflow-y-auto">
+          {allSessions.map(session => (
+            <div
+              key={session.session_id}
+              className={`group px-4 py-2 border-b border-zinc-200 dark:border-zinc-700 ${
+                currentSession?.session_id === session.session_id
+                  ? 'bg-orange-50 dark:bg-orange-950/30'
+                  : 'hover:bg-zinc-100 dark:hover:bg-zinc-800'
+              }`}
+            >
+              {editingSessionId === session.session_id ? (
+                <div className="flex items-center gap-2">
+                  <input
+                    type="text"
+                    value={editingSessionTitle}
+                    onChange={(e) => setEditingSessionTitle(e.target.value)}
+                    className="flex-1 px-2 py-1 text-xs bg-white dark:bg-zinc-900 border border-zinc-300 dark:border-zinc-700 rounded text-zinc-900 dark:text-zinc-100 focus:outline-none focus:border-orange-500"
+                    autoFocus
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        StorageService.renameSession(session.session_id, editingSessionTitle);
+                        setEditingSessionId(null);
+                        // Update the session in the parent component
+                        const updatedSession = { ...session, title: editingSessionTitle };
+                        onSessionUpdate(updatedSession as MixboardSession);
+                      } else if (e.key === 'Escape') {
+                        setEditingSessionId(null);
+                      }
+                    }}
+                  />
+                  <button
+                    onClick={() => {
+                      StorageService.renameSession(session.session_id, editingSessionTitle);
+                      setEditingSessionId(null);
+                      const updatedSession = { ...session, title: editingSessionTitle };
+                      onSessionUpdate(updatedSession as MixboardSession);
+                    }}
+                    className="p-1 text-green-600 dark:text-green-400 hover:bg-green-100 dark:hover:bg-green-900/30 rounded"
+                  >
+                    <Check size={14} />
+                  </button>
+                  <button
+                    onClick={() => setEditingSessionId(null)}
+                    className="p-1 text-zinc-500 dark:text-zinc-400 hover:bg-zinc-200 dark:hover:bg-zinc-700 rounded"
+                  >
+                    <X size={14} />
+                  </button>
+                </div>
+              ) : (
+                <div className="flex items-center justify-between">
+                  <button
+                    onClick={() => onSelectSession(session.session_id)}
+                    className="flex-1 text-left text-xs text-zinc-900 dark:text-zinc-100 truncate"
+                  >
+                    {session.title}
+                  </button>
+                  <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                    <button
+                      onClick={() => {
+                        setEditingSessionId(session.session_id);
+                        setEditingSessionTitle(session.title);
+                      }}
+                      className="p-1 text-zinc-600 dark:text-zinc-400 hover:bg-zinc-200 dark:hover:bg-zinc-700 rounded"
+                    >
+                      <Edit2 size={12} />
+                    </button>
+                    <button
+                      onClick={() => {
+                        if (session.generations.length > 0) {
+                          alert('Cannot delete session with generations. Please clear the session first.');
+                          return;
+                        }
+                        if (window.confirm(`Delete session "${session.title}"?`)) {
+                          StorageService.deleteSession(session.session_id);
+                          // If deleting current session, select another one
+                          if (currentSession?.session_id === session.session_id) {
+                            const otherSession = allSessions.find(s => s.session_id !== session.session_id);
+                            if (otherSession) {
+                              onSelectSession(otherSession.session_id);
+                            }
+                          }
+                          // Force a re-render by updating parent
+                          window.location.reload();
+                        }
+                      }}
+                      className="p-1 text-red-600 dark:text-red-400 hover:bg-red-100 dark:hover:bg-red-900/30 rounded"
+                    >
+                      <Trash2 size={12} />
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          ))}
         </div>
 
         {/* Export Session */}
-        <div className="p-4 border-b border-zinc-200 dark:border-zinc-700">
+        <div className="p-4 border-t border-zinc-200 dark:border-zinc-700">
           <button
             onClick={() => {
               if (!currentSession) return;
@@ -600,112 +685,10 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
             Export Session
           </button>
         </div>
-
-        {/* Recent Generations */}
-        <div className="flex-1 overflow-y-auto p-4">
-          {currentSession && currentSession.generations.length > 0 ? (
-            <>
-              <h4 className="text-xs font-bold mb-3 text-zinc-900 dark:text-zinc-100">
-                Recent Generations ({currentSession.generations.length})
-              </h4>
-              <div className="space-y-3">
-                {currentSession.generations.slice().reverse().map((gen, idx) => {
-                  const outputImage = gen.output_images && gen.output_images.length > 0
-                    ? gen.output_images[0]
-                    : null;
-                  const outputDataUri = outputImage
-                    ? StorageService.loadImage('output', outputImage.id, outputImage.filename)
-                    : null;
-
-                  return (
-                    <div
-                      key={gen.generation_id}
-                      className="p-3 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded"
-                    >
-                      {/* Generation Info */}
-                      <div className="flex items-start justify-between mb-2">
-                        <div className="flex-1">
-                          <p className="text-[10px] text-zinc-500 dark:text-zinc-400 mb-1">
-                            {new Date(gen.timestamp).toLocaleTimeString()}
-                          </p>
-                          <p className="text-xs text-zinc-700 dark:text-zinc-300 line-clamp-2">
-                            {gen.prompt}
-                          </p>
-                        </div>
-                      </div>
-
-                      {/* Output Image */}
-                      {outputDataUri && (
-                        <div className="relative mb-2">
-                          <img
-                            src={outputDataUri}
-                            alt="Generation output"
-                            className="w-full rounded border border-zinc-300 dark:border-zinc-600"
-                          />
-                          <button
-                            onClick={() => {
-                              if (!outputImage || !outputDataUri) return;
-                              const img = new Image();
-                              img.onload = () => {
-                                const newImage: CanvasImage = {
-                                  id: `canvas-${Date.now()}-${Math.random()}`,
-                                  dataUri: outputDataUri,
-                                  x: 100 + Math.random() * 200,
-                                  y: 100 + Math.random() * 200,
-                                  width: 300,
-                                  height: (300 * img.height) / img.width,
-                                  selected: false,
-                                  originalWidth: img.width,
-                                  originalHeight: img.height,
-                                  generationId: gen.generation_id,
-                                  imageMetaId: outputImage.id
-                                };
-                                const updated = [...canvasImages, newImage];
-                                setCanvasImages(updated);
-                                saveCanvasToSession(updated);
-                              };
-                              img.src = outputDataUri;
-                            }}
-                            className="absolute bottom-2 right-2 px-2 py-1 text-[10px] bg-orange-500 text-white rounded hover:bg-orange-600 transition-colors"
-                          >
-                            Add to Canvas
-                          </button>
-                        </div>
-                      )}
-
-                      {/* Generation Stats */}
-                      <div className="flex items-center justify-between text-[10px] text-zinc-500 dark:text-zinc-400">
-                        <span>{gen.input_images?.length || 0} inputs</span>
-                        <span>{gen.generation_time_ms ? `${(gen.generation_time_ms / 1000).toFixed(1)}s` : '—'}</span>
-                        <span className={`px-1.5 py-0.5 rounded ${
-                          gen.status === 'completed' ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400' :
-                          gen.status === 'failed' ? 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400' :
-                          'bg-yellow-100 dark:bg-yellow-900/30 text-yellow-700 dark:text-yellow-400'
-                        }`}>
-                          {gen.status}
-                        </span>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </>
-          ) : (
-            <div className="text-center py-8">
-              <p className="text-xs text-zinc-400 dark:text-zinc-500">No generations yet</p>
-            </div>
-          )}
-        </div>
       </div>
 
       {/* Main Content */}
       <div className="flex-1 flex flex-col">
-        {/* Canvas Header */}
-        <div className="p-4 border-b border-zinc-200 dark:border-zinc-800 bg-white dark:bg-black">
-        <p className="text-sm text-zinc-600 dark:text-zinc-400">
-          Create, compose, and remix images on an infinite canvas
-        </p>
-      </div>
 
       <div className="flex-1 flex overflow-hidden">
         {/* Canvas Area */}
