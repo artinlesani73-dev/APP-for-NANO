@@ -177,7 +177,7 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
     const startTime = Date.now();
 
     try {
-      // Create generation record BEFORE API call
+      // Create generation record BEFORE API call (only persisted for image generations)
       const newGeneration: MixboardGeneration = {
         generation_id: generationId,
         timestamp: new Date().toISOString(),
@@ -278,16 +278,6 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
           // Calculate duration
           const duration = Date.now() - startTime;
 
-          // Complete generation record (no output images for text)
-          const completedGeneration: MixboardGeneration = {
-            ...newGeneration,
-            status: 'completed',
-            input_images: inputImageMetas,
-            output_images: [],
-            output_texts: [output.text],
-            generation_time_ms: duration
-          };
-
           // Add generated text to canvas
           const textWidth = 400;
           const textHeight = 200;
@@ -314,10 +304,10 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
           const updatedCanvasImages = [...canvasImages, newCanvasText];
           setCanvasImages(updatedCanvasImages);
 
-          // Update session with new generation and canvas state
+          // Update session with canvas state only (text generations are not stored in history)
           const updatedSession: MixboardSession = {
             ...currentSession,
-            generations: [...existingGenerations, completedGeneration],
+            generations: existingGenerations,
             canvas_images: updatedCanvasImages,
             updated_at: new Date().toISOString()
           };
@@ -325,8 +315,7 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
           // Persist session
           StorageService.saveSession(updatedSession as any);
           onSessionUpdate(updatedSession);
-
-          setCurrentGeneration(completedGeneration);
+          setCurrentGeneration(null);
         }
       }
     } catch (error) {
@@ -350,17 +339,23 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
         }
       };
 
-      // Update session with failed generation
-      const updatedSession: MixboardSession = {
-        ...currentSession,
-        generations: [...existingGenerations, failedGeneration],
-        updated_at: new Date().toISOString()
-      };
+      // Only persist failed generations for image requests; text failures still update canvas state timestamp
+      const updatedSession: MixboardSession = showImageInput
+        ? {
+            ...currentSession,
+            generations: [...existingGenerations, failedGeneration],
+            updated_at: new Date().toISOString()
+          }
+        : {
+            ...currentSession,
+            generations: existingGenerations,
+            updated_at: new Date().toISOString()
+          };
 
       StorageService.saveSession(updatedSession as any);
       onSessionUpdate(updatedSession);
 
-      setCurrentGeneration(failedGeneration);
+      setCurrentGeneration(showImageInput ? failedGeneration : null);
       alert('Generation failed: ' + (error as Error).message);
     } finally {
       setIsGenerating(false);
