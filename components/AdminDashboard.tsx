@@ -1,7 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Activity, AlertTriangle, BarChart2, Battery, Cpu, HardDrive, Lock, RefreshCcw, Server, ShieldCheck, Timer, Users, X } from 'lucide-react';
-import { AdminService } from '../services/adminService';
-import { AdminMetrics, LogEntry } from '../types';
+import { useAdminData } from './AdminDataStore';
 
 interface AdminDashboardProps {
   isOpen: boolean;
@@ -27,40 +26,33 @@ const formatDuration = (seconds: number) => {
 export const AdminDashboard: React.FC<AdminDashboardProps> = ({ isOpen, isAuthorized, onAuthorize, onClose }) => {
   const [passphrase, setPassphrase] = useState('');
   const [error, setError] = useState('');
-  const [metrics, setMetrics] = useState<AdminMetrics | null>(null);
-  const [logs, setLogs] = useState<LogEntry[]>([]);
-  const [isLoading, setIsLoading] = useState(false);
+  const { metrics, logs, fetchMetrics, fetchLogs, isFetchingMetrics, scheduleIdleFetch } = useAdminData();
 
   useEffect(() => {
+    if (!isOpen || !isAuthorized) return;
+
+    let cancelled = false;
     let interval: ReturnType<typeof setInterval> | undefined;
-
-    const loadData = async () => {
-      if (!isAuthorized) return;
-      setIsLoading(true);
-      const [metricPayload, activity] = await Promise.all([
-        AdminService.fetchMetrics(),
-        AdminService.fetchActivityLogs()
-      ]);
-      setMetrics(metricPayload);
-      setLogs(activity);
-      setIsLoading(false);
-    };
-
-    if (isAuthorized) {
-      loadData();
-      interval = setInterval(loadData, 5000);
-    }
+    let cancelIntervalIdle: (() => void) | undefined;
+    const cancelIdle = scheduleIdleFetch(async () => {
+      if (cancelled) return;
+      await Promise.all([fetchMetrics(), fetchLogs()]);
+      interval = setInterval(() => {
+        cancelIntervalIdle?.();
+        cancelIntervalIdle = scheduleIdleFetch(() => fetchMetrics(true));
+      }, 5000);
+    });
 
     return () => {
+      cancelled = true;
       if (interval) clearInterval(interval);
+      cancelIntervalIdle?.();
+      cancelIdle?.();
     };
-  }, [isAuthorized]);
+  }, [isOpen, isAuthorized, fetchMetrics, fetchLogs, scheduleIdleFetch]);
 
   const refreshMetrics = async () => {
-    setIsLoading(true);
-    const data = await AdminService.fetchMetrics();
-    setMetrics(data);
-    setIsLoading(false);
+    await fetchMetrics(true);
   };
 
   const handleAuthorize = async () => {
@@ -223,7 +215,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ isOpen, isAuthor
                     </div>
                   </div>
                 </div>
-                {isLoading && <p className="text-xs text-zinc-500 mt-2">Refreshing metrics...</p>}
+                {isFetchingMetrics && <p className="text-xs text-zinc-500 mt-2">Refreshing metrics...</p>}
               </div>
 
               <div className="p-4 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900/60">

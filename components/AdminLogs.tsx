@@ -1,8 +1,9 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { ShieldCheck, X, RefreshCw, Lock } from 'lucide-react';
-import { LoggerService } from '../services/logger';
 import { AppConfig } from '../services/config';
+import { LoggerService } from '../services/logger';
 import { LogEntry } from '../types';
+import { useAdminData } from './AdminDataStore';
 
 interface AdminLogsProps {
   isOpen: boolean;
@@ -13,35 +14,32 @@ export const AdminLogs: React.FC<AdminLogsProps> = ({ isOpen, onClose }) => {
   const [authorized, setAuthorized] = useState(false);
   const [passphrase, setPassphrase] = useState('');
   const [error, setError] = useState('');
-  const [logs, setLogs] = useState<LogEntry[]>([]);
   const [userFilter, setUserFilter] = useState('');
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
 
   const adminPassphrase = AppConfig.getAdminPassphrase();
+  const { logs, fetchLogs, isFetchingLogs, scheduleIdleFetch } = useAdminData();
 
   useEffect(() => {
     if (!isOpen) {
       setAuthorized(false);
       setPassphrase('');
       setError('');
-      setLogs([]);
       setUserFilter('');
       setStartDate('');
       setEndDate('');
     }
   }, [isOpen]);
 
-  useEffect(() => {
-    if (authorized) {
-      refreshLogs();
-    }
-  }, [authorized]);
+  const refreshLogs = async () => fetchLogs(true);
 
-  const refreshLogs = async () => {
-    const fetched = await LoggerService.fetchLogs();
-    setLogs(fetched.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()));
-  };
+  useEffect(() => {
+    if (!authorized || !isOpen) return;
+
+    const cancelIdle = scheduleIdleFetch(() => fetchLogs(true));
+    return () => cancelIdle?.();
+  }, [authorized, isOpen, fetchLogs, scheduleIdleFetch]);
 
   const filteredLogs = useMemo(() => {
     return logs.filter((log) => {
@@ -158,9 +156,10 @@ export const AdminLogs: React.FC<AdminLogsProps> = ({ isOpen, onClose }) => {
               <div className="flex items-center gap-2">
                 <button
                   onClick={refreshLogs}
-                  className="flex items-center gap-2 px-3 py-2 rounded-lg border border-zinc-300 dark:border-zinc-700 text-sm text-zinc-700 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800"
+                  disabled={isFetchingLogs}
+                  className="flex items-center gap-2 px-3 py-2 rounded-lg border border-zinc-300 dark:border-zinc-700 text-sm text-zinc-700 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800 disabled:opacity-60"
                 >
-                  <RefreshCw size={16} /> Refresh
+                  <RefreshCw size={16} className={isFetchingLogs ? 'animate-spin' : ''} /> {isFetchingLogs ? 'Refreshing...' : 'Refresh'}
                 </button>
               </div>
             </div>

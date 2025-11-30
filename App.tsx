@@ -6,6 +6,7 @@ import { ResultPanel } from './components/ResultPanel';
 import type { HistoryGalleryItem } from './components/HistoryPanel';
 import { LoginForm } from './components/LoginForm';
 import { UserProvider, useUser } from './components/UserContext';
+import { AdminDataProvider } from './components/AdminDataStore';
 import { StorageService } from './services/newStorageService';
 import { GeminiService } from './services/geminiService';
 import { LoggerService } from './services/logger';
@@ -934,7 +935,9 @@ function AppContent() {
 export default function App() {
   return (
     <UserProvider>
-      <AppContent />
+      <AdminDataProvider>
+        <AppContent />
+      </AdminDataProvider>
     </UserProvider>
   );
 }
