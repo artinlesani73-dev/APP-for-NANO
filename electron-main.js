@@ -1,9 +1,20 @@
 const { app, BrowserWindow, dialog, ipcMain, nativeImage, protocol } = require('electron');
-const { autoUpdater } = require('electron-updater');
 const path = require('path');
 const fs = require('fs');
-const os = require('os');
 const { Readable } = require('stream');
+
+// Heavy, non-essential dependencies are loaded lazily after app.ready
+let autoUpdater;
+let os;
+
+const loadDeferredModules = () => {
+  if (!autoUpdater) {
+    autoUpdater = require('electron-updater').autoUpdater;
+  }
+  if (!os) {
+    os = require('os');
+  }
+};
 
 protocol.registerSchemesAsPrivileged([
   {
@@ -121,8 +132,21 @@ const registerAppProtocol = () => {
 
 let mainWindow;
 let adminWindow;
+let postLoadTasksScheduled = false;
 
 const isAdminEnabled = () => Boolean(process.env.VITE_ADMIN_PASSPHRASE || process.env.ADMIN_ENABLED === 'true');
+
+const schedulePostLoadWork = (window) => {
+  if (postLoadTasksScheduled || !window?.webContents) return;
+  postLoadTasksScheduled = true;
+
+  window.webContents.once('did-finish-load', async () => {
+    loadDeferredModules();
+    registerDeferredIpcHandlers();
+    await ensureUserCaches();
+    autoUpdater?.checkForUpdatesAndNotify();
+  });
+};
 
 function createWindow() {
   const icon = resolveAppIcon();
@@ -147,6 +171,8 @@ function createWindow() {
 
   // Load from the 'dist' directory created by Vite build using cache-aware protocol
   mainWindow.loadURL('app://index.html');
+
+  schedulePostLoadWork(mainWindow);
 }
 
 function createAdminWindow() {
@@ -201,6 +227,67 @@ const getDataPath = () => {
     return appDir;
 };
 
+const defaultUserSettings = {
+  theme: 'dark',
+  showHistory: false,
+  showGraphView: false
+};
+
+const defaultUserHistory = {
+  lastSessionId: null,
+  lastMixboardSessionId: null
+};
+
+let cachedUserSettings = { ...defaultUserSettings };
+let cachedUserHistory = { ...defaultUserHistory };
+
+const getCacheFilePaths = () => {
+  const base = getDataPath();
+  return {
+    settings: path.join(base, 'user-settings.json'),
+    history: path.join(base, 'user-history.json')
+  };
+};
+
+const readJsonFile = async (filePath, fallback) => {
+  try {
+    const contents = await fs.promises.readFile(filePath, 'utf-8');
+    return { ...fallback, ...(JSON.parse(contents) || {}) };
+  } catch (err) {
+    if (err?.code !== 'ENOENT') {
+      console.warn(`Failed to read ${filePath}`, err);
+    }
+    return { ...fallback };
+  }
+};
+
+const writeJsonFile = async (filePath, data) => {
+  try {
+    await fs.promises.writeFile(filePath, JSON.stringify(data, null, 2));
+  } catch (err) {
+    console.error(`Failed to write ${filePath}`, err);
+  }
+};
+
+const hydrateUserCaches = async () => {
+  const paths = getCacheFilePaths();
+  cachedUserSettings = await readJsonFile(paths.settings, defaultUserSettings);
+  cachedUserHistory = await readJsonFile(paths.history, defaultUserHistory);
+  return { settings: cachedUserSettings, history: cachedUserHistory };
+};
+
+const persistUserSettings = async (settings) => {
+  cachedUserSettings = { ...cachedUserSettings, ...settings };
+  await writeJsonFile(getCacheFilePaths().settings, cachedUserSettings);
+  return cachedUserSettings;
+};
+
+const persistUserHistory = async (history) => {
+  cachedUserHistory = { ...cachedUserHistory, ...history };
+  await writeJsonFile(getCacheFilePaths().history, cachedUserHistory);
+  return cachedUserHistory;
+};
+
 const getLogDirectory = () => {
     const sharedLogDir = process.env.LOG_SHARE_PATH || process.env.VITE_LOG_SHARE_PATH;
     if (sharedLogDir) {
@@ -253,167 +340,219 @@ const logAutoUpdateEvent = (event, details) => {
     timestamp: new Date().toISOString()
   });
 };
+let ipcHandlersRegistered = false;
+let userCacheHydrationPromise;
 
-// IPC Handlers for synchronous file operations
-ipcMain.on('save-sync', (event, filename, content) => {
+const notifyCachesReady = () => {
+  if (mainWindow && mainWindow.webContents && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send('user-cache-ready', {
+      settings: cachedUserSettings,
+      history: cachedUserHistory
+    });
+  }
+};
+
+const ensureUserCaches = () => {
+  if (!userCacheHydrationPromise) {
+    userCacheHydrationPromise = hydrateUserCaches()
+      .then((result) => {
+        notifyCachesReady();
+        return result;
+      })
+      .catch((err) => {
+        console.error('Failed to hydrate user caches', err);
+        return { settings: cachedUserSettings, history: cachedUserHistory };
+      });
+  }
+  return userCacheHydrationPromise;
+};
+
+const registerDeferredIpcHandlers = () => {
+  if (ipcHandlersRegistered) return;
+  ipcHandlersRegistered = true;
+  loadDeferredModules();
+
+  ipcMain.on('save-sync', (event, filename, content) => {
     try {
-        const filePath = path.join(getDataPath(), `${filename}.json`);
-        fs.writeFileSync(filePath, content, 'utf-8');
-        event.returnValue = true;
+      const filePath = path.join(getDataPath(), `${filename}.json`);
+      fs.writeFileSync(filePath, content, 'utf-8');
+      event.returnValue = true;
     } catch (e) {
-        console.error("Save failed", e);
-        event.returnValue = false;
-    }
-});
-
-ipcMain.on('load-sync', (event, filename) => {
-    try {
-        const filePath = path.join(getDataPath(), `${filename}.json`);
-        if (fs.existsSync(filePath)) {
-            const content = fs.readFileSync(filePath, 'utf-8');
-            event.returnValue = content;
-        } else {
-            event.returnValue = null;
-        }
-    } catch (e) {
-        event.returnValue = null;
-    }
-});
-
-ipcMain.on('delete-sync', (event, filename) => {
-    try {
-        const filePath = path.join(getDataPath(), `${filename}.json`);
-        if (fs.existsSync(filePath)) {
-            fs.unlinkSync(filePath);
-        }
-        event.returnValue = true;
-    } catch (e) {
-        event.returnValue = false;
-    }
-});
-
-ipcMain.on('log-event', (event, entry) => {
-    try {
-        appendLog(entry);
-        event.returnValue = true;
-    } catch (e) {
-        console.error('Failed to write log entry', e);
-        event.returnValue = false;
-    }
-});
-
-ipcMain.handle('fetch-logs', async () => {
-    return readLogs();
-});
-
-ipcMain.handle('check-for-updates', async () => {
-  logAutoUpdateEvent('check-for-updates');
-  const result = await autoUpdater.checkForUpdates();
-  logAutoUpdateEvent('check-for-updates-result', { versionInfo: result?.updateInfo });
-  return result;
-});
-
-ipcMain.handle('verify-admin-passphrase', async (_event, candidate) => {
-  if (!isAdminEnabled()) return false;
-  const expected = process.env.VITE_ADMIN_PASSPHRASE || '';
-  return expected.length > 0 && candidate === expected;
-});
-
-ipcMain.handle('open-admin-window', async (_event, verified) => {
-  if (!verified || !isAdminEnabled()) return false;
-  createAdminWindow();
-  return true;
-});
-
-ipcMain.handle('get-admin-metrics', async () => {
-  const totalMem = os.totalmem();
-  const freeMem = os.freemem();
-  const usedMem = totalMem - freeMem;
-  const uptimeSeconds = os.uptime();
-  const load = os.loadavg();
-  const cpus = os.cpus();
-  const cpuUsage = load[0] / cpus.length;
-
-  const sessionsDir = path.join(getDataPath(), 'sessions');
-  const sessionCount = fs.existsSync(sessionsDir)
-    ? fs.readdirSync(sessionsDir).filter(file => file.endsWith('.json')).length
-    : 0;
-
-  return {
-    platform: os.platform(),
-    arch: os.arch(),
-    uptimeSeconds,
-    memory: {
-      total: totalMem,
-      used: usedMem,
-      free: freeMem,
-      percentUsed: totalMem > 0 ? usedMem / totalMem : 0
-    },
-    cpu: {
-      cores: cpus.length,
-      load: cpuUsage,
-      model: cpus[0]?.model ?? 'unknown'
-    },
-    sessions: sessionCount,
-    timestamp: new Date().toISOString()
-  };
-});
-
-autoUpdater.on('update-available', (info) => {
-  logAutoUpdateEvent('update-available', info);
-  sendUpdateStatus('update-available', info);
-});
-
-autoUpdater.on('download-progress', (progress) => {
-  logAutoUpdateEvent('download-progress', progress);
-  sendUpdateStatus('update-download-progress', progress);
-});
-
-autoUpdater.on('update-downloaded', (info) => {
-  logAutoUpdateEvent('update-downloaded', info);
-  sendUpdateStatus('update-downloaded', info);
-  dialog.showMessageBox(mainWindow, {
-    type: 'info',
-    buttons: ['Restart and Install', 'Later'],
-    defaultId: 0,
-    cancelId: 1,
-    title: 'Update Ready',
-    message: 'A new version has been downloaded. Restart to apply the update?',
-  }).then(({ response }) => {
-    if (response === 0) {
-      logAutoUpdateEvent('quit-and-install');
-      autoUpdater.quitAndInstall();
+      console.error('Save failed', e);
+      event.returnValue = false;
     }
   });
-});
 
-autoUpdater.on('error', (error) => {
-  logAutoUpdateEvent('error', { message: error?.message ?? String(error) });
-  sendUpdateStatus('update-error', error?.message ?? String(error));
-});
-
-ipcMain.on('list-files-sync', (event, prefix) => {
+  ipcMain.on('load-sync', (event, filename) => {
     try {
-        const dir = getDataPath();
-        const files = fs.readdirSync(dir);
-        const results = [];
-        
-        files.forEach(file => {
-            if (file.startsWith(prefix) && file.endsWith('.json')) {
-                const content = fs.readFileSync(path.join(dir, file), 'utf-8');
-                results.push({ key: file.replace('.json', ''), content });
-            }
-        });
-        event.returnValue = results;
+      const filePath = path.join(getDataPath(), `${filename}.json`);
+      if (fs.existsSync(filePath)) {
+        const content = fs.readFileSync(filePath, 'utf-8');
+        event.returnValue = content;
+      } else {
+        event.returnValue = null;
+      }
     } catch (e) {
-        event.returnValue = [];
+      event.returnValue = null;
     }
-});
+  });
+
+  ipcMain.on('delete-sync', (event, filename) => {
+    try {
+      const filePath = path.join(getDataPath(), `${filename}.json`);
+      if (fs.existsSync(filePath)) {
+        fs.unlinkSync(filePath);
+      }
+      event.returnValue = true;
+    } catch (e) {
+      event.returnValue = false;
+    }
+  });
+
+  ipcMain.on('log-event', (event, entry) => {
+    try {
+      appendLog(entry);
+      event.returnValue = true;
+    } catch (e) {
+      console.error('Failed to write log entry', e);
+      event.returnValue = false;
+    }
+  });
+
+  ipcMain.handle('fetch-logs', async () => readLogs());
+
+  ipcMain.handle('check-for-updates', async () => {
+    logAutoUpdateEvent('check-for-updates');
+    const result = await autoUpdater.checkForUpdates();
+    logAutoUpdateEvent('check-for-updates-result', { versionInfo: result?.updateInfo });
+    return result;
+  });
+
+  ipcMain.handle('verify-admin-passphrase', async (_event, candidate) => {
+    if (!isAdminEnabled()) return false;
+    const expected = process.env.VITE_ADMIN_PASSPHRASE || '';
+    return expected.length > 0 && candidate === expected;
+  });
+
+  ipcMain.handle('open-admin-window', async (_event, verified) => {
+    if (!verified || !isAdminEnabled()) return false;
+    createAdminWindow();
+    return true;
+  });
+
+  ipcMain.handle('get-admin-metrics', async () => {
+    const totalMem = os.totalmem();
+    const freeMem = os.freemem();
+    const usedMem = totalMem - freeMem;
+    const uptimeSeconds = os.uptime();
+    const load = os.loadavg();
+    const cpus = os.cpus();
+    const cpuUsage = load[0] / cpus.length;
+
+    const sessionsDir = path.join(getDataPath(), 'sessions');
+    const sessionCount = fs.existsSync(sessionsDir)
+      ? fs.readdirSync(sessionsDir).filter(file => file.endsWith('.json')).length
+      : 0;
+
+    return {
+      platform: os.platform(),
+      arch: os.arch(),
+      uptimeSeconds,
+      memory: {
+        total: totalMem,
+        used: usedMem,
+        free: freeMem,
+        percentUsed: totalMem > 0 ? usedMem / totalMem : 0
+      },
+      cpu: {
+        cores: cpus.length,
+        load: cpuUsage,
+        model: cpus[0]?.model ?? 'unknown'
+      },
+      sessions: sessionCount,
+      timestamp: new Date().toISOString()
+    };
+  });
+
+  ipcMain.on('list-files-sync', (event, prefix) => {
+    try {
+      const dir = getDataPath();
+      const files = fs.readdirSync(dir);
+      const results = [];
+
+      files.forEach(file => {
+        if (file.startsWith(prefix) && file.endsWith('.json')) {
+          const content = fs.readFileSync(path.join(dir, file), 'utf-8');
+          results.push({ key: file.replace('.json', ''), content });
+        }
+      });
+      event.returnValue = results;
+    } catch (e) {
+      event.returnValue = [];
+    }
+  });
+
+  ipcMain.handle('user-settings:get', async () => {
+    await ensureUserCaches();
+    return cachedUserSettings;
+  });
+
+  ipcMain.handle('user-settings:save', async (_event, settings) => {
+    await ensureUserCaches();
+    const updated = await persistUserSettings(settings || {});
+    notifyCachesReady();
+    return updated;
+  });
+
+  ipcMain.handle('user-history:get', async () => {
+    await ensureUserCaches();
+    return cachedUserHistory;
+  });
+
+  ipcMain.handle('user-history:save', async (_event, history) => {
+    await ensureUserCaches();
+    const updated = await persistUserHistory(history || {});
+    notifyCachesReady();
+    return updated;
+  });
+
+  autoUpdater.on('update-available', (info) => {
+    logAutoUpdateEvent('update-available', info);
+    sendUpdateStatus('update-available', info);
+  });
+
+  autoUpdater.on('download-progress', (progress) => {
+    logAutoUpdateEvent('download-progress', progress);
+    sendUpdateStatus('update-download-progress', progress);
+  });
+
+  autoUpdater.on('update-downloaded', (info) => {
+    logAutoUpdateEvent('update-downloaded', info);
+    sendUpdateStatus('update-downloaded', info);
+    dialog.showMessageBox(mainWindow, {
+      type: 'info',
+      buttons: ['Restart and Install', 'Later'],
+      defaultId: 0,
+      cancelId: 1,
+      title: 'Update Ready',
+      message: 'A new version has been downloaded. Restart to apply the update?',
+    }).then(({ response }) => {
+      if (response === 0) {
+        logAutoUpdateEvent('quit-and-install');
+        autoUpdater.quitAndInstall();
+      }
+    });
+  });
+
+  autoUpdater.on('error', (error) => {
+    logAutoUpdateEvent('error', { message: error?.message ?? String(error) });
+    sendUpdateStatus('update-error', error?.message ?? String(error));
+  });
+};
 
 app.whenReady().then(() => {
   registerAppProtocol();
   createWindow();
-  autoUpdater.checkForUpdatesAndNotify();
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) {

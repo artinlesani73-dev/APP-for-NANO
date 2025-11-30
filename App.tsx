@@ -12,6 +12,7 @@ import { GeminiService } from './services/geminiService';
 import { LoggerService } from './services/logger';
 import { AdminService } from './services/adminService';
 import { MigrationService } from './services/migrationService';
+import { PreferencesService, type UserHistory, type UserSettings } from './services/preferencesService';
 import { Session, SessionGeneration, GenerationConfig, UploadedImagePayload, MixboardSession } from './types';
 import { Zap, Database, Key, ExternalLink, History, Network, Sparkles, Settings } from 'lucide-react';
 
@@ -67,6 +68,8 @@ function AppContent() {
   const [showHistory, setShowHistory] = useState(false);
   const [showGraphView, setShowGraphView] = useState(false);
   const [theme, setTheme] = useState<'dark' | 'light'>('dark');
+  const [preferencesReady, setPreferencesReady] = useState(false);
+  const [userHistory, setUserHistory] = useState<UserHistory>(PreferencesService.defaultsHistory);
   const [isAdminDashboardOpen, setIsAdminDashboardOpen] = useState(false);
   const [isAdminAuthorized, setIsAdminAuthorized] = useState<boolean>(() => {
     if (typeof window === 'undefined') return false;
@@ -117,6 +120,40 @@ function AppContent() {
   }, []);
 
   useEffect(() => {
+    const applySettings = (settings: UserSettings) => {
+      setTheme(settings.theme);
+      setShowHistory(settings.showHistory);
+      setShowGraphView(settings.showGraphView);
+    };
+
+    let isCancelled = false;
+
+    const hydratePreferences = async () => {
+      const [settings, history] = await Promise.all([
+        PreferencesService.loadSettings(),
+        PreferencesService.loadHistory()
+      ]);
+
+      if (isCancelled) return;
+      applySettings(settings);
+      setUserHistory(history);
+      setPreferencesReady(true);
+    };
+
+    hydratePreferences();
+
+    PreferencesService.subscribeToCacheReady(({ settings, history }) => {
+      if (isCancelled) return;
+      applySettings(settings);
+      setUserHistory(history);
+    });
+
+    return () => {
+      isCancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
     if (editingControlIndex !== null && editingControlIndex >= controlImagesData.length) {
       setEditingControlIndex(null);
     }
@@ -127,6 +164,14 @@ function AppContent() {
   }, [currentUser]);
 
   useEffect(() => {
+    if (theme === 'dark') {
+      document.documentElement.classList.add('dark');
+    } else {
+      document.documentElement.classList.remove('dark');
+    }
+  }, [theme]);
+
+  useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     if (params.get('admin') === '1') {
       setIsAdminDashboardOpen(true);
@@ -134,19 +179,25 @@ function AppContent() {
   }, []);
 
   useEffect(() => {
-    // Check API Key Status
     GeminiService.checkApiKey().then(setApiKeyConnected);
-
-    // Initial Theme Setup
-    const storedTheme = localStorage.getItem('app_theme') as 'dark' | 'light' | null;
-    if (storedTheme) {
-        setTheme(storedTheme);
-        if (storedTheme === 'dark') document.documentElement.classList.add('dark');
-        else document.documentElement.classList.remove('dark');
-    } else {
-        document.documentElement.classList.add('dark'); // Default
-    }
   }, []);
+
+  useEffect(() => {
+    if (!preferencesReady) return;
+    PreferencesService.saveSettings({ theme, showHistory, showGraphView }).catch((err) => {
+      console.warn('Failed to persist user settings', err);
+    });
+  }, [preferencesReady, theme, showHistory, showGraphView]);
+
+  useEffect(() => {
+    if (!preferencesReady) return;
+    PreferencesService.saveHistory({
+      lastSessionId: currentSessionId,
+      lastMixboardSessionId: currentMixboardSessionId
+    })
+      .then(setUserHistory)
+      .catch((err) => console.warn('Failed to persist user history', err));
+  }, [preferencesReady, currentSessionId, currentMixboardSessionId]);
 
   useEffect(() => {
     if (!currentUser) {
@@ -173,8 +224,14 @@ function AppContent() {
         : [];
 
       setSessions(userSessions);
+
       if (userSessions.length > 0) {
-        handleSelectSession(userSessions[0].session_id);
+        const preferredSessionId = userHistory.lastSessionId && userSessions.find(
+          (session) => session.session_id === userHistory.lastSessionId
+        )?.session_id;
+
+        const nextSessionId = preferredSessionId || userSessions[0].session_id;
+        handleSelectSession(nextSessionId);
       } else {
         handleNewSession();
       }
@@ -185,7 +242,7 @@ function AppContent() {
     return () => {
       cancelled = true;
     };
-  }, [currentUser]);
+  }, [currentUser, userHistory.lastSessionId]);
 
   // Check for migration needs and prompt user
   useEffect(() => {
