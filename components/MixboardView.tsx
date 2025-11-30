@@ -540,16 +540,168 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
   const selectedCount = canvasImages.filter(img => img.selected).length;
 
   return (
-    <div className="h-full w-full flex flex-col bg-white dark:bg-black">
-      {/* Header */}
-      <div className="p-6 border-b border-zinc-200 dark:border-zinc-800">
-        <div className="flex items-center gap-3 mb-2">
-          <Sparkles className="text-orange-500" size={24} />
-          <h1 className="text-2xl font-bold text-zinc-900 dark:text-zinc-100">Mixboard</h1>
-          <span className="text-xs px-2 py-1 bg-orange-100 dark:bg-orange-900/30 text-orange-700 dark:text-orange-400 rounded font-medium">
-            Experimental Beta
-          </span>
+    <div className="h-full w-full flex bg-white dark:bg-black">
+      {/* Left Sidebar - Session & History */}
+      <div className="w-72 border-r border-zinc-200 dark:border-zinc-800 flex flex-col bg-zinc-50 dark:bg-zinc-900/50">
+        {/* Header */}
+        <div className="p-4 border-b border-zinc-200 dark:border-zinc-800">
+          <div className="flex items-center gap-2 mb-3">
+            <Sparkles className="text-orange-500" size={20} />
+            <h2 className="text-lg font-bold text-zinc-900 dark:text-zinc-100">Mixboard</h2>
+            <span className="text-[10px] px-1.5 py-0.5 bg-orange-100 dark:bg-orange-900/30 text-orange-700 dark:text-orange-400 rounded font-medium">
+              Beta
+            </span>
+          </div>
         </div>
+
+        {/* Session Selector */}
+        <div className="p-4 border-b border-zinc-200 dark:border-zinc-700">
+          <div className="flex items-center justify-between mb-2">
+            <h4 className="text-xs font-bold text-zinc-700 dark:text-zinc-300">Session</h4>
+            <button
+              onClick={() => onCreateSession && onCreateSession()}
+              className="text-xs px-2 py-1 bg-orange-500 text-white rounded hover:bg-orange-600 transition-colors"
+            >
+              + New
+            </button>
+          </div>
+          <select
+            value={currentSession?.session_id || ''}
+            onChange={(e) => onSelectSession(e.target.value)}
+            className="w-full px-3 py-2 text-sm bg-white dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-700 rounded text-zinc-900 dark:text-zinc-100 focus:outline-none focus:border-orange-500"
+          >
+            {allSessions.map(session => (
+              <option key={session.session_id} value={session.session_id}>
+                {session.title}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        {/* Export Session */}
+        <div className="p-4 border-b border-zinc-200 dark:border-zinc-700">
+          <button
+            onClick={() => {
+              if (!currentSession) return;
+              const dataStr = JSON.stringify(currentSession, null, 2);
+              const blob = new Blob([dataStr], { type: 'application/json' });
+              const url = URL.createObjectURL(blob);
+              const link = document.createElement('a');
+              link.href = url;
+              link.download = `mixboard-session-${currentSession.session_id}.json`;
+              document.body.appendChild(link);
+              link.click();
+              document.body.removeChild(link);
+              URL.revokeObjectURL(url);
+            }}
+            className="w-full py-2 px-3 border border-zinc-300 dark:border-zinc-700 rounded text-zinc-700 dark:text-zinc-300 text-xs hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors flex items-center justify-center gap-2"
+          >
+            <Download size={14} />
+            Export Session
+          </button>
+        </div>
+
+        {/* Recent Generations */}
+        <div className="flex-1 overflow-y-auto p-4">
+          {currentSession && currentSession.generations.length > 0 ? (
+            <>
+              <h4 className="text-xs font-bold mb-3 text-zinc-900 dark:text-zinc-100">
+                Recent Generations ({currentSession.generations.length})
+              </h4>
+              <div className="space-y-3">
+                {currentSession.generations.slice().reverse().map((gen, idx) => {
+                  const outputImage = gen.output_images && gen.output_images.length > 0
+                    ? gen.output_images[0]
+                    : null;
+                  const outputDataUri = outputImage
+                    ? StorageService.loadImage('output', outputImage.id, outputImage.filename)
+                    : null;
+
+                  return (
+                    <div
+                      key={gen.generation_id}
+                      className="p-3 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded"
+                    >
+                      {/* Generation Info */}
+                      <div className="flex items-start justify-between mb-2">
+                        <div className="flex-1">
+                          <p className="text-[10px] text-zinc-500 dark:text-zinc-400 mb-1">
+                            {new Date(gen.timestamp).toLocaleTimeString()}
+                          </p>
+                          <p className="text-xs text-zinc-700 dark:text-zinc-300 line-clamp-2">
+                            {gen.prompt}
+                          </p>
+                        </div>
+                      </div>
+
+                      {/* Output Image */}
+                      {outputDataUri && (
+                        <div className="relative mb-2">
+                          <img
+                            src={outputDataUri}
+                            alt="Generation output"
+                            className="w-full rounded border border-zinc-300 dark:border-zinc-600"
+                          />
+                          <button
+                            onClick={() => {
+                              if (!outputImage || !outputDataUri) return;
+                              const img = new Image();
+                              img.onload = () => {
+                                const newImage: CanvasImage = {
+                                  id: `canvas-${Date.now()}-${Math.random()}`,
+                                  dataUri: outputDataUri,
+                                  x: 100 + Math.random() * 200,
+                                  y: 100 + Math.random() * 200,
+                                  width: 300,
+                                  height: (300 * img.height) / img.width,
+                                  selected: false,
+                                  originalWidth: img.width,
+                                  originalHeight: img.height,
+                                  generationId: gen.generation_id,
+                                  imageMetaId: outputImage.id
+                                };
+                                const updated = [...canvasImages, newImage];
+                                setCanvasImages(updated);
+                                saveCanvasToSession(updated);
+                              };
+                              img.src = outputDataUri;
+                            }}
+                            className="absolute bottom-2 right-2 px-2 py-1 text-[10px] bg-orange-500 text-white rounded hover:bg-orange-600 transition-colors"
+                          >
+                            Add to Canvas
+                          </button>
+                        </div>
+                      )}
+
+                      {/* Generation Stats */}
+                      <div className="flex items-center justify-between text-[10px] text-zinc-500 dark:text-zinc-400">
+                        <span>{gen.input_images?.length || 0} inputs</span>
+                        <span>{gen.generation_time_ms ? `${(gen.generation_time_ms / 1000).toFixed(1)}s` : '—'}</span>
+                        <span className={`px-1.5 py-0.5 rounded ${
+                          gen.status === 'completed' ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400' :
+                          gen.status === 'failed' ? 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400' :
+                          'bg-yellow-100 dark:bg-yellow-900/30 text-yellow-700 dark:text-yellow-400'
+                        }`}>
+                          {gen.status}
+                        </span>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </>
+          ) : (
+            <div className="text-center py-8">
+              <p className="text-xs text-zinc-400 dark:text-zinc-500">No generations yet</p>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Main Content */}
+      <div className="flex-1 flex flex-col">
+        {/* Canvas Header */}
+        <div className="p-4 border-b border-zinc-200 dark:border-zinc-800 bg-white dark:bg-black">
         <p className="text-sm text-zinc-600 dark:text-zinc-400">
           Create, compose, and remix images on an infinite canvas
         </p>
@@ -583,12 +735,12 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
                   Your canvas is empty
                 </h3>
                 <p className="text-sm text-zinc-500 dark:text-zinc-500 mb-4">
-                  Start by generating an image or uploading images to the canvas
+                  Start by generating an image or drag & drop images to the canvas
                 </p>
                 <div className="text-xs text-zinc-400 dark:text-zinc-600 space-y-1">
                   <p>• Write a prompt and click Generate</p>
-                  <p>• Upload images from your computer</p>
-                  <p>• Drag & drop images onto the canvas</p>
+                  <p>• Drag & drop images from your computer</p>
+                  <p>• Select images and generate to create variations</p>
                 </div>
               </div>
             </div>
@@ -671,36 +823,7 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
 
         {/* Right Sidebar - Generation Controls */}
         <div className="w-96 border-l border-zinc-200 dark:border-zinc-800 p-6 overflow-y-auto bg-zinc-50 dark:bg-zinc-900/50">
-          {/* Session Selector */}
-          <div className="mb-6 pb-4 border-b border-zinc-200 dark:border-zinc-700">
-            <div className="flex items-center justify-between mb-2">
-              <h4 className="text-sm font-bold text-zinc-700 dark:text-zinc-300">Session</h4>
-              <button
-                onClick={() => onCreateSession && onCreateSession()}
-                className="text-xs px-2 py-1 bg-orange-500 text-white rounded hover:bg-orange-600 transition-colors"
-              >
-                + New
-              </button>
-            </div>
-            <select
-              value={currentSession?.session_id || ''}
-              onChange={(e) => onSelectSession(e.target.value)}
-              className="w-full px-3 py-2 border border-zinc-300 dark:border-zinc-700 rounded bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 text-sm focus:outline-none focus:ring-2 focus:ring-orange-500"
-            >
-              {allSessions.map(session => (
-                <option key={session.session_id} value={session.session_id}>
-                  {session.title} ({session.canvas_images.length} images)
-                </option>
-              ))}
-            </select>
-            {currentSession && (
-              <p className="text-xs text-zinc-500 dark:text-zinc-400 mt-2">
-                {currentSession.generations.length} generations • Created {new Date(currentSession.created_at).toLocaleDateString()}
-              </p>
-            )}
-          </div>
-
-          <h3 className="text-lg font-bold mb-4 text-zinc-900 dark:text-zinc-100">Generation</h3>
+          <h3 className="text-lg font-bold mb-4 text-zinc-900 dark:text-zinc-100">Generate</h3>
 
           {/* Mode Toggle */}
           <div className="flex gap-2 mb-4">
@@ -787,68 +910,6 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
             </div>
           </div>
 
-          {/* Upload Images */}
-          <div className="mb-4">
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept="image/*"
-              multiple
-              onChange={handleFileUpload}
-              className="hidden"
-            />
-            <button
-              onClick={() => fileInputRef.current?.click()}
-              className="w-full py-2 px-4 border-2 border-dashed border-zinc-300 dark:border-zinc-700 rounded text-zinc-600 dark:text-zinc-400 hover:border-orange-500 hover:text-orange-500 transition-colors flex items-center justify-center gap-2"
-            >
-              <ImageIcon size={16} />
-              Upload Images
-            </button>
-          </div>
-
-          {/* Session Management */}
-          <div className="mb-4 pb-4 border-b border-zinc-200 dark:border-zinc-700 space-y-2">
-            <button
-              onClick={() => {
-                if (!currentSession) return;
-                const dataStr = JSON.stringify(currentSession, null, 2);
-                const blob = new Blob([dataStr], { type: 'application/json' });
-                const url = URL.createObjectURL(blob);
-                const link = document.createElement('a');
-                link.href = url;
-                link.download = `mixboard-session-${currentSession.session_id}.json`;
-                document.body.appendChild(link);
-                link.click();
-                document.body.removeChild(link);
-                URL.revokeObjectURL(url);
-              }}
-              className="w-full py-2 px-4 border border-zinc-300 dark:border-zinc-700 rounded text-zinc-700 dark:text-zinc-300 text-sm hover:bg-zinc-50 dark:hover:bg-zinc-800 transition-colors flex items-center justify-center gap-2"
-            >
-              <Download size={14} />
-              Export Session
-            </button>
-            <button
-              onClick={() => {
-                if (window.confirm('Clear all images from canvas? This cannot be undone.')) {
-                  setCanvasImages([]);
-                  if (currentSession) {
-                    const updatedSession: MixboardSession = {
-                      ...currentSession,
-                      canvas_images: [],
-                      updated_at: new Date().toISOString()
-                    };
-                    StorageService.saveSession(updatedSession as any);
-                    onSessionUpdate(updatedSession);
-                  }
-                }
-              }}
-              className="w-full py-2 px-4 border border-red-300 dark:border-red-700 rounded text-red-600 dark:text-red-400 text-sm hover:bg-red-50 dark:hover:bg-red-950/30 transition-colors flex items-center justify-center gap-2"
-            >
-              <Trash2 size={14} />
-              Clear Canvas
-            </button>
-          </div>
-
           {/* Generate Button */}
           <button
             onClick={handleGenerate}
@@ -868,136 +929,6 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
               </>
             )}
           </button>
-
-          {/* Generation History */}
-          {currentSession && currentSession.generations.length > 0 && (
-            <div className="mt-6">
-              <h4 className="text-sm font-bold mb-3 text-zinc-900 dark:text-zinc-100">
-                Recent Generations ({currentSession.generations.length})
-              </h4>
-              <div className="space-y-3 max-h-96 overflow-y-auto">
-                {currentSession.generations.slice().reverse().map((gen, idx) => {
-                  const outputImage = gen.output_images && gen.output_images.length > 0
-                    ? gen.output_images[0]
-                    : null;
-                  const outputDataUri = outputImage
-                    ? StorageService.loadImage('output', outputImage.id, outputImage.filename)
-                    : null;
-
-                  return (
-                    <div
-                      key={gen.generation_id}
-                      className="p-3 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded"
-                    >
-                      {/* Generation Info */}
-                      <div className="flex items-start justify-between mb-2">
-                        <div className="flex-1">
-                          <p className="text-xs text-zinc-500 dark:text-zinc-400 mb-1">
-                            {new Date(gen.timestamp).toLocaleTimeString()}
-                          </p>
-                          <p className="text-xs text-zinc-700 dark:text-zinc-300 line-clamp-2">
-                            {gen.prompt}
-                          </p>
-                        </div>
-                        <span className={`text-xs px-2 py-0.5 rounded ${
-                          gen.status === 'completed'
-                            ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400'
-                            : gen.status === 'failed'
-                            ? 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400'
-                            : 'bg-yellow-100 dark:bg-yellow-900/30 text-yellow-700 dark:text-yellow-400'
-                        }`}>
-                          {gen.status}
-                        </span>
-                      </div>
-
-                      {/* Output Image Preview */}
-                      {outputDataUri && (
-                        <div className="mb-2">
-                          <img
-                            src={outputDataUri}
-                            alt="Generated output"
-                            className="w-full rounded border border-zinc-300 dark:border-zinc-700"
-                          />
-                        </div>
-                      )}
-
-                      {/* Actions */}
-                      <div className="flex gap-2">
-                        {outputDataUri && (
-                          <button
-                            onClick={() => {
-                              if (!outputImage) return;
-                              const img = new Image();
-                              img.onload = () => {
-                                const newCanvasImage: CanvasImage = {
-                                  id: `img-${Date.now()}`,
-                                  dataUri: outputDataUri,
-                                  x: 150 + (canvasImages.length * 30),
-                                  y: 150 + (canvasImages.length * 30),
-                                  width: 300,
-                                  height: (300 * img.height) / img.width,
-                                  selected: false,
-                                  originalWidth: img.width,
-                                  originalHeight: img.height,
-                                  generationId: gen.generation_id,
-                                  imageMetaId: outputImage.id
-                                };
-                                setCanvasImages(prev => {
-                                  const updated = [...prev, newCanvasImage];
-                                  saveCanvasToSession(updated);
-                                  return updated;
-                                });
-                              };
-                              img.src = outputDataUri;
-                            }}
-                            className="flex-1 py-1.5 px-3 bg-orange-500 text-white text-xs rounded hover:bg-orange-600 transition-colors"
-                          >
-                            Add to Canvas
-                          </button>
-                        )}
-                        {gen.canvas_state && (
-                          <button
-                            onClick={() => {
-                              if (gen.canvas_state) {
-                                setCanvasImages(gen.canvas_state.images);
-                                setZoom(gen.canvas_state.zoom);
-                                setPanOffset(gen.canvas_state.panOffset);
-                                saveCanvasToSession(gen.canvas_state.images);
-                              }
-                            }}
-                            className="flex-1 py-1.5 px-3 border border-zinc-300 dark:border-zinc-700 text-zinc-700 dark:text-zinc-300 text-xs rounded hover:bg-zinc-50 dark:hover:bg-zinc-800 transition-colors"
-                          >
-                            Restore Canvas
-                          </button>
-                        )}
-                      </div>
-
-                      {/* Metadata */}
-                      <div className="mt-2 pt-2 border-t border-zinc-200 dark:border-zinc-700 flex justify-between text-xs text-zinc-500 dark:text-zinc-400">
-                        <span>{gen.input_images.length} inputs</span>
-                        {gen.generation_time_ms && (
-                          <span>{gen.generation_time_ms}ms</span>
-                        )}
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          )}
-
-          {/* Instructions */}
-          <div className="mt-6 p-4 bg-zinc-100 dark:bg-zinc-800 rounded text-xs text-zinc-600 dark:text-zinc-400 space-y-2">
-            <p className="font-medium text-zinc-700 dark:text-zinc-300">Tips:</p>
-            <ul className="space-y-1 list-disc list-inside">
-              <li>Drag & drop images from your computer</li>
-              <li>Click to select, Ctrl+Click for multi-select</li>
-              <li>Drag to move, resize from bottom-right corner</li>
-              <li>Selected images are used in generation</li>
-              <li>Scroll to zoom, Shift+Drag to pan canvas</li>
-              <li>Delete key to remove selected images (not while typing)</li>
-            </ul>
-          </div>
         </div>
       </div>
     </div>

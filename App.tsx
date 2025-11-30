@@ -10,7 +10,6 @@ import { SettingsModal } from './components/SettingsModal';
 import { ImageEditModal } from './components/ImageEditModal';
 import { LoginForm } from './components/LoginForm';
 import { UserProvider, useUser } from './components/UserContext';
-import { AdminLogs } from './components/AdminLogs';
 import { AdminDashboard } from './components/AdminDashboard';
 import { StorageService } from './services/newStorageService';
 import { GeminiService } from './services/geminiService';
@@ -18,7 +17,7 @@ import { LoggerService } from './services/logger';
 import { AdminService } from './services/adminService';
 import { MigrationService } from './services/migrationService';
 import { Session, SessionGeneration, GenerationConfig, UploadedImagePayload, MixboardSession } from './types';
-import { Zap, Database, Key, ExternalLink, History, ShieldCheck, Network, Sparkles, Settings } from 'lucide-react';
+import { Zap, Database, Key, ExternalLink, History, Network, Sparkles, Settings } from 'lucide-react';
 
 const DEFAULT_CONFIG: GenerationConfig = {
   temperature: 0.7,
@@ -65,7 +64,6 @@ function AppContent() {
   const [showHistory, setShowHistory] = useState(false);
   const [showGraphView, setShowGraphView] = useState(false);
   const [theme, setTheme] = useState<'dark' | 'light'>('dark');
-  const [isAdminLogsOpen, setIsAdminLogsOpen] = useState(false);
   const [isAdminDashboardOpen, setIsAdminDashboardOpen] = useState(false);
   const [isAdminAuthorized, setIsAdminAuthorized] = useState<boolean>(() => {
     if (typeof window === 'undefined') return false;
@@ -820,14 +818,6 @@ function AppContent() {
                 )}
 
                 <button
-                  onClick={() => setIsAdminLogsOpen(true)}
-                  className="flex items-center gap-2 text-xs px-3 py-1.5 rounded border bg-white dark:bg-zinc-800/50 border-zinc-300 dark:border-zinc-700 text-zinc-700 dark:text-zinc-300 hover:bg-zinc-50 dark:hover:bg-zinc-800 transition-colors"
-                >
-                  <ShieldCheck size={12} />
-                  Admin Logs
-                </button>
-
-                <button
                   onClick={() => setIsSettingsOpen(true)}
                   className="flex items-center gap-2 text-xs px-3 py-1.5 rounded border bg-white dark:bg-zinc-800/50 border-zinc-300 dark:border-zinc-700 text-zinc-700 dark:text-zinc-300 hover:bg-zinc-50 dark:hover:bg-zinc-800 transition-colors"
                 >
@@ -926,10 +916,6 @@ function AppContent() {
         isAuthorized={isAdminAuthorized}
         onAuthorize={handleAdminAuthorize}
         onClose={() => setIsAdminDashboardOpen(false)}
-      />
-      <AdminLogs
-        isOpen={isAdminLogsOpen}
-        onClose={() => setIsAdminLogsOpen(false)}
       />
     </div>
   );
