@@ -383,7 +383,7 @@ const handleGenerate = async () => {
       config,
       undefined,
       referenceImages,
-      'Mixboard User'
+      '<display-name>'
     );
 
     if (output.images && output.images.length > 0) {

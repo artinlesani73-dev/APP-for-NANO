@@ -1,5 +1,5 @@
-import React, { useState, useRef, useEffect } from 'react';
-import { Sparkles, Image as ImageIcon, Type, Trash2, ZoomIn, ZoomOut, Move, Download, Edit2, Check, X } from 'lucide-react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
+import { Sparkles, Image as ImageIcon, Type, Trash2, ZoomIn, ZoomOut, Move, Download, Edit2, Check, X, LayoutTemplate, Bold, Italic } from 'lucide-react';
 import { GeminiService } from '../services/geminiService';
 import { StorageService } from '../services/newStorageService';
 import { GenerationConfig, CanvasImage, MixboardSession, MixboardGeneration, StoredImageMeta } from '../types';
@@ -48,9 +48,29 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
   const [currentGeneration, setCurrentGeneration] = useState<MixboardGeneration | null>(null);
   const [editingSessionId, setEditingSessionId] = useState<string | null>(null);
   const [editingSessionTitle, setEditingSessionTitle] = useState('');
+  const [textToolbar, setTextToolbar] = useState<{ targetId: string | null; x: number; y: number }>({ targetId: null, x: 0, y: 0 });
+  const [draftFontSize, setDraftFontSize] = useState(16);
+  const [contextMenu, setContextMenu] = useState({
+    visible: false,
+    x: 0,
+    y: 0,
+    canvasX: 0,
+    canvasY: 0
+  });
 
   const canvasRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const textToolbarRef = useRef<HTMLDivElement>(null);
+
+  const closeContextMenu = useCallback(() => {
+    setContextMenu({
+      visible: false,
+      x: 0,
+      y: 0,
+      canvasX: 0,
+      canvasY: 0
+    });
+  }, []);
 
   // Initialize session if needed
   useEffect(() => {
@@ -70,6 +90,35 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
       setCanvasImages([]);
     }
   }, [currentSession?.session_id]);
+
+  useEffect(() => {
+    const handleGlobalClick = () => closeContextMenu();
+    const handleEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        closeContextMenu();
+        setTextToolbar({ targetId: null, x: 0, y: 0 });
+      }
+    };
+
+    window.addEventListener('click', handleGlobalClick);
+    window.addEventListener('keydown', handleEscape);
+
+    return () => {
+      window.removeEventListener('click', handleGlobalClick);
+      window.removeEventListener('keydown', handleEscape);
+    };
+  }, [closeContextMenu]);
+
+  useEffect(() => {
+    const handleOutsideClick = (event: MouseEvent) => {
+      if (textToolbar.targetId && textToolbarRef.current && !textToolbarRef.current.contains(event.target as Node)) {
+        setTextToolbar({ targetId: null, x: 0, y: 0 });
+      }
+    };
+
+    window.addEventListener('mousedown', handleOutsideClick);
+    return () => window.removeEventListener('mousedown', handleOutsideClick);
+  }, [textToolbar.targetId]);
 
   // Helper function to save current canvas state to session
   const saveCanvasToSession = (images: CanvasImage[]) => {
@@ -94,20 +143,47 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
       return;
     }
 
+    const existingGenerations = currentSession.generations || [];
+
     setIsGenerating(true);
 
     const generationId = `gen-${Date.now()}`;
-    const selectedImages = canvasImages.filter(img => img.selected && img.type !== 'text');
+    const selectedImages = canvasImages.filter(img => img.selected && (!img.type || img.type === 'image'));
+    const prepareSelectedImages = () => {
+      const inputImageMetas: StoredImageMeta[] = [];
+      const referenceImageData: string[] = [];
+
+      for (const selectedImg of selectedImages) {
+        if (!selectedImg.dataUri) continue;
+
+        referenceImageData.push(selectedImg.dataUri);
+
+        if (selectedImg.imageMetaId) {
+          inputImageMetas.push({
+            id: selectedImg.imageMetaId,
+            filename: `input_${selectedImg.imageMetaId}.png`,
+            size_bytes: selectedImg.dataUri.length
+          });
+        } else {
+          const meta = StorageService.saveImage(selectedImg.dataUri, 'reference');
+          inputImageMetas.push(meta);
+        }
+      }
+
+      return { inputImageMetas, referenceImageData };
+    };
+
+    const { inputImageMetas, referenceImageData } = prepareSelectedImages();
     const startTime = Date.now();
 
     try {
-      // Create generation record BEFORE API call
+      // Create generation record BEFORE API call (only persisted for image generations)
       const newGeneration: MixboardGeneration = {
         generation_id: generationId,
         timestamp: new Date().toISOString(),
         status: 'pending',
         prompt: prompt || (showImageInput ? 'Continue the creative exploration' : 'Generate text'),
-        input_images: [],  // Will populate after saving
+        input_images: inputImageMetas,  // Save selected images even for text requests
         output_images: [],
         parameters: config,
         canvas_state: {
@@ -124,41 +200,17 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
 
       if (showImageInput) {
         // IMAGE MODE: Generate image
-        const referenceImages = selectedImages.length > 0
-          ? selectedImages.map(img => img.dataUri).filter(Boolean) as string[]
-          : undefined;
-
         // Call API for image generation
         const output = await GeminiService.generateImage(
           newGeneration.prompt,
           config,
           undefined,  // No control images in Mixboard
-          referenceImages,
-          currentUser?.displayName || 'Mixboard User'
+          referenceImageData,
+          currentUser?.displayName
         );
 
       if (output.images && output.images.length > 0) {
         const imageDataUri = `data:image/png;base64,${output.images[0]}`;
-
-        // Save input images to storage
-        const inputImageMetas: StoredImageMeta[] = [];
-        for (const selectedImg of selectedImages) {
-          if (!selectedImg.dataUri) continue; // Skip if no dataUri (shouldn't happen for images)
-
-          if (selectedImg.imageMetaId) {
-            // Image already saved, find its metadata
-            const meta = {
-              id: selectedImg.imageMetaId,
-              filename: `input_${selectedImg.imageMetaId}.png`,
-              size_bytes: selectedImg.dataUri.length
-            };
-            inputImageMetas.push(meta);
-          } else {
-            // Save new image
-            const meta = StorageService.saveImage(selectedImg.dataUri, 'reference');
-            inputImageMetas.push(meta);
-          }
-        }
 
         // Save output image to storage
         const outputImageMeta = StorageService.saveImage(imageDataUri, 'output');
@@ -199,7 +251,7 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
           // Update session with new generation and canvas state
           const updatedSession: MixboardSession = {
             ...currentSession,
-            generations: [...currentSession.generations, completedGeneration],
+            generations: [...existingGenerations, completedGeneration],
             canvas_images: updatedCanvasImages,
             updated_at: new Date().toISOString()
           };
@@ -218,22 +270,13 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
           newGeneration.prompt,
           config,
           150,  // Max 150 words
-          currentUser?.displayName || 'Mixboard User'
+          currentUser?.displayName,
+          referenceImageData
         );
 
         if (output.text) {
           // Calculate duration
           const duration = Date.now() - startTime;
-
-          // Complete generation record (no output images for text)
-          const completedGeneration: MixboardGeneration = {
-            ...newGeneration,
-            status: 'completed',
-            input_images: [],
-            output_images: [],
-            output_texts: [output.text],
-            generation_time_ms: duration
-          };
 
           // Add generated text to canvas
           const textWidth = 400;
@@ -245,6 +288,9 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
             type: 'text',
             text: output.text,
             fontSize: fontSize,
+            fontWeight: 'normal',
+            fontStyle: 'normal',
+            fontFamily: 'Inter, system-ui, sans-serif',
             x: 100 + (canvasImages.length * 50),
             y: 100 + (canvasImages.length * 50),
             width: textWidth,
@@ -258,10 +304,10 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
           const updatedCanvasImages = [...canvasImages, newCanvasText];
           setCanvasImages(updatedCanvasImages);
 
-          // Update session with new generation and canvas state
+          // Update session with canvas state only (text generations are not stored in history)
           const updatedSession: MixboardSession = {
             ...currentSession,
-            generations: [...currentSession.generations, completedGeneration],
+            generations: existingGenerations,
             canvas_images: updatedCanvasImages,
             updated_at: new Date().toISOString()
           };
@@ -269,8 +315,7 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
           // Persist session
           StorageService.saveSession(updatedSession as any);
           onSessionUpdate(updatedSession);
-
-          setCurrentGeneration(completedGeneration);
+          setCurrentGeneration(null);
         }
       }
     } catch (error) {
@@ -282,7 +327,7 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
         timestamp: new Date().toISOString(),
         status: 'failed',
         prompt: prompt || 'Continue the creative exploration',
-        input_images: [],
+        input_images: inputImageMetas,
         output_images: [],
         parameters: config,
         error_message: (error as Error).message,
@@ -294,21 +339,70 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
         }
       };
 
-      // Update session with failed generation
-      const updatedSession: MixboardSession = {
-        ...currentSession,
-        generations: [...currentSession.generations, failedGeneration],
-        updated_at: new Date().toISOString()
-      };
+      // Only persist failed generations for image requests; text failures still update canvas state timestamp
+      const updatedSession: MixboardSession = showImageInput
+        ? {
+            ...currentSession,
+            generations: [...existingGenerations, failedGeneration],
+            updated_at: new Date().toISOString()
+          }
+        : {
+            ...currentSession,
+            generations: existingGenerations,
+            updated_at: new Date().toISOString()
+          };
 
       StorageService.saveSession(updatedSession as any);
       onSessionUpdate(updatedSession);
 
-      setCurrentGeneration(failedGeneration);
+      setCurrentGeneration(showImageInput ? failedGeneration : null);
       alert('Generation failed: ' + (error as Error).message);
     } finally {
       setIsGenerating(false);
     }
+  };
+
+  const addTextToCanvas = (text: string, x?: number, y?: number) => {
+    const trimmed = text.trim();
+    if (!trimmed) return;
+
+    const textWidth = 400;
+    const textHeight = 200;
+    const fontSize = 16;
+
+    setCanvasImages(prev => {
+      const baseX = typeof x === 'number' ? x : 100 + (prev.length * 50);
+      const baseY = typeof y === 'number' ? y : 100 + (prev.length * 50);
+
+      const newCanvasText: CanvasImage = {
+        id: `text-${Date.now()}`,
+        type: 'text',
+        text: trimmed,
+        fontSize: fontSize,
+        fontWeight: 'normal',
+        fontStyle: 'normal',
+        fontFamily: 'Inter, system-ui, sans-serif',
+        x: baseX,
+        y: baseY,
+        width: textWidth,
+        height: textHeight,
+        selected: false,
+        originalWidth: textWidth,
+        originalHeight: textHeight
+      };
+
+      const updated = [...prev, newCanvasText];
+      saveCanvasToSession(updated);
+      return updated;
+    });
+  };
+
+  const updateTextEntity = (id: string, updates: Partial<CanvasImage>) => {
+    setCanvasImages(prev => {
+      const updated = prev.map(img => img.id === id ? { ...img, ...updates } : img);
+      saveCanvasToSession(updated);
+      return updated;
+    });
   };
 
   // Handle file upload
@@ -395,6 +489,64 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
     e.stopPropagation();
   };
 
+  const handleOpenUploadFromContext = (e?: React.MouseEvent) => {
+    e?.stopPropagation();
+    closeContextMenu();
+    fileInputRef.current?.click();
+  };
+
+  const handleAddTextFromContext = (e?: React.MouseEvent) => {
+    e?.stopPropagation();
+    const { canvasX, canvasY } = contextMenu;
+    closeContextMenu();
+
+    const manualText = window.prompt('Enter text to add to the canvas:');
+    if (manualText && manualText.trim()) {
+      addTextToCanvas(manualText, canvasX, canvasY);
+    }
+  };
+
+  const handleAddWhiteboardFromContext = (e?: React.MouseEvent) => {
+    e?.stopPropagation();
+    const { canvasX, canvasY } = contextMenu;
+    closeContextMenu();
+
+    const boardWidth = 640;
+    const boardHeight = 420;
+
+    setCanvasImages(prev => {
+      const newBoard: CanvasImage = {
+        id: `board-${Date.now()}`,
+        type: 'board',
+        backgroundColor: '#ffffff',
+        x: canvasX,
+        y: canvasY,
+        width: boardWidth,
+        height: boardHeight,
+        selected: false,
+        originalWidth: boardWidth,
+        originalHeight: boardHeight
+      };
+
+      const updated = [...prev, newBoard];
+      saveCanvasToSession(updated);
+      return updated;
+    });
+  };
+
+  const handleTextDoubleClick = (e: React.MouseEvent, image: CanvasImage) => {
+    e.stopPropagation();
+    const canvasRect = canvasRef.current?.getBoundingClientRect();
+    if (!canvasRect) return;
+
+    setDraftFontSize(image.fontSize || 16);
+    setTextToolbar({
+      targetId: image.id,
+      x: e.clientX - canvasRect.left + 10,
+      y: e.clientY - canvasRect.top - 10
+    });
+  };
+
   // Handle image selection and dragging
   const handleImageMouseDown = (e: React.MouseEvent, imageId: string) => {
     e.stopPropagation();
@@ -442,6 +594,8 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
   };
 
   const handleCanvasMouseDown = (e: React.MouseEvent) => {
+    closeContextMenu();
+    setTextToolbar({ targetId: null, x: 0, y: 0 });
     if (e.target === canvasRef.current || (e.target as HTMLElement).classList.contains('canvas-background')) {
       // Start panning with middle mouse or space+left click
       if (e.button === 1 || (e.button === 0 && e.shiftKey)) {
@@ -466,6 +620,23 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
     }
   };
 
+  const handleCanvasContextMenu = (e: React.MouseEvent) => {
+    e.preventDefault();
+    const canvasRect = canvasRef.current?.getBoundingClientRect();
+    if (!canvasRect) return;
+
+    const canvasX = (e.clientX - canvasRect.left - panOffset.x) / zoom;
+    const canvasY = (e.clientY - canvasRect.top - panOffset.y) / zoom;
+
+    setContextMenu({
+      visible: true,
+      x: e.clientX,
+      y: e.clientY,
+      canvasX,
+      canvasY
+    });
+  };
+
   const handleMouseMove = (e: React.MouseEvent) => {
     if (isPanning && dragStart) {
       const dx = e.clientX - dragStart.x;
@@ -481,8 +652,18 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
 
       setCanvasImages(prev => prev.map(img => {
         if (img.id === resizingImage) {
-          const newWidth = Math.max(50, img.width + dx);
+          const minSize = 50;
+
+          if (img.type === 'text') {
+            return {
+              ...img,
+              width: Math.max(minSize, img.width + dx),
+              height: Math.max(minSize, img.height + dy)
+            };
+          }
+
           const aspectRatio = img.originalHeight / img.originalWidth;
+          const newWidth = Math.max(minSize, img.width + dx);
           return {
             ...img,
             width: newWidth,
@@ -607,6 +788,14 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
 
   return (
     <div className="h-full w-full flex bg-white dark:bg-black">
+      <input
+        type="file"
+        accept="image/*"
+        multiple
+        ref={fileInputRef}
+        className="hidden"
+        onChange={handleFileUpload}
+      />
       {/* Left Sidebar - Session & History */}
       <div className="w-72 border-r border-zinc-200 dark:border-zinc-800 flex flex-col bg-zinc-50 dark:bg-zinc-900/50">
         {/* Header */}
@@ -699,7 +888,7 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
                     </button>
                     <button
                       onClick={() => {
-                        if (session.generations.length > 0) {
+                        if ((session.generations ?? []).length > 0) {
                           alert('Cannot delete session with generations. Please clear the session first.');
                           return;
                         }
@@ -763,7 +952,7 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
             backgroundImage: theme === 'dark'
               ? 'radial-gradient(circle, #27272a 1px, transparent 1px)'
               : 'radial-gradient(circle, #e4e4e7 1px, transparent 1px)',
-            backgroundSize: `${20 * zoom}px ${20 * zoom}px`,
+            backgroundSize: '20px 20px',
             backgroundPosition: `${panOffset.x}px ${panOffset.y}px`
           }}
           onMouseDown={handleCanvasMouseDown}
@@ -772,6 +961,7 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
           onMouseLeave={handleMouseUp}
           onDrop={handleDrop}
           onDragOver={handleDragOver}
+          onContextMenu={handleCanvasContextMenu}
         >
           {/* Empty Canvas Message */}
           {canvasImages.length === 0 && (
@@ -806,17 +996,30 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
                 transformOrigin: 'top left'
               }}
               onMouseDown={(e) => handleImageMouseDown(e, image.id)}
+              onDoubleClick={(e) => {
+                if (image.type === 'text') {
+                  handleTextDoubleClick(e, image);
+                }
+              }}
             >
               {image.type === 'text' ? (
                 <div
                   className="w-full h-full p-3 bg-white dark:bg-zinc-900 text-zinc-900 dark:text-zinc-100 overflow-auto pointer-events-none"
                   style={{
                     fontSize: `${(image.fontSize || 16) * zoom}px`,
-                    lineHeight: '1.5'
+                    lineHeight: '1.5',
+                    fontWeight: image.fontWeight || 'normal',
+                    fontStyle: image.fontStyle || 'normal',
+                    fontFamily: image.fontFamily || 'Inter, system-ui, sans-serif'
                   }}
                 >
                   {image.text}
                 </div>
+              ) : image.type === 'board' ? (
+                <div
+                  className="w-full h-full border border-dashed border-zinc-300 dark:border-zinc-700 bg-white/90 dark:bg-zinc-900/80 pointer-events-none"
+                  style={{ backgroundColor: image.backgroundColor || '#ffffff' }}
+                />
               ) : (
                 <img
                   src={image.dataUri}
@@ -875,6 +1078,97 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
               >
                 <Trash2 size={16} />
                 Delete
+              </button>
+            </div>
+          )}
+
+          {textToolbar.targetId && (() => {
+            const textTarget = canvasImages.find(img => img.id === textToolbar.targetId && img.type === 'text');
+            if (!textTarget) return null;
+
+            return (
+              <div
+                ref={textToolbarRef}
+                className="absolute z-50 w-72 p-3 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 rounded shadow-lg space-y-2"
+                style={{ left: textToolbar.x, top: textToolbar.y }}
+                onMouseDown={(e) => e.stopPropagation()}
+              >
+                <div className="flex items-center justify-between gap-2">
+                  <label className="text-xs text-zinc-500 dark:text-zinc-400">Font size</label>
+                  <input
+                    type="number"
+                    min={10}
+                    max={72}
+                    value={draftFontSize}
+                    onChange={(e) => {
+                      const value = Number(e.target.value) || 10;
+                      setDraftFontSize(value);
+                      updateTextEntity(textTarget.id, { fontSize: value });
+                    }}
+                    className="w-20 px-2 py-1 text-xs bg-white dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-700 rounded focus:outline-none focus:border-orange-500"
+                  />
+                  <div className="flex items-center gap-1">
+                    <button
+                      onClick={() => updateTextEntity(textTarget.id, { fontWeight: textTarget.fontWeight === 'bold' ? 'normal' : 'bold' })}
+                      className={`p-1 rounded border ${textTarget.fontWeight === 'bold' ? 'bg-orange-100 dark:bg-orange-900/40 border-orange-300 dark:border-orange-800 text-orange-700 dark:text-orange-300' : 'border-zinc-300 dark:border-zinc-700 text-zinc-600 dark:text-zinc-300'}`}
+                      aria-label="Toggle bold"
+                    >
+                      <Bold size={14} />
+                    </button>
+                    <button
+                      onClick={() => updateTextEntity(textTarget.id, { fontStyle: textTarget.fontStyle === 'italic' ? 'normal' : 'italic' })}
+                      className={`p-1 rounded border ${textTarget.fontStyle === 'italic' ? 'bg-orange-100 dark:bg-orange-900/40 border-orange-300 dark:border-orange-800 text-orange-700 dark:text-orange-300' : 'border-zinc-300 dark:border-zinc-700 text-zinc-600 dark:text-zinc-300'}`}
+                      aria-label="Toggle italic"
+                    >
+                      <Italic size={14} />
+                    </button>
+                  </div>
+                </div>
+                <textarea
+                  value={textTarget.text || ''}
+                  onChange={(e) => updateTextEntity(textTarget.id, { text: e.target.value })}
+                  className="w-full h-24 text-sm px-2 py-1 bg-white dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-700 rounded focus:outline-none focus:border-orange-500 text-zinc-800 dark:text-zinc-100"
+                />
+                <div className="flex justify-end">
+                  <button
+                    onClick={() => setTextToolbar({ targetId: null, x: 0, y: 0 })}
+                    className="px-2 py-1 text-xs bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 rounded border border-zinc-300 dark:border-zinc-700 hover:bg-zinc-200 dark:hover:bg-zinc-700"
+                  >
+                    Close
+                  </button>
+                </div>
+              </div>
+            );
+          })()}
+
+          {contextMenu.visible && (
+            <div
+              className="fixed z-50 w-48 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 rounded shadow-lg overflow-hidden"
+              style={{ left: contextMenu.x, top: contextMenu.y }}
+              onClick={(e) => e.stopPropagation()}
+              onMouseDown={(e) => e.stopPropagation()}
+              onContextMenu={(e) => e.preventDefault()}
+            >
+              <button
+                onClick={handleOpenUploadFromContext}
+                className="w-full flex items-center gap-2 px-3 py-2 text-sm text-zinc-800 dark:text-zinc-100 hover:bg-zinc-100 dark:hover:bg-zinc-800"
+              >
+                <ImageIcon size={16} />
+                Upload image
+              </button>
+              <button
+                onClick={handleAddTextFromContext}
+                className="w-full flex items-center gap-2 px-3 py-2 text-sm text-zinc-800 dark:text-zinc-100 hover:bg-zinc-100 dark:hover:bg-zinc-800"
+              >
+                <Type size={16} />
+                Add text
+              </button>
+              <button
+                onClick={handleAddWhiteboardFromContext}
+                className="w-full flex items-center gap-2 px-3 py-2 text-sm text-zinc-800 dark:text-zinc-100 hover:bg-zinc-100 dark:hover:bg-zinc-800"
+              >
+                <LayoutTemplate size={16} />
+                Add whiteboard
               </button>
             </div>
           )}

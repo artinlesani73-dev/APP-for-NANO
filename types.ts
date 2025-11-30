@@ -207,10 +207,14 @@ export interface AdminMetrics {
  */
 export interface CanvasImage {
   id: string;                      // Unique canvas image ID
-  type?: 'image' | 'text';         // Entity type (default: 'image')
+  type?: 'image' | 'text' | 'board'; // Entity type (default: 'image')
   dataUri?: string;                // Base64 image data (for images)
   text?: string;                   // Text content (for text entities)
   fontSize?: number;               // Font size (for text)
+  fontWeight?: 'normal' | 'bold';  // Font weight (for text)
+  fontStyle?: 'normal' | 'italic'; // Font style (for text)
+  fontFamily?: string;             // Font family (for text)
+  backgroundColor?: string;        // Background color (for board entities)
   x: number;                       // Canvas X position
   y: number;                       // Canvas Y position
   width: number;                   // Display width
