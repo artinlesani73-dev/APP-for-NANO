@@ -18,7 +18,7 @@ import { GeminiService } from './services/geminiService';
 import { LoggerService } from './services/logger';
 import { AdminService } from './services/adminService';
 import { MigrationService } from './services/migrationService';
-import { Session, SessionGeneration, GenerationConfig, UploadedImagePayload, MixboardSession } from './types';
+import { Session, SessionGeneration, GenerationConfig, UploadedImagePayload, MixboardSession, MixboardGeneration, StoredImageMeta } from './types';
 import { Zap, Database, Key, ExternalLink, History, ShieldCheck, Network, Sparkles } from 'lucide-react';
 
 const DEFAULT_CONFIG: GenerationConfig = {
@@ -32,7 +32,7 @@ const DEFAULT_CONFIG: GenerationConfig = {
 
 function AppContent() {
   // --- STATE ---
-  const [sessions, setSessions] = useState<Session[]>([]);
+  const [sessions, setSessions] = useState<(Session | MixboardSession)[]>([]);
   const [currentSessionId, setCurrentSessionId] = useState<string | null>(null);
   const { currentUser, setCurrentUser, logout: userLogout } = useUser();
 
@@ -45,7 +45,7 @@ function AppContent() {
 
   // Output State
   const [isGenerating, setIsGenerating] = useState(false);
-  const [currentGeneration, setCurrentGeneration] = useState<SessionGeneration | null>(null);
+  const [currentGeneration, setCurrentGeneration] = useState<SessionGeneration | MixboardGeneration | null>(null);
   const [outputImagesData, setOutputImagesData] = useState<string[]>([]);
   const [outputTexts, setOutputTexts] = useState<string[]>([]);
 
@@ -60,6 +60,36 @@ function AppContent() {
   const [mixboardSessions, setMixboardSessions] = useState<MixboardSession[]>([]);
   const [currentMixboardSessionId, setCurrentMixboardSessionId] = useState<string | null>(null);
   const mixboardSession = mixboardSessions.find(s => s.session_id === currentMixboardSessionId) || null;
+
+  const getGenerationOutputs = (generation: SessionGeneration | MixboardGeneration): StoredImageMeta[] => {
+    if ('output_images' in generation && generation.output_images) {
+      return generation.output_images;
+    }
+
+    if ('output_image' in generation && generation.output_image) {
+      return [generation.output_image];
+    }
+
+    return [];
+  };
+
+  const getGalleryInputs = (generation: SessionGeneration | MixboardGeneration) => {
+    if ('input_images' in generation && generation.input_images) {
+      return generation.input_images.map(meta => ({ meta, role: 'control' as const, timestamp: generation.timestamp }));
+    }
+
+    const items: { meta: StoredImageMeta; role: 'control' | 'reference'; timestamp: string }[] = [];
+
+    if ('control_images' in generation && generation.control_images) {
+      generation.control_images.forEach(meta => items.push({ meta, role: 'control', timestamp: generation.timestamp }));
+    }
+
+    if ('reference_images' in generation && generation.reference_images) {
+      generation.reference_images.forEach(meta => items.push({ meta, role: 'reference', timestamp: generation.timestamp }));
+    }
+
+    return items;
+  };
 
   // Settings & Theme State
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
@@ -77,7 +107,7 @@ function AppContent() {
     return sessions
       .flatMap(session =>
         session.generations.flatMap<HistoryGalleryItem>((generation) => {
-          const outputs = generation.output_images || (generation.output_image ? [generation.output_image] : []);
+          const outputs = getGenerationOutputs(generation);
           const texts = generation.output_texts || [];
 
           if (outputs.length === 0) {
@@ -114,38 +144,16 @@ function AppContent() {
 
     sessions.forEach(session => {
       session.generations.forEach(gen => {
-        // Add control images
-        if (gen.control_images) {
-          gen.control_images.forEach(img => {
-            const dataUri = StorageService.loadImage('control', img.id, img.filename);
-            if (dataUri) {
-              images.push({
-                meta: img,
-                role: 'control',
-                dataUri,
-                timestamp: gen.timestamp
-              });
-            }
-          });
-        }
-
-        // Add reference images
-        if (gen.reference_images) {
-          gen.reference_images.forEach(img => {
-            const dataUri = StorageService.loadImage('reference', img.id, img.filename);
-            if (dataUri) {
-              images.push({
-                meta: img,
-                role: 'reference',
-                dataUri,
-                timestamp: gen.timestamp
-              });
-            }
-          });
-        }
+        const inputs = getGalleryInputs(gen);
+        inputs.forEach(({ meta, role, timestamp }) => {
+          const dataUri = StorageService.loadImage(role, meta.id, meta.filename);
+          if (dataUri) {
+            images.push({ meta, role, dataUri, timestamp });
+          }
+        });
 
         // Add output images
-        const outputs = gen.output_images || (gen.output_image ? [gen.output_image] : []);
+        const outputs = getGenerationOutputs(gen);
         outputs.forEach(img => {
           const dataUri = StorageService.loadImage('output', img.id, img.filename);
           if (dataUri) {
@@ -554,7 +562,7 @@ function AppContent() {
     }
   };
 
-  const handleSelectGeneration = (sessionId: string, gen: SessionGeneration) => {
+  const handleSelectGeneration = (sessionId: string, gen: SessionGeneration | MixboardGeneration) => {
     const switchingSession = sessionId !== currentSessionId;
 
     if (switchingSession) {
@@ -564,33 +572,42 @@ function AppContent() {
     loadGenerationIntoView(gen, { includeInputs: !switchingSession });
   };
 
-  const loadGenerationIntoView = (gen: SessionGeneration, options: { includeInputs?: boolean } = {}) => {
+  const loadGenerationIntoView = (gen: SessionGeneration | MixboardGeneration, options: { includeInputs?: boolean } = {}) => {
     const { includeInputs = true } = options;
     setPrompt(gen.prompt);
     setConfig(gen.parameters);
     setCurrentGeneration(gen);
 
     if (includeInputs) {
-      // Load control images
-      if (gen.control_images && gen.control_images.length > 0) {
-        const imagesData = gen.control_images
+      if ('input_images' in gen) {
+        const imagesData = (gen.input_images || [])
           .map(img => StorageService.loadImage('control', img.id, img.filename))
           .filter(data => data !== null)
           .map(data => ({ data })) as UploadedImagePayload[];
         setControlImagesData(imagesData);
-      } else {
-        setControlImagesData([]);
-      }
-
-      // Load reference images
-      if (gen.reference_images && gen.reference_images.length > 0) {
-        const imagesData = gen.reference_images
-          .map(img => StorageService.loadImage('reference', img.id, img.filename))
-          .filter(data => data !== null)
-          .map(data => ({ data })) as UploadedImagePayload[];
-        setReferenceImagesData(imagesData);
-      } else {
         setReferenceImagesData([]);
+      } else {
+        // Load control images
+        if (gen.control_images && gen.control_images.length > 0) {
+          const imagesData = gen.control_images
+            .map(img => StorageService.loadImage('control', img.id, img.filename))
+            .filter(data => data !== null)
+            .map(data => ({ data })) as UploadedImagePayload[];
+          setControlImagesData(imagesData);
+        } else {
+          setControlImagesData([]);
+        }
+
+        // Load reference images
+        if (gen.reference_images && gen.reference_images.length > 0) {
+          const imagesData = gen.reference_images
+            .map(img => StorageService.loadImage('reference', img.id, img.filename))
+            .filter(data => data !== null)
+            .map(data => ({ data })) as UploadedImagePayload[];
+          setReferenceImagesData(imagesData);
+        } else {
+          setReferenceImagesData([]);
+        }
       }
     } else {
       setControlImagesData([]);
@@ -598,7 +615,7 @@ function AppContent() {
     }
 
     // Load output image(s)
-    const outputs = gen.output_images || (gen.output_image ? [gen.output_image] : []);
+    const outputs = getGenerationOutputs(gen);
     if (outputs.length > 0) {
       const imageData = outputs
         .map(img => StorageService.loadImage('output', img.id, img.filename))
@@ -744,14 +761,14 @@ function AppContent() {
 
         // 5. Reload session and update UI
         const updatedSession = StorageService.loadSession(currentSessionId);
-        if (updatedSession) {
-          const completedGen = updatedSession.generations.find(g => g.generation_id === gen.generation_id);
-          if (completedGen) {
-            setCurrentGeneration(completedGen);
-            const outputs = completedGen.output_images || (completedGen.output_image ? [completedGen.output_image] : []);
-            if (outputs.length > 0) {
-              const outputData = outputs
-                .map(img => StorageService.loadImage('output', img.id, img.filename))
+          if (updatedSession) {
+            const completedGen = updatedSession.generations.find(g => g.generation_id === gen.generation_id);
+            if (completedGen) {
+              setCurrentGeneration(completedGen);
+              const outputs = getGenerationOutputs(completedGen);
+              if (outputs.length > 0) {
+                const outputData = outputs
+                  .map(img => StorageService.loadImage('output', img.id, img.filename))
                 .filter(data => data !== null) as string[];
               setOutputImagesData(outputData);
             }
@@ -948,6 +965,7 @@ function AppContent() {
                   sessions={sessions}
                   theme={theme}
                   loadImage={(role, id, filename) => StorageService.loadImage(role, id, filename)}
+                  selectedSessionId={currentSessionId || 'all'}
                 />
               </div>
             ) : showHistory ? (
