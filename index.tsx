@@ -1,6 +1,6 @@
-import React from 'react';
+import React, { Suspense } from 'react';
 import ReactDOM from 'react-dom/client';
-import App from './App';
+const App = React.lazy(() => import('./App'));
 import './index.css';
 
 const rootElement = document.getElementById('root');
@@ -11,6 +11,8 @@ if (!rootElement) {
 const root = ReactDOM.createRoot(rootElement);
 root.render(
   <React.StrictMode>
-    <App />
+    <Suspense fallback={<div className="min-h-screen bg-black text-white flex items-center justify-center">Loading app...</div>}>
+      <App />
+    </Suspense>
   </React.StrictMode>
 );
