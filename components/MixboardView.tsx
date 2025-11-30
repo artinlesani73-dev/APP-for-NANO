@@ -952,7 +952,7 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
             backgroundImage: theme === 'dark'
               ? 'radial-gradient(circle, #27272a 1px, transparent 1px)'
               : 'radial-gradient(circle, #e4e4e7 1px, transparent 1px)',
-            backgroundSize: `${20 * zoom}px ${20 * zoom}px`,
+            backgroundSize: '20px 20px',
             backgroundPosition: `${panOffset.x}px ${panOffset.y}px`
           }}
           onMouseDown={handleCanvasMouseDown}
