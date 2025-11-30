@@ -128,6 +128,8 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
       return;
     }
 
+    const existingGenerations = currentSession.generations || [];
+
     setIsGenerating(true);
 
     const generationId = `gen-${Date.now()}`;
@@ -234,7 +236,7 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
           // Update session with new generation and canvas state
           const updatedSession: MixboardSession = {
             ...currentSession,
-            generations: [...currentSession.generations, completedGeneration],
+            generations: [...existingGenerations, completedGeneration],
             canvas_images: updatedCanvasImages,
             updated_at: new Date().toISOString()
           };
@@ -297,7 +299,7 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
           // Update session with new generation and canvas state
           const updatedSession: MixboardSession = {
             ...currentSession,
-            generations: [...currentSession.generations, completedGeneration],
+            generations: [...existingGenerations, completedGeneration],
             canvas_images: updatedCanvasImages,
             updated_at: new Date().toISOString()
           };
@@ -333,7 +335,7 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
       // Update session with failed generation
       const updatedSession: MixboardSession = {
         ...currentSession,
-        generations: [...currentSession.generations, failedGeneration],
+        generations: [...existingGenerations, failedGeneration],
         updated_at: new Date().toISOString()
       };
 
@@ -810,7 +812,7 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
                     </button>
                     <button
                       onClick={() => {
-                        if (session.generations.length > 0) {
+                        if ((session.generations ?? []).length > 0) {
                           alert('Cannot delete session with generations. Please clear the session first.');
                           return;
                         }
