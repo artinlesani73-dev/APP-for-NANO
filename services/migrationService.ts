@@ -34,7 +34,7 @@ export class MigrationService {
 
   /**
    * Populate canvas with all images from legacy session
-   * Collects all control, reference, and output images and places them in a grid
+   * Collects all control, reference, input, and output images and places them in a grid
    */
   static populateCanvasFromLegacy(oldSession: Session): CanvasImage[] {
     const canvasImages: CanvasImage[] = [];
@@ -50,14 +50,21 @@ export class MigrationService {
       // Collect all images from this generation
       const allImages: Array<{ meta: StoredImageMeta; role: 'control' | 'reference' | 'output' }> = [];
 
-      // Add control images
-      if (gen.control_images) {
-        gen.control_images.forEach(img => allImages.push({ meta: img, role: 'control' }));
-      }
-
-      // Add reference images
-      if (gen.reference_images) {
-        gen.reference_images.forEach(img => allImages.push({ meta: img, role: 'reference' }));
+      // Check if generation has new format (input_images) or old format (control/reference)
+      const genAny = gen as any;
+      if (genAny.input_images) {
+        // New format: use input_images
+        genAny.input_images.forEach((img: StoredImageMeta) =>
+          allImages.push({ meta: img, role: 'control' }) // Default to 'control' role for loading
+        );
+      } else {
+        // Old format: use control and reference images
+        if (gen.control_images) {
+          gen.control_images.forEach(img => allImages.push({ meta: img, role: 'control' }));
+        }
+        if (gen.reference_images) {
+          gen.reference_images.forEach(img => allImages.push({ meta: img, role: 'reference' }));
+        }
       }
 
       // Add output images
@@ -113,14 +120,25 @@ export class MigrationService {
    * Convert old generation to Mixboard generation
    */
   static migrateGeneration(oldGen: SessionGeneration): MixboardGeneration {
-    const inputImages = this.unifyImages(
-      oldGen.control_images,
-      oldGen.reference_images
-    );
+    // Check if generation already has input_images (partial migration)
+    let inputImages: StoredImageMeta[];
+    if ((oldGen as any).input_images) {
+      // Already migrated, keep as is
+      inputImages = (oldGen as any).input_images;
+    } else {
+      // Legacy format, merge control and reference
+      inputImages = this.unifyImages(
+        oldGen.control_images,
+        oldGen.reference_images
+      );
+    }
 
     // Handle legacy single output format
     const outputImages = oldGen.output_images ||
                         (oldGen.output_image ? [oldGen.output_image] : []);
+
+    // Preserve parent_generation_ids if already exists
+    const parentIds = (oldGen as any).parent_generation_ids || [];
 
     return {
       generation_id: oldGen.generation_id,
@@ -133,8 +151,8 @@ export class MigrationService {
       output_texts: oldGen.output_texts,
       generation_time_ms: oldGen.generation_time_ms,
       error_message: oldGen.error,
-      canvas_state: undefined,  // Cannot reconstruct
-      parent_generation_ids: []  // Cannot infer from old data
+      canvas_state: (oldGen as any).canvas_state || undefined,  // Preserve if exists
+      parent_generation_ids: parentIds
     };
   }
 
@@ -160,10 +178,21 @@ export class MigrationService {
   }
 
   /**
-   * Detect if session is old format or new format
+   * Detect if session needs migration (either legacy format or missing canvas data)
    */
   static isLegacySession(session: any): boolean {
-    if (!session || !session.generations || session.generations.length === 0) {
+    if (!session || !session.generations) {
+      return false;
+    }
+
+    // Check if session is missing canvas_images (needs migration)
+    const missingCanvasImages = !session.canvas_images;
+    if (missingCanvasImages) {
+      return true;
+    }
+
+    // Check if any generation has legacy format
+    if (session.generations.length === 0) {
       return false;
     }
 
@@ -220,9 +249,30 @@ export class MigrationService {
           if (this.isLegacySession(session)) {
             const migratedSession = this.migrateSession(session);
 
-            // Save migrated session
+            // Rename the legacy session file before saving the migrated version
+            // This preserves the legacy file as a backup
+            if (StorageService.isElectron()) {
+              // @ts-ignore - Electron API
+              const renameResult = window.electron.renameSessionFileSync(
+                session.session_id,
+                '.legacy.json'
+              );
+              if (!renameResult.success) {
+                console.warn(
+                  `[Migration] Failed to rename legacy session ${session.session_id}:`,
+                  renameResult.error
+                );
+              }
+            } else {
+              // For web, save legacy session to a different key
+              const legacyKey = `session_${session.session_id}_legacy`;
+              localStorage.setItem(legacyKey, JSON.stringify(session));
+            }
+
+            // Save migrated session (will create new .json file)
             StorageService.saveSession(migratedSession as any);
 
+            console.log(`[Migration] Successfully migrated session: ${session.session_id}`);
             result.migrated++;
           } else {
             result.skipped++;

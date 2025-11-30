@@ -575,7 +575,8 @@ ipcMain.on('list-sessions-sync', (event) => {
         const sessions = [];
 
         files.forEach(file => {
-            if (file.endsWith('.json')) {
+            // Skip legacy session files (renamed after migration)
+            if (file.endsWith('.json') && !file.endsWith('.legacy.json')) {
                 const content = fs.readFileSync(path.join(sessionsDir, file), 'utf-8');
                 sessions.push(JSON.parse(content));
             }
@@ -637,6 +638,34 @@ ipcMain.on('delete-session-sync', (event, sessionId) => {
         event.returnValue = { success: true };
     } catch (e) {
         console.error("Delete session failed", e);
+        event.returnValue = { success: false, error: e.message };
+    }
+});
+
+// Rename session file (used for legacy migration)
+ipcMain.on('rename-session-file-sync', (event, sessionId, newExtension) => {
+    try {
+        const dataPath = getDataPath();
+        const oldPath = path.join(dataPath, 'sessions', `${sessionId}.json`);
+        const newPath = path.join(dataPath, 'sessions', `${sessionId}${newExtension}`);
+
+        if (fs.existsSync(oldPath)) {
+            fs.renameSync(oldPath, newPath);
+        }
+
+        // Also rename in shared storage if available
+        const sharedBase = getSharedDataPath();
+        if (sharedBase) {
+            const sharedOldPath = path.join(sharedBase, 'sessions', `${sessionId}.json`);
+            const sharedNewPath = path.join(sharedBase, 'sessions', `${sessionId}${newExtension}`);
+            if (fs.existsSync(sharedOldPath)) {
+                fs.renameSync(sharedOldPath, sharedNewPath);
+            }
+        }
+
+        event.returnValue = { success: true };
+    } catch (e) {
+        console.error("Rename session file failed", e);
         event.returnValue = { success: false, error: e.message };
     }
 });
