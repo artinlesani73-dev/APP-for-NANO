@@ -931,6 +931,7 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
           </button>
         </div>
       </div>
+      </div>
     </div>
   );
 };
