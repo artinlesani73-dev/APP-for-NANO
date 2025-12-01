@@ -168,7 +168,12 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
     canvasEngineRef.current = engine;
     persistentCanvasEngine = engine;
 
+    // If there's no active session or canvas, ensure listeners are detached
     const canvasElement = canvasRef.current;
+    if (!currentSession || !canvasElement) {
+      engine.detach();
+      return;
+    }
 
     // If there's no active session or canvas, ensure listeners are detached
     if (!currentSession || !canvasElement) {
