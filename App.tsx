@@ -372,13 +372,6 @@ function AppContent() {
     }
   }, [currentUser]);
 
-  // Create a session if none exist
-  useEffect(() => {
-    if (currentUser && mixboardSessions.length === 0 && !showGraphView && !showHistory) {
-      handleCreateMixboardSession();
-    }
-  }, [currentUser, mixboardSessions.length, showGraphView, showHistory]);
-
   function handleNewSession() {
     const newSession = StorageService.createSession("New Session", currentUser || undefined);
     setSessions(prev => [newSession, ...prev]);
