@@ -169,16 +169,15 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
     persistentCanvasEngine = engine;
 
     const canvasElement = canvasRef.current;
-    if (!canvasElement) return;
 
-    const schedule = 'requestIdleCallback' in window
-      ? (window as any).requestIdleCallback
-      : (cb: IdleRequestCallback) => window.setTimeout(() => cb({} as IdleDeadline), 0);
+    // If there's no active session or canvas, ensure listeners are detached
+    if (!currentSession || !canvasElement) {
+      engine.detach();
+      return;
+    }
 
-    const scheduleId = schedule(() => {
-      engine.attach(canvasElement, {
-        onZoom: (delta) => setZoom(prev => Math.max(0.1, Math.min(3, prev + delta)))
-      });
+    engine.attach(canvasElement, {
+      onZoom: (delta) => setZoom(prev => Math.max(0.1, Math.min(3, prev + delta)))
     });
 
     let cancelled = false;
@@ -201,14 +200,9 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
 
     return () => {
       cancelled = true;
-      if (typeof (window as any).cancelIdleCallback === 'function') {
-        (window as any).cancelIdleCallback(scheduleId as number);
-      } else {
-        clearTimeout(scheduleId as number);
-      }
       engine.detach();
     };
-  }, []);
+  }, [currentSession?.session_id]);
 
   // Helper function to save current canvas state to session
   const saveCanvasToSession = (images: CanvasImage[]) => {
