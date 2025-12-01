@@ -2,8 +2,7 @@ const { contextBridge, ipcRenderer } = require('electron');
 
 const safeEnv = {
   sharedApiKey: process.env.VITE_SHARED_API_KEY || process.env.GEMINI_API_KEY || process.env.API_KEY,
-  logEndpoint: process.env.VITE_LOG_ENDPOINT,
-  adminPassphrase: process.env.VITE_ADMIN_PASSPHRASE
+  logEndpoint: process.env.VITE_LOG_ENDPOINT
 };
 
 contextBridge.exposeInMainWorld('electron', {
@@ -30,9 +29,6 @@ contextBridge.exposeInMainWorld('electron', {
   logEvent: (entry) => ipcRenderer.sendSync('log-event', entry),
   fetchLogs: () => ipcRenderer.invoke('fetch-logs'),
   setUserContext: (user) => ipcRenderer.send('set-user-context', user),
-  verifyAdminPassphrase: (passphrase) => ipcRenderer.invoke('verify-admin-passphrase', passphrase),
-  openAdminWindow: (verified) => ipcRenderer.invoke('open-admin-window', verified),
-  getAdminMetrics: () => ipcRenderer.invoke('get-admin-metrics'),
   loadUserSettings: () => ipcRenderer.invoke('user-settings:get'),
   saveUserSettings: (settings) => ipcRenderer.invoke('user-settings:save', settings),
   loadUserHistory: () => ipcRenderer.invoke('user-history:get'),
