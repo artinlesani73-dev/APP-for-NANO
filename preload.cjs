@@ -33,6 +33,11 @@ contextBridge.exposeInMainWorld('electron', {
   verifyAdminPassphrase: (passphrase) => ipcRenderer.invoke('verify-admin-passphrase', passphrase),
   openAdminWindow: (verified) => ipcRenderer.invoke('open-admin-window', verified),
   getAdminMetrics: () => ipcRenderer.invoke('get-admin-metrics'),
+  loadUserSettings: () => ipcRenderer.invoke('user-settings:get'),
+  saveUserSettings: (settings) => ipcRenderer.invoke('user-settings:save', settings),
+  loadUserHistory: () => ipcRenderer.invoke('user-history:get'),
+  saveUserHistory: (history) => ipcRenderer.invoke('user-history:save', history),
+  onUserCacheReady: (callback) => ipcRenderer.on('user-cache-ready', (_event, payload) => callback(payload)),
 
   // Updates
   checkForUpdates: () => ipcRenderer.invoke('check-for-updates'),
