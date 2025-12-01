@@ -168,8 +168,12 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
     canvasEngineRef.current = engine;
     persistentCanvasEngine = engine;
 
+    // If there's no active session or canvas, ensure listeners are detached
     const canvasElement = canvasRef.current;
-    if (!canvasElement) return;
+    if (!currentSession || !canvasElement) {
+      engine.detach();
+      return;
+    }
 
     const schedule = 'requestIdleCallback' in window
       ? (window as any).requestIdleCallback
@@ -208,7 +212,7 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
       }
       engine.detach();
     };
-  }, []);
+  }, [currentSession?.session_id]);
 
   // Helper function to save current canvas state to session
   const saveCanvasToSession = (images: CanvasImage[]) => {
