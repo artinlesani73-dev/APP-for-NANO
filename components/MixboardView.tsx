@@ -123,14 +123,6 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
     });
   }, []);
 
-  // Initialize session if needed
-  useEffect(() => {
-    if (!currentSession && onCreateSession && currentUser) {
-      console.log('[MixboardView] No session found, creating new session...');
-      onCreateSession();
-    }
-  }, [currentSession, onCreateSession, currentUser]);
-
   // Load canvas from session when session changes
   useEffect(() => {
     if (currentSession && currentSession.canvas_images) {
@@ -1026,6 +1018,7 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
       {/* Main Content */}
       <div className="flex-1 flex flex-col">
 
+      {currentSession ? (
       <div className="flex-1 flex overflow-hidden">
         {/* Canvas Area */}
         <div
@@ -1367,6 +1360,39 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
           </button>
         </div>
       </div>
+      ) : (
+        <div className="flex-1 flex items-center justify-center bg-zinc-100 dark:bg-zinc-900/80">
+          <div className="max-w-lg w-full mx-auto text-center space-y-4 p-8 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl shadow-sm">
+            <div className="flex items-center justify-center gap-2 text-orange-600 dark:text-orange-400 text-sm font-semibold">
+              <Sparkles size={18} />
+              <span>Mixboard is ready</span>
+            </div>
+            <h3 className="text-2xl font-bold text-zinc-900 dark:text-zinc-100">Choose where to start</h3>
+            <p className="text-sm text-zinc-600 dark:text-zinc-400">
+              Create a fresh Mixboard or open one of your saved sessions from the list on the left.
+            </p>
+            <div className="flex flex-wrap items-center justify-center gap-3">
+              <button
+                onClick={() => onCreateSession && onCreateSession()}
+                className="px-4 py-2 bg-orange-500 text-white rounded-lg shadow hover:bg-orange-600 transition-colors"
+              >
+                Create new Mixboard
+              </button>
+              {allSessions.length > 0 && (
+                <button
+                  onClick={() => onSelectSession(allSessions[0].session_id)}
+                  className="px-4 py-2 border border-zinc-300 dark:border-zinc-700 rounded-lg text-zinc-700 dark:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors"
+                >
+                  Open most recent
+                </button>
+              )}
+            </div>
+            <p className="text-xs text-zinc-500 dark:text-zinc-500">
+              You can always pick a specific session from the sidebar to resume where you left off.
+            </p>
+          </div>
+        </div>
+      )}
       </div>
     </div>
   );

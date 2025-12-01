@@ -358,26 +358,18 @@ function AppContent() {
 
     setMixboardSessions(userMixboardSessions);
     console.log('[App] Loaded Mixboard sessions:', userMixboardSessions.length);
-
-    // Set current session to the most recent one
-    if (userMixboardSessions.length > 0 && !currentMixboardSessionId) {
-      setCurrentMixboardSessionId(userMixboardSessions[0].session_id);
-    }
   };
 
   // Load Mixboard sessions when user changes
   useEffect(() => {
     if (currentUser) {
+      setCurrentMixboardSessionId(null);
       loadMixboardSessions();
+    } else {
+      setMixboardSessions([]);
+      setCurrentMixboardSessionId(null);
     }
   }, [currentUser]);
-
-  // Create a session if none exist
-  useEffect(() => {
-    if (currentUser && mixboardSessions.length === 0 && !showGraphView && !showHistory) {
-      handleCreateMixboardSession();
-    }
-  }, [currentUser, mixboardSessions.length, showGraphView, showHistory]);
 
   function handleNewSession() {
     const newSession = StorageService.createSession("New Session", currentUser || undefined);
