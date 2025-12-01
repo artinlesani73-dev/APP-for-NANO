@@ -1,4 +1,4 @@
-import React, { lazy, Suspense, useState, useEffect, useMemo } from 'react';
+import React, { lazy, Suspense, useState, useEffect, useMemo, useCallback } from 'react';
 import { PromptPanel } from './components/PromptPanel';
 import { MultiImageUploadPanel } from './components/MultiImageUploadPanel';
 import { ParametersPanel } from './components/ParametersPanel';
@@ -6,22 +6,18 @@ import { ResultPanel } from './components/ResultPanel';
 import type { HistoryGalleryItem } from './components/HistoryPanel';
 import { LoginForm } from './components/LoginForm';
 import { UserProvider, useUser } from './components/UserContext';
-import { AdminDataProvider } from './components/AdminDataStore';
 import { StorageService } from './services/newStorageService';
 import { GeminiService } from './services/geminiService';
 import { LoggerService } from './services/logger';
-import { AdminService } from './services/adminService';
-import { MigrationService } from './services/migrationService';
 import { PreferencesService, type UserHistory, type UserSettings } from './services/preferencesService';
 import { Session, SessionGeneration, GenerationConfig, UploadedImagePayload, MixboardSession } from './types';
-import { Zap, Database, Key, ExternalLink, History, Network, Sparkles, Settings } from 'lucide-react';
+import { Database, Key, ExternalLink, History, Network, Sparkles, Settings } from 'lucide-react';
 
 const HistoryPanel = lazy(() => import('./components/HistoryPanel').then(module => ({ default: module.HistoryPanel })));
 const GraphView = lazy(() => import('./components/GraphView'));
 const MixboardView = lazy(() => import('./components/MixboardView').then(module => ({ default: module.MixboardView })));
 const SettingsModal = lazy(() => import('./components/SettingsModal').then(module => ({ default: module.SettingsModal })));
 const ImageEditModal = lazy(() => import('./components/ImageEditModal').then(module => ({ default: module.ImageEditModal })));
-const AdminDashboard = lazy(() => import('./components/AdminDashboard').then(module => ({ default: module.AdminDashboard })));
 
 const DEFAULT_CONFIG: GenerationConfig = {
   temperature: 0.7,
@@ -70,11 +66,7 @@ function AppContent() {
   const [theme, setTheme] = useState<'dark' | 'light'>('dark');
   const [preferencesReady, setPreferencesReady] = useState(false);
   const [userHistory, setUserHistory] = useState<UserHistory>(PreferencesService.defaultsHistory);
-  const [isAdminDashboardOpen, setIsAdminDashboardOpen] = useState(false);
-  const [isAdminAuthorized, setIsAdminAuthorized] = useState<boolean>(() => {
-    if (typeof window === 'undefined') return false;
-    return sessionStorage.getItem('admin_authorized') === 'true';
-  });
+  const [hasHydratedSessions, setHasHydratedSessions] = useState(false);
 
   const historyItems = useMemo<HistoryGalleryItem[]>(() => {
     return sessions
@@ -172,13 +164,6 @@ function AppContent() {
   }, [theme]);
 
   useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    if (params.get('admin') === '1') {
-      setIsAdminDashboardOpen(true);
-    }
-  }, []);
-
-  useEffect(() => {
     GeminiService.checkApiKey().then(setApiKeyConnected);
   }, []);
 
@@ -199,106 +184,77 @@ function AppContent() {
       .catch((err) => console.warn('Failed to persist user history', err));
   }, [preferencesReady, currentSessionId, currentMixboardSessionId]);
 
+  const hydrateSessions = useCallback(async () => {
+    if (!currentUser || hasHydratedSessions) return;
+
+    setHasHydratedSessions(true);
+
+    try {
+      await StorageService.syncUserData?.();
+    } catch (err) {
+      console.error('Failed to sync user data to shared storage', err);
+    }
+
+    const allSessions = StorageService.getSessions();
+
+    // Filter sessions to only show the current user's sessions
+    const userSessions = currentUser
+      ? allSessions.filter(s => s.user?.id === currentUser.id)
+      : [];
+
+    setSessions(userSessions);
+
+    if (userSessions.length > 0) {
+      const preferredSessionId = userHistory.lastSessionId && userSessions.find(
+        (session) => session.session_id === userHistory.lastSessionId
+      )?.session_id;
+
+      const nextSessionId = preferredSessionId || userSessions[0].session_id;
+      handleSelectSession(nextSessionId);
+    } else {
+      handleNewSession();
+    }
+  }, [currentUser, handleNewSession, handleSelectSession, hasHydratedSessions, userHistory.lastSessionId]);
+
   useEffect(() => {
     if (!currentUser) {
       setSessions([]);
       setCurrentSessionId(null);
+      setHasHydratedSessions(false);
       return;
     }
 
-    let cancelled = false;
-
-    const hydrateSessions = async () => {
-      try {
-        await StorageService.syncUserData?.();
-      } catch (err) {
-        console.error('Failed to sync user data to shared storage', err);
+    const preferredSessionId = userHistory.lastSessionId;
+    if (preferredSessionId) {
+      const preferredSession = StorageService.loadSession(preferredSessionId);
+      if (preferredSession && preferredSession.user?.id === currentUser.id) {
+        setSessions([preferredSession]);
+        handleSelectSession(preferredSession.session_id);
       }
+    }
 
-      const allSessions = StorageService.getSessions();
-      if (cancelled) return;
+    if (!preferredSessionId) {
+      handleNewSession();
+    }
 
-      // Filter sessions to only show the current user's sessions
-      const userSessions = currentUser
-        ? allSessions.filter(s => s.user?.id === currentUser.id)
-        : [];
-
-      setSessions(userSessions);
-
-      if (userSessions.length > 0) {
-        const preferredSessionId = userHistory.lastSessionId && userSessions.find(
-          (session) => session.session_id === userHistory.lastSessionId
-        )?.session_id;
-
-        const nextSessionId = preferredSessionId || userSessions[0].session_id;
-        handleSelectSession(nextSessionId);
-      } else {
-        handleNewSession();
-      }
-    };
-
-    hydrateSessions();
+    const idleHandle = typeof window !== 'undefined' && 'requestIdleCallback' in window
+      ? (window as any).requestIdleCallback(() => hydrateSessions())
+      : setTimeout(() => hydrateSessions(), 700);
 
     return () => {
-      cancelled = true;
-    };
-  }, [currentUser, userHistory.lastSessionId]);
-
-  // Check for migration needs and prompt user
-  useEffect(() => {
-    if (!currentUser) return;
-
-    const checkMigration = async () => {
-      if (MigrationService.needsMigration()) {
-        const confirmed = window.confirm(
-          'Your sessions need to be migrated to the new Mixboard format.\n\n' +
-          'This will:\n' +
-          '• Combine control and reference images into a single unified input format\n' +
-          '• Preserve all your existing generations and data\n' +
-          '• Enable new Mixboard features like canvas state preservation\n' +
-          '• Create a backup before migration\n\n' +
-          'Continue with migration?'
-        );
-
-        if (confirmed) {
-          try {
-            const result = MigrationService.migrateAllSessions();
-
-            if (result.failed > 0) {
-              console.error('Migration errors:', result.errors);
-              alert(
-                `Migration completed with some errors.\n\n` +
-                `✓ Migrated: ${result.migrated}\n` +
-                `✗ Failed: ${result.failed}\n` +
-                `○ Skipped (already migrated): ${result.skipped}\n\n` +
-                `Check console for details. The page will reload now.`
-              );
-            } else {
-              alert(
-                `Migration successful!\n\n` +
-                `✓ Migrated: ${result.migrated} session(s)\n` +
-                `○ Skipped: ${result.skipped} (already in new format)\n\n` +
-                `The page will reload now.`
-              );
-            }
-
-            // Reload to pick up migrated sessions
-            window.location.reload();
-          } catch (error) {
-            console.error('Migration failed:', error);
-            alert(
-              `Migration failed: ${(error as Error).message}\n\n` +
-              `Your data has not been modified. Please contact support.`
-            );
-          }
-        }
+      if (typeof window !== 'undefined' && 'cancelIdleCallback' in window && typeof idleHandle === 'number') {
+        (window as any).cancelIdleCallback(idleHandle);
+      } else {
+        clearTimeout(idleHandle as any);
       }
     };
+  }, [currentUser, hydrateSessions, userHistory.lastSessionId]);
 
-    // Run migration check after a short delay to let sessions load
-    const timer = setTimeout(checkMigration, 500);
-    return () => clearTimeout(timer);
-  }, [currentUser, sessions]);
+  useEffect(() => {
+    if ((showHistory || showGraphView) && !hasHydratedSessions) {
+      hydrateSessions();
+    }
+  }, [hasHydratedSessions, hydrateSessions, showGraphView, showHistory]);
 
   // --- HANDLERS ---
   const handleLogin = (user: { displayName: string; id: string }, persist = true) => {
@@ -423,38 +379,7 @@ function AppContent() {
     }
   }, [currentUser, mixboardSessions.length, showGraphView, showHistory]);
 
-  const grantAdminAccess = () => {
-    setIsAdminAuthorized(true);
-    sessionStorage.setItem('admin_authorized', 'true');
-  };
-
-  const handleAdminAuthorize = async (candidate: string) => {
-    const ok = await AdminService.verifyPassphrase(candidate);
-    if (ok) {
-      grantAdminAccess();
-      await AdminService.openAdminWindow(true);
-    }
-    return ok;
-  };
-
-  const handleOpenAdminDashboard = async () => {
-    if (isAdminAuthorized) {
-      setIsAdminDashboardOpen(true);
-      await AdminService.openAdminWindow(true);
-      return;
-    }
-
-    const candidate = window.prompt('Enter admin passphrase to open the dashboard');
-    if (!candidate) return;
-    const ok = await handleAdminAuthorize(candidate);
-    if (!ok) {
-      alert('Invalid admin passphrase.');
-    } else {
-      setIsAdminDashboardOpen(true);
-    }
-  };
-
-  const handleNewSession = () => {
+  function handleNewSession() {
     const newSession = StorageService.createSession("New Session", currentUser || undefined);
     setSessions(prev => [newSession, ...prev]);
     setCurrentSessionId(newSession.session_id);
@@ -463,7 +388,7 @@ function AppContent() {
       sessionId: newSession.session_id,
       user: currentUser?.displayName
     });
-  };
+  }
 
   const handleRenameSession = (id: string, newTitle: string) => {
     StorageService.renameSession(id, newTitle);
@@ -503,7 +428,7 @@ function AppContent() {
     }
   };
 
-  const handleSelectSession = (id: string) => {
+  function handleSelectSession(id: string) {
     setCurrentSessionId(id);
     const session = StorageService.loadSession(id);
     if (!session) return;
@@ -515,7 +440,7 @@ function AppContent() {
     } else {
         resetInputs();
     }
-  };
+  }
 
   const handleEditControlImage = (index: number) => {
     setEditingControlIndex(index);
@@ -977,14 +902,6 @@ function AppContent() {
           onLogout={handleLogout}
         />
       </Suspense>
-      <Suspense fallback={null}>
-        <AdminDashboard
-          isOpen={isAdminDashboardOpen}
-          isAuthorized={isAdminAuthorized}
-          onAuthorize={handleAdminAuthorize}
-          onClose={() => setIsAdminDashboardOpen(false)}
-        />
-      </Suspense>
     </div>
   );
 }
@@ -992,9 +909,7 @@ function AppContent() {
 export default function App() {
   return (
     <UserProvider>
-      <AdminDataProvider>
-        <AppContent />
-      </AdminDataProvider>
+      <AppContent />
     </UserProvider>
   );
 }

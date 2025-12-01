@@ -3,6 +3,5 @@
   "description": "A professional image generation tool with complete provenance tracking, utilizing Google Gemini models.",
   "requestFramePermissions": [],
   "sharedApiKey": "",
-  "logEndpoint": "",
-  "adminPassphrase": ""
+  "logEndpoint": ""
 }
