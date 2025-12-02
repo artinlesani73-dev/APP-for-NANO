@@ -189,7 +189,8 @@ export interface LogEntry {
 export interface CanvasImage {
   id: string;                      // Unique canvas image ID
   type?: 'image' | 'text' | 'board'; // Entity type (default: 'image')
-  dataUri?: string;                // Base64 image data (for images)
+  dataUri?: string;                // Base64 image data (for images) - full resolution
+  thumbnailUri?: string;           // Base64 thumbnail data (for canvas display) - optimized for performance
   text?: string;                   // Text content (for text entities)
   fontSize?: number;               // Font size (for text)
   fontWeight?: 'normal' | 'bold';  // Font weight (for text)

@@ -3,6 +3,7 @@ import { Sparkles, Image as ImageIcon, Type, Trash2, ZoomIn, ZoomOut, Move, Down
 import { GeminiService } from '../services/geminiService';
 import { StorageService } from '../services/newStorageService';
 import { GenerationConfig, CanvasImage, MixboardSession, MixboardGeneration, StoredImageMeta } from '../types';
+import { ImageEditModal } from './ImageEditModal';
 
 type CanvasEngine = {
   attach: (element: HTMLDivElement, options: { onZoom: (delta: number) => void }) => void;
@@ -108,6 +109,16 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
     canvasY: 0
   });
 
+  // Image context menu and edit modal state
+  const [imageContextMenu, setImageContextMenu] = useState<{
+    x: number;
+    y: number;
+    imageId: string;
+  } | null>(null);
+  const [editModalOpen, setEditModalOpen] = useState(false);
+  const [editingImage, setEditingImage] = useState<CanvasImage | null>(null);
+  const [isGeneratingThumbnails, setIsGeneratingThumbnails] = useState(false);
+
   const canvasRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const textToolbarRef = useRef<HTMLDivElement>(null);
@@ -133,6 +144,60 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
       setCanvasImages([]);
     }
   }, [currentSession?.session_id]);
+
+  // Migration: Generate thumbnails for existing images without thumbnails
+  useEffect(() => {
+    const migrateImages = async () => {
+      // Only migrate if there are images and some don't have thumbnails
+      const needsMigration = canvasImages.some(
+        img => img.type !== 'text' && img.type !== 'board' && img.dataUri && !img.thumbnailUri
+      );
+
+      if (!needsMigration || canvasImages.length === 0) return;
+
+      console.log('[MixboardView] Migrating images without thumbnails...');
+      setIsGeneratingThumbnails(true);
+
+      try {
+        const { generateThumbnail } = await import('../utils/imageUtils');
+
+        const migratedImages = await Promise.all(
+          canvasImages.map(async (img) => {
+            // Only generate thumbnail for images that don't have one
+            if (img.type !== 'text' && img.type !== 'board' && img.dataUri && !img.thumbnailUri) {
+              try {
+                const thumbnailUri = await generateThumbnail(img.dataUri);
+                return { ...img, thumbnailUri };
+              } catch (err) {
+                console.error('Failed to generate thumbnail for image:', img.id, err);
+                return img; // Keep original if thumbnail generation fails
+              }
+            }
+            return img;
+          })
+        );
+
+        // Only update if we actually migrated something
+        const hasChanges = migratedImages.some((img, idx) => img.thumbnailUri !== canvasImages[idx].thumbnailUri);
+        if (hasChanges) {
+          setCanvasImages(migratedImages);
+          saveCanvasToSession(migratedImages);
+          console.log('[MixboardView] Migration complete, thumbnails generated');
+        }
+      } catch (error) {
+        console.error('Failed to migrate images:', error);
+      } finally {
+        setIsGeneratingThumbnails(false);
+      }
+    };
+
+    // Run migration after a short delay to not block initial render
+    const migrationTimeout = setTimeout(() => {
+      migrateImages();
+    }, 500);
+
+    return () => clearTimeout(migrationTimeout);
+  }, [currentSession?.session_id]); // Run when session changes
 
   useEffect(() => {
     const handleGlobalClick = () => closeContextMenu();
@@ -324,37 +389,78 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
 
         // Add generated image to canvas
         const img = new Image();
-        img.onload = () => {
-          const newCanvasImage: CanvasImage = {
-            id: `img-${Date.now()}`,
-            dataUri: imageDataUri,
-            x: 100 + (canvasImages.length * 50),
-            y: 100 + (canvasImages.length * 50),
-            width: 300,
-            height: (300 * img.height) / img.width,
-            selected: false,
-            originalWidth: img.width,
-            originalHeight: img.height,
-            generationId: generationId,
-            imageMetaId: outputImageMeta.id
-          };
+        img.onload = async () => {
+          // Generate thumbnail for the output image
+          setIsGeneratingThumbnails(true);
+          try {
+            const { generateThumbnail } = await import('../utils/imageUtils');
+            const thumbnailUri = await generateThumbnail(imageDataUri);
 
-          const updatedCanvasImages = [...canvasImages, newCanvasImage];
-          setCanvasImages(updatedCanvasImages);
+            const newCanvasImage: CanvasImage = {
+              id: `img-${Date.now()}`,
+              dataUri: imageDataUri,
+              thumbnailUri,
+              x: 100 + (canvasImages.length * 50),
+              y: 100 + (canvasImages.length * 50),
+              width: 300,
+              height: (300 * img.height) / img.width,
+              selected: false,
+              originalWidth: img.width,
+              originalHeight: img.height,
+              generationId: generationId,
+              imageMetaId: outputImageMeta.id
+            };
 
-          // Update session with new generation and canvas state
-          const updatedSession: MixboardSession = {
-            ...currentSession,
-            generations: [...existingGenerations, completedGeneration],
-            canvas_images: updatedCanvasImages,
-            updated_at: new Date().toISOString()
-          };
+            const updatedCanvasImages = [...canvasImages, newCanvasImage];
+            setCanvasImages(updatedCanvasImages);
 
-          // Persist session
-          StorageService.saveSession(updatedSession as any);
-          onSessionUpdate(updatedSession);
+            // Update session with new generation and canvas state
+            const updatedSession: MixboardSession = {
+              ...currentSession,
+              generations: [...existingGenerations, completedGeneration],
+              canvas_images: updatedCanvasImages,
+              updated_at: new Date().toISOString()
+            };
 
-          setCurrentGeneration(completedGeneration);
+            // Persist session
+            StorageService.saveSession(updatedSession as any);
+            onSessionUpdate(updatedSession);
+
+            setCurrentGeneration(completedGeneration);
+          } catch (error) {
+            console.error('Failed to generate thumbnail for output image:', error);
+            // Still add image without thumbnail as fallback
+            const newCanvasImage: CanvasImage = {
+              id: `img-${Date.now()}`,
+              dataUri: imageDataUri,
+              x: 100 + (canvasImages.length * 50),
+              y: 100 + (canvasImages.length * 50),
+              width: 300,
+              height: (300 * img.height) / img.width,
+              selected: false,
+              originalWidth: img.width,
+              originalHeight: img.height,
+              generationId: generationId,
+              imageMetaId: outputImageMeta.id
+            };
+
+            const updatedCanvasImages = [...canvasImages, newCanvasImage];
+            setCanvasImages(updatedCanvasImages);
+
+            const updatedSession: MixboardSession = {
+              ...currentSession,
+              generations: [...existingGenerations, completedGeneration],
+              canvas_images: updatedCanvasImages,
+              updated_at: new Date().toISOString()
+            };
+
+            StorageService.saveSession(updatedSession as any);
+            onSessionUpdate(updatedSession);
+
+            setCurrentGeneration(completedGeneration);
+          } finally {
+            setIsGeneratingThumbnails(false);
+          }
         };
         img.src = imageDataUri;
       }
@@ -499,42 +605,146 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
     });
   };
 
+  // Image context menu handlers
+  const handleImageContextMenu = (e: React.MouseEvent, imageId: string) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setImageContextMenu({
+      x: e.clientX,
+      y: e.clientY,
+      imageId
+    });
+  };
+
+  const closeImageContextMenu = () => {
+    setImageContextMenu(null);
+  };
+
+  const handleEditImage = async () => {
+    if (!imageContextMenu) return;
+    const image = canvasImages.find(img => img.id === imageContextMenu.imageId);
+    if (image && image.dataUri) {
+      setEditingImage(image);
+      setEditModalOpen(true);
+    }
+    closeImageContextMenu();
+  };
+
+  const handleDeleteImage = () => {
+    if (!imageContextMenu) return;
+    setCanvasImages(prev => {
+      const updated = prev.filter(img => img.id !== imageContextMenu.imageId);
+      saveCanvasToSession(updated);
+      return updated;
+    });
+    closeImageContextMenu();
+  };
+
+  const handleSaveEditedImage = async (editedDataUri: string) => {
+    if (!editingImage) return;
+
+    // Import thumbnail generator
+    const { generateThumbnail } = await import('../utils/imageUtils');
+
+    // Generate new thumbnail from edited image
+    setIsGeneratingThumbnails(true);
+    try {
+      const newThumbnail = await generateThumbnail(editedDataUri);
+
+      // Update canvas image with new original and thumbnail
+      setCanvasImages(prev => {
+        const updated = prev.map(img =>
+          img.id === editingImage.id
+            ? { ...img, dataUri: editedDataUri, thumbnailUri: newThumbnail }
+            : img
+        );
+        saveCanvasToSession(updated);
+        return updated;
+      });
+    } catch (error) {
+      console.error('Failed to generate thumbnail for edited image:', error);
+      // Still update the image even if thumbnail generation fails
+      setCanvasImages(prev => {
+        const updated = prev.map(img =>
+          img.id === editingImage.id
+            ? { ...img, dataUri: editedDataUri }
+            : img
+        );
+        saveCanvasToSession(updated);
+        return updated;
+      });
+    } finally {
+      setIsGeneratingThumbnails(false);
+      setEditingImage(null);
+    }
+  };
+
   // Handle file upload
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
     if (!files) return;
 
-    Array.from(files).forEach(file => {
-      const reader = new FileReader();
-      reader.onload = (event) => {
-        const dataUri = event.target?.result as string;
-        const img = new Image();
-        img.onload = () => {
-          const newImage: CanvasImage = {
-            id: `img-${Date.now()}-${Math.random()}`,
-            dataUri,
-            x: 100 + (canvasImages.length * 50),
-            y: 100 + (canvasImages.length * 50),
-            width: 300,
-            height: (300 * img.height) / img.width,
-            selected: false,
-            originalWidth: img.width,
-            originalHeight: img.height
-          };
-          const updatedImages = [...canvasImages, newImage];
-          setCanvasImages(updatedImages);
-          saveCanvasToSession(updatedImages);
-        };
-        img.src = dataUri;
-      };
-      reader.readAsDataURL(file);
-    });
+    setIsGeneratingThumbnails(true);
 
-    e.target.value = '';
+    try {
+      const { generateThumbnail } = await import('../utils/imageUtils');
+
+      for (const file of Array.from(files)) {
+        const reader = new FileReader();
+        reader.onload = async (event) => {
+          const dataUri = event.target?.result as string;
+          const img = new Image();
+          img.onload = async () => {
+            try {
+              // Generate thumbnail for canvas display
+              const thumbnailUri = await generateThumbnail(dataUri);
+
+              const newImage: CanvasImage = {
+                id: `img-${Date.now()}-${Math.random()}`,
+                dataUri,
+                thumbnailUri,
+                x: 100 + (canvasImages.length * 50),
+                y: 100 + (canvasImages.length * 50),
+                width: 300,
+                height: (300 * img.height) / img.width,
+                selected: false,
+                originalWidth: img.width,
+                originalHeight: img.height
+              };
+              const updatedImages = [...canvasImages, newImage];
+              setCanvasImages(updatedImages);
+              saveCanvasToSession(updatedImages);
+            } catch (error) {
+              console.error('Failed to generate thumbnail:', error);
+              // Still add the image without thumbnail as fallback
+              const newImage: CanvasImage = {
+                id: `img-${Date.now()}-${Math.random()}`,
+                dataUri,
+                x: 100 + (canvasImages.length * 50),
+                y: 100 + (canvasImages.length * 50),
+                width: 300,
+                height: (300 * img.height) / img.width,
+                selected: false,
+                originalWidth: img.width,
+                originalHeight: img.height
+              };
+              const updatedImages = [...canvasImages, newImage];
+              setCanvasImages(updatedImages);
+              saveCanvasToSession(updatedImages);
+            }
+          };
+          img.src = dataUri;
+        };
+        reader.readAsDataURL(file);
+      }
+    } finally {
+      setTimeout(() => setIsGeneratingThumbnails(false), 500);
+      e.target.value = '';
+    }
   };
 
   // Handle drag and drop from outside
-  const handleDrop = (e: React.DragEvent) => {
+  const handleDrop = async (e: React.DragEvent) => {
     e.preventDefault();
     e.stopPropagation();
 
@@ -544,38 +754,71 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
     const canvasRect = canvasRef.current?.getBoundingClientRect();
     if (!canvasRect) return;
 
-    Array.from(files).forEach((file, index) => {
-      if (!file.type.startsWith('image/')) return;
+    setIsGeneratingThumbnails(true);
 
-      const reader = new FileReader();
-      reader.onload = (event) => {
-        const dataUri = event.target?.result as string;
-        const img = new Image();
-        img.onload = () => {
-          const dropX = (e.clientX - canvasRect.left - panOffset.x) / zoom;
-          const dropY = (e.clientY - canvasRect.top - panOffset.y) / zoom;
+    try {
+      const { generateThumbnail } = await import('../utils/imageUtils');
 
-          const newImage: CanvasImage = {
-            id: `img-${Date.now()}-${index}`,
-            dataUri,
-            x: dropX,
-            y: dropY,
-            width: 300,
-            height: (300 * img.height) / img.width,
-            selected: false,
-            originalWidth: img.width,
-            originalHeight: img.height
+      for (const [index, file] of Array.from(files).entries()) {
+        if (!file.type.startsWith('image/')) continue;
+
+        const reader = new FileReader();
+        reader.onload = async (event) => {
+          const dataUri = event.target?.result as string;
+          const img = new Image();
+          img.onload = async () => {
+            const dropX = (e.clientX - canvasRect.left - panOffset.x) / zoom;
+            const dropY = (e.clientY - canvasRect.top - panOffset.y) / zoom;
+
+            try {
+              // Generate thumbnail for canvas display
+              const thumbnailUri = await generateThumbnail(dataUri);
+
+              const newImage: CanvasImage = {
+                id: `img-${Date.now()}-${index}`,
+                dataUri,
+                thumbnailUri,
+                x: dropX,
+                y: dropY,
+                width: 300,
+                height: (300 * img.height) / img.width,
+                selected: false,
+                originalWidth: img.width,
+                originalHeight: img.height
+              };
+              setCanvasImages(prev => {
+                const updated = [...prev, newImage];
+                saveCanvasToSession(updated);
+                return updated;
+              });
+            } catch (error) {
+              console.error('Failed to generate thumbnail:', error);
+              // Still add the image without thumbnail as fallback
+              const newImage: CanvasImage = {
+                id: `img-${Date.now()}-${index}`,
+                dataUri,
+                x: dropX,
+                y: dropY,
+                width: 300,
+                height: (300 * img.height) / img.width,
+                selected: false,
+                originalWidth: img.width,
+                originalHeight: img.height
+              };
+              setCanvasImages(prev => {
+                const updated = [...prev, newImage];
+                saveCanvasToSession(updated);
+                return updated;
+              });
+            }
           };
-          setCanvasImages(prev => {
-            const updated = [...prev, newImage];
-            saveCanvasToSession(updated);
-            return updated;
-          });
+          img.src = dataUri;
         };
-        img.src = dataUri;
-      };
-      reader.readAsDataURL(file);
-    });
+        reader.readAsDataURL(file);
+      }
+    } finally {
+      setTimeout(() => setIsGeneratingThumbnails(false), 500);
+    }
   };
 
   const handleDragOver = (e: React.DragEvent) => {
@@ -1076,6 +1319,11 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
                 transformOrigin: 'top left'
               }}
               onMouseDown={(e) => handleImageMouseDown(e, image.id)}
+              onContextMenu={(e) => {
+                if (image.type !== 'text' && image.type !== 'board' && image.dataUri) {
+                  handleImageContextMenu(e, image.id);
+                }
+              }}
               onDoubleClick={(e) => {
                 if (image.type === 'text') {
                   handleTextDoubleClick(e, image);
@@ -1102,7 +1350,7 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
                 />
               ) : (
                 <img
-                  src={image.dataUri}
+                  src={image.thumbnailUri || image.dataUri}
                   alt="Canvas item"
                   className="w-full h-full object-cover pointer-events-none"
                   draggable={false}
@@ -1395,6 +1643,57 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
               You can always pick a specific session from the sidebar to resume where you left off.
             </p>
           </div>
+        </div>
+      )}
+
+      {/* Image Context Menu */}
+      {imageContextMenu && (
+        <>
+          <div
+            className="fixed inset-0 z-40"
+            onClick={closeImageContextMenu}
+          />
+          <div
+            className="fixed z-50 bg-white dark:bg-zinc-800 rounded-lg shadow-xl border border-zinc-200 dark:border-zinc-700 py-1 min-w-[160px]"
+            style={{
+              left: `${imageContextMenu.x}px`,
+              top: `${imageContextMenu.y}px`,
+            }}
+          >
+            <button
+              onClick={handleEditImage}
+              className="w-full px-4 py-2 text-left text-sm hover:bg-zinc-100 dark:hover:bg-zinc-700 text-zinc-700 dark:text-zinc-200 flex items-center gap-2"
+            >
+              <Edit2 size={14} />
+              Edit Image
+            </button>
+            <button
+              onClick={handleDeleteImage}
+              className="w-full px-4 py-2 text-left text-sm hover:bg-zinc-100 dark:hover:bg-zinc-700 text-red-600 dark:text-red-400 flex items-center gap-2"
+            >
+              <Trash2 size={14} />
+              Delete
+            </button>
+          </div>
+        </>
+      )}
+
+      {/* ImageEditModal */}
+      <ImageEditModal
+        isOpen={editModalOpen}
+        image={editingImage?.dataUri || null}
+        onClose={() => {
+          setEditModalOpen(false);
+          setEditingImage(null);
+        }}
+        onSave={handleSaveEditedImage}
+      />
+
+      {/* Thumbnail Generation Loading Indicator */}
+      {isGeneratingThumbnails && (
+        <div className="fixed bottom-4 right-4 bg-blue-600 text-white px-4 py-2 rounded-lg shadow-lg flex items-center gap-2 z-50">
+          <div className="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent" />
+          Generating thumbnails...
         </div>
       )}
       </div>
