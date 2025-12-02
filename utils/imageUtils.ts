@@ -29,6 +29,9 @@ export async function generateThumbnail(
         let width = img.width;
         let height = img.height;
 
+        const originalSize = estimateDataUriSize(dataUri);
+        console.log(`[Thumbnail] Original: ${width}x${height}, ${(originalSize / 1024 / 1024).toFixed(2)}MB`);
+
         // Only resize if image is larger than maxDimension
         if (width > maxDimension || height > maxDimension) {
           if (width > height) {
@@ -67,6 +70,10 @@ export async function generateThumbnail(
 
         // Export thumbnail
         const thumbnailUri = canvas.toDataURL(format, quality);
+
+        const thumbnailSize = estimateDataUriSize(thumbnailUri);
+        const reduction = ((1 - thumbnailSize / originalSize) * 100).toFixed(1);
+        console.log(`[Thumbnail] Generated: ${Math.round(width)}x${Math.round(height)}, ${(thumbnailSize / 1024 / 1024).toFixed(2)}MB (${reduction}% reduction)`);
 
         resolve(thumbnailUri);
       } catch (error) {

@@ -166,7 +166,8 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
             // Only generate thumbnail for images that don't have one
             if (img.type !== 'text' && img.type !== 'board' && img.dataUri && !img.thumbnailUri) {
               try {
-                const thumbnailUri = await generateThumbnail(img.dataUri);
+                const thumbnailUri = await generateThumbnail(img.dataUri, 256, 0.8);
+                console.log(`[Migration] Generated thumbnail for existing image:`, img.id);
                 return { ...img, thumbnailUri };
               } catch (err) {
                 console.error('Failed to generate thumbnail for image:', img.id, err);
@@ -182,7 +183,7 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
         if (hasChanges) {
           setCanvasImages(migratedImages);
           saveCanvasToSession(migratedImages);
-          console.log('[MixboardView] Migration complete, thumbnails generated');
+          console.log(`[MixboardView] Migration complete, ${migratedImages.filter(i => i.thumbnailUri).length} thumbnails generated`);
         }
       } catch (error) {
         console.error('Failed to migrate images:', error);
@@ -394,14 +395,14 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
           setIsGeneratingThumbnails(true);
           try {
             const { generateThumbnail } = await import('../utils/imageUtils');
-            const thumbnailUri = await generateThumbnail(imageDataUri);
+            const thumbnailUri = await generateThumbnail(imageDataUri, 256, 0.8);
 
             const newCanvasImage: CanvasImage = {
               id: `img-${Date.now()}`,
               dataUri: imageDataUri,
               thumbnailUri,
-              x: 100 + (canvasImages.length * 50),
-              y: 100 + (canvasImages.length * 50),
+              x: 100,
+              y: 100,
               width: 300,
               height: (300 * img.height) / img.width,
               selected: false,
@@ -411,30 +412,34 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
               imageMetaId: outputImageMeta.id
             };
 
-            const updatedCanvasImages = [...canvasImages, newCanvasImage];
-            setCanvasImages(updatedCanvasImages);
+            setCanvasImages(prev => {
+              const updatedCanvasImages = [...prev, newCanvasImage];
 
-            // Update session with new generation and canvas state
-            const updatedSession: MixboardSession = {
-              ...currentSession,
-              generations: [...existingGenerations, completedGeneration],
-              canvas_images: updatedCanvasImages,
-              updated_at: new Date().toISOString()
-            };
+              // Update session with new generation and canvas state
+              const updatedSession: MixboardSession = {
+                ...currentSession,
+                generations: [...existingGenerations, completedGeneration],
+                canvas_images: updatedCanvasImages,
+                updated_at: new Date().toISOString()
+              };
 
-            // Persist session
-            StorageService.saveSession(updatedSession as any);
-            onSessionUpdate(updatedSession);
+              // Persist session
+              StorageService.saveSession(updatedSession as any);
+              onSessionUpdate(updatedSession);
+
+              return updatedCanvasImages;
+            });
 
             setCurrentGeneration(completedGeneration);
+            console.log(`[Generation] Output image added with thumbnail, Has thumbnail: ${!!thumbnailUri}`);
           } catch (error) {
             console.error('Failed to generate thumbnail for output image:', error);
             // Still add image without thumbnail as fallback
             const newCanvasImage: CanvasImage = {
               id: `img-${Date.now()}`,
               dataUri: imageDataUri,
-              x: 100 + (canvasImages.length * 50),
-              y: 100 + (canvasImages.length * 50),
+              x: 100,
+              y: 100,
               width: 300,
               height: (300 * img.height) / img.width,
               selected: false,
@@ -444,18 +449,21 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
               imageMetaId: outputImageMeta.id
             };
 
-            const updatedCanvasImages = [...canvasImages, newCanvasImage];
-            setCanvasImages(updatedCanvasImages);
+            setCanvasImages(prev => {
+              const updatedCanvasImages = [...prev, newCanvasImage];
 
-            const updatedSession: MixboardSession = {
-              ...currentSession,
-              generations: [...existingGenerations, completedGeneration],
-              canvas_images: updatedCanvasImages,
-              updated_at: new Date().toISOString()
-            };
+              const updatedSession: MixboardSession = {
+                ...currentSession,
+                generations: [...existingGenerations, completedGeneration],
+                canvas_images: updatedCanvasImages,
+                updated_at: new Date().toISOString()
+              };
 
-            StorageService.saveSession(updatedSession as any);
-            onSessionUpdate(updatedSession);
+              StorageService.saveSession(updatedSession as any);
+              onSessionUpdate(updatedSession);
+
+              return updatedCanvasImages;
+            });
 
             setCurrentGeneration(completedGeneration);
           } finally {
@@ -649,7 +657,7 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
     // Generate new thumbnail from edited image
     setIsGeneratingThumbnails(true);
     try {
-      const newThumbnail = await generateThumbnail(editedDataUri);
+      const newThumbnail = await generateThumbnail(editedDataUri, 256, 0.8);
 
       // Update canvas image with new original and thumbnail
       setCanvasImages(prev => {
@@ -661,6 +669,8 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
         saveCanvasToSession(updated);
         return updated;
       });
+
+      console.log(`[Edit] Image updated with new thumbnail for:`, editingImage.id);
     } catch (error) {
       console.error('Failed to generate thumbnail for edited image:', error);
       // Still update the image even if thumbnail generation fails
@@ -696,41 +706,50 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
           const img = new Image();
           img.onload = async () => {
             try {
-              // Generate thumbnail for canvas display
-              const thumbnailUri = await generateThumbnail(dataUri);
+              // Generate thumbnail for canvas display (256px for better performance)
+              const thumbnailUri = await generateThumbnail(dataUri, 256, 0.8);
 
               const newImage: CanvasImage = {
                 id: `img-${Date.now()}-${Math.random()}`,
                 dataUri,
                 thumbnailUri,
-                x: 100 + (canvasImages.length * 50),
-                y: 100 + (canvasImages.length * 50),
+                x: 100,
+                y: 100,
                 width: 300,
                 height: (300 * img.height) / img.width,
                 selected: false,
                 originalWidth: img.width,
                 originalHeight: img.height
               };
-              const updatedImages = [...canvasImages, newImage];
-              setCanvasImages(updatedImages);
-              saveCanvasToSession(updatedImages);
+
+              // Use functional update to avoid stale state
+              setCanvasImages(prev => {
+                const updated = [...prev, newImage];
+                saveCanvasToSession(updated);
+                return updated;
+              });
+
+              console.log(`[Upload] Image added with thumbnail:`, newImage.id, `Has thumbnail: ${!!thumbnailUri}`);
             } catch (error) {
               console.error('Failed to generate thumbnail:', error);
               // Still add the image without thumbnail as fallback
               const newImage: CanvasImage = {
                 id: `img-${Date.now()}-${Math.random()}`,
                 dataUri,
-                x: 100 + (canvasImages.length * 50),
-                y: 100 + (canvasImages.length * 50),
+                x: 100,
+                y: 100,
                 width: 300,
                 height: (300 * img.height) / img.width,
                 selected: false,
                 originalWidth: img.width,
                 originalHeight: img.height
               };
-              const updatedImages = [...canvasImages, newImage];
-              setCanvasImages(updatedImages);
-              saveCanvasToSession(updatedImages);
+
+              setCanvasImages(prev => {
+                const updated = [...prev, newImage];
+                saveCanvasToSession(updated);
+                return updated;
+              });
             }
           };
           img.src = dataUri;
@@ -738,7 +757,7 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
         reader.readAsDataURL(file);
       }
     } finally {
-      setTimeout(() => setIsGeneratingThumbnails(false), 500);
+      setTimeout(() => setIsGeneratingThumbnails(false), 1000);
       e.target.value = '';
     }
   };
@@ -771,8 +790,8 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
             const dropY = (e.clientY - canvasRect.top - panOffset.y) / zoom;
 
             try {
-              // Generate thumbnail for canvas display
-              const thumbnailUri = await generateThumbnail(dataUri);
+              // Generate thumbnail for canvas display (256px for better performance)
+              const thumbnailUri = await generateThumbnail(dataUri, 256, 0.8);
 
               const newImage: CanvasImage = {
                 id: `img-${Date.now()}-${index}`,
@@ -786,11 +805,14 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
                 originalWidth: img.width,
                 originalHeight: img.height
               };
+
               setCanvasImages(prev => {
                 const updated = [...prev, newImage];
                 saveCanvasToSession(updated);
                 return updated;
               });
+
+              console.log(`[Drop] Image added with thumbnail:`, newImage.id, `Has thumbnail: ${!!thumbnailUri}`);
             } catch (error) {
               console.error('Failed to generate thumbnail:', error);
               // Still add the image without thumbnail as fallback
@@ -805,6 +827,7 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
                 originalWidth: img.width,
                 originalHeight: img.height
               };
+
               setCanvasImages(prev => {
                 const updated = [...prev, newImage];
                 saveCanvasToSession(updated);
@@ -817,7 +840,7 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
         reader.readAsDataURL(file);
       }
     } finally {
-      setTimeout(() => setIsGeneratingThumbnails(false), 500);
+      setTimeout(() => setIsGeneratingThumbnails(false), 1000);
     }
   };
 
