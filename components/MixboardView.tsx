@@ -138,13 +138,29 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
 
   // Load canvas from session when session changes
   useEffect(() => {
-    if (currentSession && currentSession.canvas_images) {
-      console.log('[MixboardView] Loading canvas images from session:', currentSession.canvas_images.length);
-      setCanvasImages(currentSession.canvas_images);
-    } else if (currentSession) {
-      console.log('[MixboardView] Session has no canvas images, starting with empty canvas');
-      setCanvasImages([]);
-    }
+    const loadCanvasImages = async () => {
+      if (currentSession && currentSession.canvas_images) {
+        console.log('[MixboardView] Loading canvas images from session:', currentSession.canvas_images.length);
+
+        // Load thumbnails from disk if they exist
+        const { loadThumbnail } = await import('../utils/imageUtils');
+        const loadedImages = currentSession.canvas_images.map(img => {
+          if (img.thumbnailPath && !img.thumbnailUri) {
+            // Load thumbnail from disk
+            const thumbnailUri = loadThumbnail(img.thumbnailPath);
+            return thumbnailUri ? { ...img, thumbnailUri } : img;
+          }
+          return img;
+        });
+
+        setCanvasImages(loadedImages);
+      } else if (currentSession) {
+        console.log('[MixboardView] Session has no canvas images, starting with empty canvas');
+        setCanvasImages([]);
+      }
+    };
+
+    loadCanvasImages();
   }, [currentSession?.session_id]);
 
   // Migration: Generate thumbnails for existing images without thumbnails
@@ -291,9 +307,20 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
   const saveCanvasToSession = (images: CanvasImage[]) => {
     if (!currentSession) return;
 
+    // Strip thumbnailUri from images before saving to reduce JSON size
+    // Thumbnails are loaded from disk on session open
+    const imagesToSave = images.map(img => {
+      if (img.thumbnailPath) {
+        // If thumbnail is saved to disk, don't include URI in session
+        const { thumbnailUri, ...imageWithoutUri } = img;
+        return imageWithoutUri;
+      }
+      return img;
+    });
+
     const updatedSession: MixboardSession = {
       ...currentSession,
-      canvas_images: images,
+      canvas_images: imagesToSave,
       updated_at: new Date().toISOString()
     };
 
@@ -704,7 +731,7 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
     setIsGeneratingThumbnails(true);
 
     try {
-      const { generateThumbnail } = await import('../utils/imageUtils');
+      const { generateThumbnail, saveThumbnail } = await import('../utils/imageUtils');
 
       for (const file of Array.from(files)) {
         const reader = new FileReader();
@@ -715,11 +742,18 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
             try {
               // Generate thumbnail for canvas display (256px for better performance)
               const thumbnailUri = await generateThumbnail(dataUri, 256, 0.8);
+              const imageId = `img-${Date.now()}-${Math.random()}`;
+
+              // Save thumbnail to disk (Electron) or keep in memory (web)
+              const { thumbnailUri: savedThumbnailUri, thumbnailPath } = currentSession
+                ? saveThumbnail(currentSession.session_id, imageId, thumbnailUri)
+                : { thumbnailUri };
 
               const newImage: CanvasImage = {
-                id: `img-${Date.now()}-${Math.random()}`,
+                id: imageId,
                 dataUri,
-                thumbnailUri,
+                thumbnailUri: savedThumbnailUri,
+                thumbnailPath,
                 x: 100,
                 y: 100,
                 width: 300,
@@ -736,7 +770,7 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
                 return updated;
               });
 
-              console.log(`[Upload] Image added with thumbnail:`, newImage.id, `Has thumbnail: ${!!thumbnailUri}`);
+              console.log(`[Upload] Image added:`, newImage.id, `Thumbnail path: ${thumbnailPath || 'in-memory'}`);
             } catch (error) {
               console.error('Failed to generate thumbnail:', error);
               // Still add the image without thumbnail as fallback

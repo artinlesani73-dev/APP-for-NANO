@@ -190,7 +190,8 @@ export interface CanvasImage {
   id: string;                      // Unique canvas image ID
   type?: 'image' | 'text' | 'board'; // Entity type (default: 'image')
   dataUri?: string;                // Base64 image data (for images) - full resolution
-  thumbnailUri?: string;           // Base64 thumbnail data (for canvas display) - optimized for performance
+  thumbnailUri?: string;           // Base64 thumbnail data (for canvas display) - loaded from disk
+  thumbnailPath?: string;          // Path to thumbnail file on disk (for Electron storage)
   text?: string;                   // Text content (for text entities)
   fontSize?: number;               // Font size (for text)
   fontWeight?: 'normal' | 'bold';  // Font weight (for text)

@@ -17,6 +17,11 @@ contextBridge.exposeInMainWorld('electron', {
   loadImageSync: (folder, filename) => ipcRenderer.sendSync('load-image-sync', folder, filename),
   exportImageSync: (folder, filename) => ipcRenderer.sendSync('export-image-sync', folder, filename),
 
+  // Thumbnail operations
+  saveThumbnailSync: (sessionId, imageId, thumbnailBase64) => ipcRenderer.sendSync('save-thumbnail-sync', sessionId, imageId, thumbnailBase64),
+  loadThumbnailSync: (thumbnailPath) => ipcRenderer.sendSync('load-thumbnail-sync', thumbnailPath),
+  deleteThumbnailSync: (thumbnailPath) => ipcRenderer.sendSync('delete-thumbnail-sync', thumbnailPath),
+
   // Session operations
   listSessionsSync: () => ipcRenderer.sendSync('list-sessions-sync'),
   saveSessionSync: (sessionId, sessionData) => ipcRenderer.sendSync('save-session-sync', sessionId, sessionData),

@@ -139,3 +139,71 @@ export function estimateDataUriSize(dataUri: string): number {
 
   return estimatedSize;
 }
+
+/**
+ * Save thumbnail to disk (Electron) or return base64 (web)
+ *
+ * @param sessionId - Current session ID
+ * @param imageId - Image ID
+ * @param thumbnailUri - Thumbnail data URI
+ * @returns Object with thumbnailUri and thumbnailPath (Electron only)
+ */
+export function saveThumbnail(
+  sessionId: string,
+  imageId: string,
+  thumbnailUri: string
+): { thumbnailUri: string; thumbnailPath?: string } {
+  // Check if running in Electron
+  const isElectron = typeof window !== 'undefined' && (window as any).electron;
+
+  if (isElectron && (window as any).electron.saveThumbnailSync) {
+    try {
+      const result = (window as any).electron.saveThumbnailSync(sessionId, imageId, thumbnailUri);
+      if (result.success) {
+        console.log(`[Thumbnail] Saved to disk: ${result.path}`);
+        // Return both URI (for immediate use) and path (for session storage)
+        return {
+          thumbnailUri,
+          thumbnailPath: result.path
+        };
+      } else {
+        console.error('Failed to save thumbnail to disk:', result.error);
+        // Fallback: keep thumbnail in memory
+        return { thumbnailUri };
+      }
+    } catch (error) {
+      console.error('Error saving thumbnail:', error);
+      return { thumbnailUri };
+    }
+  } else {
+    // Web: return URI only (no disk storage)
+    return { thumbnailUri };
+  }
+}
+
+/**
+ * Load thumbnail from disk (Electron) or return existing URI (web)
+ *
+ * @param thumbnailPath - Path to thumbnail file (Electron only)
+ * @returns Thumbnail data URI or null
+ */
+export function loadThumbnail(thumbnailPath?: string): string | null {
+  if (!thumbnailPath) return null;
+
+  // Check if running in Electron
+  const isElectron = typeof window !== 'undefined' && (window as any).electron;
+
+  if (isElectron && (window as any).electron.loadThumbnailSync) {
+    try {
+      const thumbnailUri = (window as any).electron.loadThumbnailSync(thumbnailPath);
+      if (thumbnailUri) {
+        console.log(`[Thumbnail] Loaded from disk: ${thumbnailPath}`);
+        return thumbnailUri;
+      }
+    } catch (error) {
+      console.error('Error loading thumbnail:', error);
+    }
+  }
+
+  return null;
+}
