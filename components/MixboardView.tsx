@@ -123,6 +123,8 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
   const fileInputRef = useRef<HTMLInputElement>(null);
   const textToolbarRef = useRef<HTMLDivElement>(null);
   const canvasEngineRef = useRef<CanvasEngine | null>(persistentCanvasEngine);
+  const rafRef = useRef<number | null>(null);
+  const lastUpdateRef = useRef<number>(0);
 
   const closeContextMenu = useCallback(() => {
     setContextMenu({
@@ -215,6 +217,11 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
     return () => {
       window.removeEventListener('click', handleGlobalClick);
       window.removeEventListener('keydown', handleEscape);
+
+      // Cleanup any pending animation frames on unmount
+      if (rafRef.current) {
+        cancelAnimationFrame(rafRef.current);
+      }
     };
   }, [closeContextMenu]);
 
@@ -998,11 +1005,19 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
   };
 
   const handleMouseMove = (e: React.MouseEvent) => {
+    // Throttle updates using requestAnimationFrame
+    const now = Date.now();
+    const timeSinceLastUpdate = now - lastUpdateRef.current;
+
+    // Skip if we updated less than 16ms ago (60fps)
+    if (timeSinceLastUpdate < 16) return;
+
     if (isPanning && dragStart) {
       const dx = e.clientX - dragStart.x;
       const dy = e.clientY - dragStart.y;
       setPanOffset(prev => ({ x: prev.x + dx, y: prev.y + dy }));
       setDragStart({ x: e.clientX, y: e.clientY });
+      lastUpdateRef.current = now;
     } else if (resizingImage && dragStart) {
       const canvasRect = canvasRef.current?.getBoundingClientRect();
       if (!canvasRect) return;
@@ -1010,30 +1025,39 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
       const dx = (e.clientX - canvasRect.left - dragStart.x) / zoom;
       const dy = (e.clientY - canvasRect.top - dragStart.y) / zoom;
 
-      setCanvasImages(prev => prev.map(img => {
-        if (img.id === resizingImage) {
-          const minSize = 50;
+      // Cancel any pending RAF
+      if (rafRef.current) {
+        cancelAnimationFrame(rafRef.current);
+      }
 
-          if (img.type === 'text') {
+      // Use RAF to batch updates
+      rafRef.current = requestAnimationFrame(() => {
+        setCanvasImages(prev => prev.map(img => {
+          if (img.id === resizingImage) {
+            const minSize = 50;
+
+            if (img.type === 'text') {
+              return {
+                ...img,
+                width: Math.max(minSize, img.width + dx),
+                height: Math.max(minSize, img.height + dy)
+              };
+            }
+
+            const aspectRatio = img.originalHeight / img.originalWidth;
+            const newWidth = Math.max(minSize, img.width + dx);
             return {
               ...img,
-              width: Math.max(minSize, img.width + dx),
-              height: Math.max(minSize, img.height + dy)
+              width: newWidth,
+              height: newWidth * aspectRatio
             };
           }
+          return img;
+        }));
 
-          const aspectRatio = img.originalHeight / img.originalWidth;
-          const newWidth = Math.max(minSize, img.width + dx);
-          return {
-            ...img,
-            width: newWidth,
-            height: newWidth * aspectRatio
-          };
-        }
-        return img;
-      }));
-
-      setDragStart({ x: e.clientX - canvasRect.left, y: e.clientY - canvasRect.top });
+        setDragStart({ x: e.clientX - canvasRect.left, y: e.clientY - canvasRect.top });
+        lastUpdateRef.current = now;
+      });
     } else if (draggedImage && dragStart) {
       const canvasRect = canvasRef.current?.getBoundingClientRect();
       if (!canvasRect) return;
@@ -1041,18 +1065,27 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
       const dx = (e.clientX - canvasRect.left - dragStart.x) / zoom;
       const dy = (e.clientY - canvasRect.top - dragStart.y) / zoom;
 
-      setCanvasImages(prev => prev.map(img => {
-        if (img.selected || img.id === draggedImage) {
-          return {
-            ...img,
-            x: img.x + dx,
-            y: img.y + dy
-          };
-        }
-        return img;
-      }));
+      // Cancel any pending RAF
+      if (rafRef.current) {
+        cancelAnimationFrame(rafRef.current);
+      }
 
-      setDragStart({ x: e.clientX - canvasRect.left, y: e.clientY - canvasRect.top });
+      // Use RAF to batch updates
+      rafRef.current = requestAnimationFrame(() => {
+        setCanvasImages(prev => prev.map(img => {
+          if (img.selected || img.id === draggedImage) {
+            return {
+              ...img,
+              x: img.x + dx,
+              y: img.y + dy
+            };
+          }
+          return img;
+        }));
+
+        setDragStart({ x: e.clientX - canvasRect.left, y: e.clientY - canvasRect.top });
+        lastUpdateRef.current = now;
+      });
     } else if (isSelecting && selectionBox) {
       const canvasRect = canvasRef.current?.getBoundingClientRect();
       if (!canvasRect) return;
@@ -1081,6 +1114,12 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
   };
 
   const handleMouseUp = () => {
+    // Cancel any pending animation frame
+    if (rafRef.current) {
+      cancelAnimationFrame(rafRef.current);
+      rafRef.current = null;
+    }
+
     // Save canvas if we were dragging or resizing
     if (draggedImage || resizingImage) {
       saveCanvasToSession(canvasImages);
@@ -1339,7 +1378,11 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
                 top: `${image.y * zoom + panOffset.y}px`,
                 width: `${image.width * zoom}px`,
                 height: `${image.height * zoom}px`,
-                transformOrigin: 'top left'
+                transformOrigin: 'top left',
+                userSelect: 'none',
+                WebkitUserSelect: 'none',
+                MozUserSelect: 'none',
+                msUserSelect: 'none'
               }}
               onMouseDown={(e) => handleImageMouseDown(e, image.id)}
               onContextMenu={(e) => {
@@ -1377,6 +1420,13 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
                   alt="Canvas item"
                   className="w-full h-full object-cover pointer-events-none"
                   draggable={false}
+                  style={{
+                    userSelect: 'none',
+                    WebkitUserDrag: 'none',
+                    WebkitUserSelect: 'none',
+                    MozUserSelect: 'none',
+                    msUserSelect: 'none'
+                  }}
                 />
               )}
               {image.selected && (
