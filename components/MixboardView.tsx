@@ -177,7 +177,7 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
       setIsGeneratingThumbnails(true);
 
       try {
-        const { generateThumbnail } = await import('../utils/imageUtils');
+        const { generateThumbnail, saveThumbnail } = await import('../utils/imageUtils');
 
         const migratedImages = await Promise.all(
           canvasImages.map(async (img) => {
@@ -185,8 +185,14 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
             if (img.type !== 'text' && img.type !== 'board' && img.dataUri && !img.thumbnailUri) {
               try {
                 const thumbnailUri = await generateThumbnail(img.dataUri, 256, 0.8);
-                console.log(`[Migration] Generated thumbnail for existing image:`, img.id);
-                return { ...img, thumbnailUri };
+
+                // Save thumbnail to disk (Electron) or keep in memory (web)
+                const { thumbnailUri: savedThumbnailUri, thumbnailPath } = currentSession
+                  ? saveThumbnail(currentSession.session_id, img.id, thumbnailUri)
+                  : { thumbnailUri };
+
+                console.log(`[Migration] Generated and saved thumbnail for existing image:`, img.id);
+                return { ...img, thumbnailUri: savedThumbnailUri, thumbnailPath };
               } catch (err) {
                 console.error('Failed to generate thumbnail for image:', img.id, err);
                 return img; // Keep original if thumbnail generation fails
@@ -428,13 +434,20 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
           // Generate thumbnail for the output image
           setIsGeneratingThumbnails(true);
           try {
-            const { generateThumbnail } = await import('../utils/imageUtils');
+            const { generateThumbnail, saveThumbnail } = await import('../utils/imageUtils');
             const thumbnailUri = await generateThumbnail(imageDataUri, 256, 0.8);
+            const imageId = `img-${Date.now()}`;
+
+            // Save thumbnail to disk (Electron) or keep in memory (web)
+            const { thumbnailUri: savedThumbnailUri, thumbnailPath } = currentSession
+              ? saveThumbnail(currentSession.session_id, imageId, thumbnailUri)
+              : { thumbnailUri };
 
             const newCanvasImage: CanvasImage = {
-              id: `img-${Date.now()}`,
+              id: imageId,
               dataUri: imageDataUri,
-              thumbnailUri,
+              thumbnailUri: savedThumbnailUri,
+              thumbnailPath,
               x: 100,
               y: 100,
               width: 300,
@@ -465,7 +478,7 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
             });
 
             setCurrentGeneration(completedGeneration);
-            console.log(`[Generation] Output image added with thumbnail, Has thumbnail: ${!!thumbnailUri}`);
+            console.log(`[Generation] Output image added:`, imageId, `Thumbnail path: ${thumbnailPath || 'in-memory'}`);
           } catch (error) {
             console.error('Failed to generate thumbnail for output image:', error);
             // Still add image without thumbnail as fallback
@@ -685,26 +698,31 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
   const handleSaveEditedImage = async (editedDataUri: string) => {
     if (!editingImage) return;
 
-    // Import thumbnail generator
-    const { generateThumbnail } = await import('../utils/imageUtils');
+    // Import thumbnail generator and saver
+    const { generateThumbnail, saveThumbnail } = await import('../utils/imageUtils');
 
     // Generate new thumbnail from edited image
     setIsGeneratingThumbnails(true);
     try {
       const newThumbnail = await generateThumbnail(editedDataUri, 256, 0.8);
 
+      // Save thumbnail to disk (Electron) or keep in memory (web)
+      const { thumbnailUri: savedThumbnailUri, thumbnailPath } = currentSession
+        ? saveThumbnail(currentSession.session_id, editingImage.id, newThumbnail)
+        : { thumbnailUri: newThumbnail };
+
       // Update canvas image with new original and thumbnail
       setCanvasImages(prev => {
         const updated = prev.map(img =>
           img.id === editingImage.id
-            ? { ...img, dataUri: editedDataUri, thumbnailUri: newThumbnail }
+            ? { ...img, dataUri: editedDataUri, thumbnailUri: savedThumbnailUri, thumbnailPath }
             : img
         );
         saveCanvasToSession(updated);
         return updated;
       });
 
-      console.log(`[Edit] Image updated with new thumbnail for:`, editingImage.id);
+      console.log(`[Edit] Image updated:`, editingImage.id, `Thumbnail path: ${thumbnailPath || 'in-memory'}`);
     } catch (error) {
       console.error('Failed to generate thumbnail for edited image:', error);
       // Still update the image even if thumbnail generation fails
@@ -817,7 +835,7 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
     setIsGeneratingThumbnails(true);
 
     try {
-      const { generateThumbnail } = await import('../utils/imageUtils');
+      const { generateThumbnail, saveThumbnail } = await import('../utils/imageUtils');
 
       for (const [index, file] of Array.from(files).entries()) {
         if (!file.type.startsWith('image/')) continue;
@@ -833,11 +851,18 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
             try {
               // Generate thumbnail for canvas display (256px for better performance)
               const thumbnailUri = await generateThumbnail(dataUri, 256, 0.8);
+              const imageId = `img-${Date.now()}-${index}`;
+
+              // Save thumbnail to disk (Electron) or keep in memory (web)
+              const { thumbnailUri: savedThumbnailUri, thumbnailPath } = currentSession
+                ? saveThumbnail(currentSession.session_id, imageId, thumbnailUri)
+                : { thumbnailUri };
 
               const newImage: CanvasImage = {
-                id: `img-${Date.now()}-${index}`,
+                id: imageId,
                 dataUri,
-                thumbnailUri,
+                thumbnailUri: savedThumbnailUri,
+                thumbnailPath,
                 x: dropX,
                 y: dropY,
                 width: 300,
@@ -853,7 +878,7 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
                 return updated;
               });
 
-              console.log(`[Drop] Image added with thumbnail:`, newImage.id, `Has thumbnail: ${!!thumbnailUri}`);
+              console.log(`[Drop] Image added:`, newImage.id, `Thumbnail path: ${thumbnailPath || 'in-memory'}`);
             } catch (error) {
               console.error('Failed to generate thumbnail:', error);
               // Still add the image without thumbnail as fallback
