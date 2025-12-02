@@ -184,7 +184,7 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
             // Only generate thumbnail for images that don't have one
             if (img.type !== 'text' && img.type !== 'board' && img.dataUri && !img.thumbnailUri) {
               try {
-                const thumbnailUri = await generateThumbnail(img.dataUri, 256, 0.8);
+                const thumbnailUri = await generateThumbnail(img.dataUri, 256, 0.85);
 
                 // Save thumbnail to disk (Electron) or keep in memory (web)
                 const { thumbnailUri: savedThumbnailUri, thumbnailPath } = currentSession
@@ -435,7 +435,7 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
           setIsGeneratingThumbnails(true);
           try {
             const { generateThumbnail, saveThumbnail } = await import('../utils/imageUtils');
-            const thumbnailUri = await generateThumbnail(imageDataUri, 256, 0.8);
+            const thumbnailUri = await generateThumbnail(imageDataUri, 256, 0.85);
             const imageId = `img-${Date.now()}`;
 
             // Save thumbnail to disk (Electron) or keep in memory (web)
@@ -704,7 +704,7 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
     // Generate new thumbnail from edited image
     setIsGeneratingThumbnails(true);
     try {
-      const newThumbnail = await generateThumbnail(editedDataUri, 256, 0.8);
+      const newThumbnail = await generateThumbnail(editedDataUri, 256, 0.85);
 
       // Save thumbnail to disk (Electron) or keep in memory (web)
       const { thumbnailUri: savedThumbnailUri, thumbnailPath } = currentSession
@@ -759,7 +759,7 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
           img.onload = async () => {
             try {
               // Generate thumbnail for canvas display (256px for better performance)
-              const thumbnailUri = await generateThumbnail(dataUri, 256, 0.8);
+              const thumbnailUri = await generateThumbnail(dataUri, 256, 0.85);
               const imageId = `img-${Date.now()}-${Math.random()}`;
 
               // Save thumbnail to disk (Electron) or keep in memory (web)
@@ -850,7 +850,7 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
 
             try {
               // Generate thumbnail for canvas display (256px for better performance)
-              const thumbnailUri = await generateThumbnail(dataUri, 256, 0.8);
+              const thumbnailUri = await generateThumbnail(dataUri, 256, 0.85);
               const imageId = `img-${Date.now()}-${index}`;
 
               // Save thumbnail to disk (Electron) or keep in memory (web)
