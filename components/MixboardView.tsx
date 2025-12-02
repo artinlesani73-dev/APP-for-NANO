@@ -1422,11 +1422,11 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
                   draggable={false}
                   style={{
                     userSelect: 'none',
-                    WebkitUserDrag: 'none',
                     WebkitUserSelect: 'none',
                     MozUserSelect: 'none',
                     msUserSelect: 'none'
-                  }}
+                  } as React.CSSProperties}
+                  onDragStart={(e) => e.preventDefault()}
                 />
               )}
               {image.selected && (
