@@ -132,6 +132,7 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
   const lastUpdateRef = useRef<number>(0);
   const canvasImagesRef = useRef<CanvasImage[]>(canvasImages);
   const isDirtyRef = useRef(false);
+  const dirtyTimerRef = useRef<NodeJS.Timeout | null>(null);
 
   const closeContextMenu = useCallback(() => {
     setContextMenu({
@@ -143,14 +144,21 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
     });
   }, []);
 
-  // Mark session as having unsaved changes
-  const markDirty = useCallback(() => {
-    if (!isDirtyRef.current) {
+  // Start timer to mark as dirty 30 seconds after save
+  const startDirtyTimer = useCallback(() => {
+    // Clear any existing timer
+    if (dirtyTimerRef.current) {
+      clearTimeout(dirtyTimerRef.current);
+    }
+
+    // Set dirty flag after 30 seconds
+    dirtyTimerRef.current = setTimeout(() => {
       isDirtyRef.current = true;
       setIsDirty(true);
       setSaveStatus('unsaved');
-    }
-  }, []); // No dependencies - stable reference
+      console.log('[DirtyTimer] Marked as dirty after 30 seconds');
+    }, 30000);
+  }, []);
 
   // Helper function to save current canvas state to session (async, non-blocking)
   const saveCanvasToSession = useCallback(async (images: CanvasImage[]) => {
@@ -182,11 +190,14 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
       setIsDirty(false);
       setSaveStatus('saved');
       console.log('[MixboardView] Canvas saved to session:', images.length, 'images');
+
+      // Start timer to mark as dirty after 30 seconds
+      startDirtyTimer();
     } catch (error) {
       console.error('[MixboardView] Failed to save session:', error);
       setSaveStatus('unsaved');
     }
-  }, [currentSession, onSessionUpdate]);
+  }, [currentSession, onSessionUpdate, startDirtyTimer]);
 
   // Keep ref in sync with state
   useEffect(() => {
@@ -346,6 +357,15 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
     window.addEventListener('beforeunload', handleBeforeUnload);
     return () => window.removeEventListener('beforeunload', handleBeforeUnload);
   }, [isDirty, handleManualSave]);
+
+  // Cleanup dirty timer on unmount
+  useEffect(() => {
+    return () => {
+      if (dirtyTimerRef.current) {
+        clearTimeout(dirtyTimerRef.current);
+      }
+    };
+  }, []);
 
   useEffect(() => {
     const handleGlobalClick = () => closeContextMenu();
@@ -745,14 +765,14 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
 
       return [...prev, newCanvasText];
     });
-    markDirty();
+    
   };
 
   const updateTextEntity = (id: string, updates: Partial<CanvasImage>) => {
     setCanvasImages(prev => {
       return prev.map(img => img.id === id ? { ...img, ...updates } : img);
     });
-    markDirty();
+    
   };
 
   // Image context menu handlers
@@ -779,7 +799,7 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
   const handleDeleteImage = () => {
     if (!imageContextMenu) return;
     setCanvasImages(prev => prev.filter(img => img.id !== imageContextMenu.imageId));
-    markDirty();
+    
     closeImageContextMenu();
   };
 
@@ -807,7 +827,7 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
             : img
         )
       );
-      markDirty();
+      
 
       console.log(`[Edit] Image updated:`, editingImage.id, `Thumbnail path: ${thumbnailPath || 'in-memory'}`);
     } catch (error) {
@@ -820,7 +840,7 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
             : img
         )
       );
-      markDirty();
+      
     } finally {
       setIsGeneratingThumbnails(false);
       setEditingImage(null);
@@ -869,7 +889,7 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
 
               // Use functional update to avoid stale state
               setCanvasImages(prev => [...prev, newImage]);
-              markDirty();
+              
 
               console.log(`[Upload] Image added:`, newImage.id, `Thumbnail path: ${thumbnailPath || 'in-memory'}`);
             } catch (error) {
@@ -888,7 +908,7 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
               };
 
               setCanvasImages(prev => [...prev, newImage]);
-              markDirty();
+              
             }
           };
           img.src = dataUri;
@@ -953,7 +973,7 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
               };
 
               setCanvasImages(prev => [...prev, newImage]);
-              markDirty();
+              
 
               console.log(`[Drop] Image added:`, newImage.id, `Thumbnail path: ${thumbnailPath || 'in-memory'}`);
             } catch (error) {
@@ -972,7 +992,7 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
               };
 
               setCanvasImages(prev => [...prev, newImage]);
-              markDirty();
+              
             }
           };
           img.src = dataUri;
@@ -1030,7 +1050,7 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
 
       return [...prev, newBoard];
     });
-    markDirty();
+    
   };
 
   const handleTextDoubleClick = (e: React.MouseEvent, image: CanvasImage) => {
@@ -1266,11 +1286,6 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
       rafRef.current = null;
     }
 
-    // Mark as dirty if we were dragging or resizing (will be saved later)
-    if (draggedImage || resizingImage) {
-      markDirty();
-    }
-
     setDraggedImage(null);
     setResizingImage(null);
     setIsSelecting(false);
@@ -1282,8 +1297,7 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
   // Delete selected images
   const handleDeleteSelected = useCallback(() => {
     setCanvasImages(prev => prev.filter(img => !img.selected));
-    markDirty();
-  }, [markDirty]);
+  }, []);
 
   // Zoom controls
   const handleZoomIn = () => setZoom(prev => Math.min(prev + 0.1, 3));
