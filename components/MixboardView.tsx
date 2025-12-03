@@ -1501,6 +1501,11 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
           onDrop={handleDrop}
           onDragOver={handleDragOver}
           onContextMenu={handleCanvasContextMenu}
+          onWheel={(e) => {
+            e.preventDefault();
+            const delta = e.deltaY > 0 ? -0.05 : 0.05;
+            setZoom(prev => Math.max(0.1, Math.min(3, prev + delta)));
+          }}
         >
           {/* Empty Canvas Message */}
           {canvasImages.length === 0 && (
