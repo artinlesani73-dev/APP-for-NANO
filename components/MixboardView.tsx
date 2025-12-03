@@ -218,6 +218,22 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
     setBoardContextMenu(null);
   }, []);
 
+  // Helper function to get center of visible canvas area
+  const getVisibleCanvasCenter = useCallback(() => {
+    const canvasElement = canvasRef.current;
+    if (!canvasElement) return { x: 100, y: 100 }; // Fallback to fixed position
+
+    const rect = canvasElement.getBoundingClientRect();
+    const viewportCenterX = rect.width / 2;
+    const viewportCenterY = rect.height / 2;
+
+    // Convert viewport coordinates to canvas coordinates
+    const canvasCenterX = (viewportCenterX - panOffset.x) / zoom;
+    const canvasCenterY = (viewportCenterY - panOffset.y) / zoom;
+
+    return { x: canvasCenterX, y: canvasCenterY };
+  }, [panOffset.x, panOffset.y, zoom]);
+
   // Load canvas from session when session changes
   useEffect(() => {
     const loadCanvasImages = async () => {
@@ -563,15 +579,20 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
               ? saveThumbnail(currentSession.session_id, imageId, thumbnailUri)
               : { thumbnailUri };
 
+            // Place image at center of visible canvas
+            const center = getVisibleCanvasCenter();
+            const imageWidth = 300;
+            const imageHeight = (imageWidth * img.height) / img.width;
+
             const newCanvasImage: CanvasImage = {
               id: imageId,
               dataUri: imageDataUri,
               thumbnailUri: savedThumbnailUri,
               thumbnailPath,
-              x: 100,
-              y: 100,
-              width: 300,
-              height: (300 * img.height) / img.width,
+              x: center.x - imageWidth / 2,
+              y: center.y - imageHeight / 2,
+              width: imageWidth,
+              height: imageHeight,
               selected: false,
               originalWidth: img.width,
               originalHeight: img.height,
@@ -602,13 +623,18 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
           } catch (error) {
             console.error('Failed to generate thumbnail for output image:', error);
             // Still add image without thumbnail as fallback
+            // Place image at center of visible canvas
+            const center = getVisibleCanvasCenter();
+            const imageWidth = 300;
+            const imageHeight = (imageWidth * img.height) / img.width;
+
             const newCanvasImage: CanvasImage = {
               id: `img-${Date.now()}`,
               dataUri: imageDataUri,
-              x: 100,
-              y: 100,
-              width: 300,
-              height: (300 * img.height) / img.width,
+              x: center.x - imageWidth / 2,
+              y: center.y - imageHeight / 2,
+              width: imageWidth,
+              height: imageHeight,
               selected: false,
               originalWidth: img.width,
               originalHeight: img.height,
@@ -658,6 +684,9 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
           const textHeight = 200;
           const fontSize = 16;
 
+          // Place text at center of visible canvas
+          const center = getVisibleCanvasCenter();
+
           const newCanvasText: CanvasImage = {
             id: `text-${Date.now()}`,
             type: 'text',
@@ -666,8 +695,8 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
             fontWeight: 'normal',
             fontStyle: 'normal',
             fontFamily: 'Inter, system-ui, sans-serif',
-            x: 100 + (canvasImages.length * 50),
-            y: 100 + (canvasImages.length * 50),
+            x: center.x - textWidth / 2,
+            y: center.y - textHeight / 2,
             width: textWidth,
             height: textHeight,
             selected: false,
