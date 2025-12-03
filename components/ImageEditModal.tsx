@@ -371,24 +371,45 @@ export const ImageEditModal: React.FC<ImageEditModalProps> = ({ isOpen, image, o
                 onPointerEnter={handlePointerEnter}
                 onPointerLeave={handlePointerLeave}
               />
-              {/* Brush size cursor indicator */}
-              {showCursor && cursorPos && drawCanvasRef.current && (tool === 'brush' || tool === 'erase') && (
-                <div
-                  className="absolute pointer-events-none"
-                  style={{
-                    left: cursorPos.x,
-                    top: cursorPos.y,
-                    transform: 'translate(-50%, -50%)',
-                    width: brushSize * (drawCanvasRef.current.getBoundingClientRect().width / drawCanvasRef.current.width),
-                    height: brushSize * (drawCanvasRef.current.getBoundingClientRect().height / drawCanvasRef.current.height),
-                    borderRadius: '50%',
-                    border: `2px solid ${tool === 'erase' ? '#f59e0b' : '#3b82f6'}`,
-                    backgroundColor: tool === 'erase'
-                      ? 'rgba(245, 158, 11, 0.1)'
-                      : `${brushColor}${Math.round(brushOpacity * 255).toString(16).padStart(2, '0')}`,
-                    mixBlendMode: tool === 'erase' ? 'normal' : 'normal'
-                  }}
-                />
+              {/* Cursor indicator */}
+              {showCursor && cursorPos && drawCanvasRef.current && (
+                <>
+                  {(tool === 'brush' || tool === 'erase') && (
+                    <div
+                      className="absolute pointer-events-none"
+                      style={{
+                        left: cursorPos.x,
+                        top: cursorPos.y,
+                        transform: 'translate(-50%, -50%)',
+                        width: brushSize * (drawCanvasRef.current.getBoundingClientRect().width / drawCanvasRef.current.width),
+                        height: brushSize * (drawCanvasRef.current.getBoundingClientRect().height / drawCanvasRef.current.height),
+                        borderRadius: '50%',
+                        border: `2px solid ${tool === 'erase' ? '#f59e0b' : '#3b82f6'}`,
+                        backgroundColor: tool === 'erase'
+                          ? 'rgba(245, 158, 11, 0.1)'
+                          : `${brushColor}${Math.round(brushOpacity * 255).toString(16).padStart(2, '0')}`,
+                        mixBlendMode: tool === 'erase' ? 'normal' : 'normal'
+                      }}
+                    />
+                  )}
+                  {(tool === 'line' || tool === 'rectangle' || tool === 'circle' || tool === 'triangle') && (
+                    <div
+                      className="absolute pointer-events-none"
+                      style={{
+                        left: cursorPos.x,
+                        top: cursorPos.y,
+                        transform: 'translate(-50%, -50%)',
+                        width: 20,
+                        height: 20
+                      }}
+                    >
+                      <svg width="20" height="20" viewBox="0 0 20 20">
+                        <line x1="10" y1="0" x2="10" y2="20" stroke="#3b82f6" strokeWidth="2" />
+                        <line x1="0" y1="10" x2="20" y2="10" stroke="#3b82f6" strokeWidth="2" />
+                      </svg>
+                    </div>
+                  )}
+                </>
               )}
             </div>
           </div>
@@ -562,20 +583,6 @@ export const ImageEditModal: React.FC<ImageEditModalProps> = ({ isOpen, image, o
                 <div className="text-[11px] text-zinc-500 dark:text-zinc-400 mt-1">{brushSize}px</div>
               </div>
             )}
-
-            <div>
-              <label className="block text-xs font-semibold text-zinc-700 dark:text-zinc-300 mb-2">Opacity</label>
-              <input
-                type="range"
-                min={0.1}
-                max={1}
-                step={0.05}
-                value={brushOpacity}
-                onChange={(e) => setBrushOpacity(Number(e.target.value))}
-                className="w-full"
-              />
-              <div className="text-[11px] text-zinc-500 dark:text-zinc-400 mt-1">{Math.round(brushOpacity * 100)}%</div>
-            </div>
 
             <div className="flex items-center justify-end gap-2 pt-2">
               <button
