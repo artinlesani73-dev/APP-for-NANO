@@ -195,10 +195,10 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
 
   // Manual save function (called by user or auto-save)
   const handleManualSave = useCallback(async () => {
-    if (!isDirty || !currentSession) return;
-    // Use ref to avoid dependency on canvasImages (prevents recreation on every drag)
+    if (!isDirtyRef.current || !currentSession) return;
+    // Use ref to avoid dependency on isDirty and canvasImages (prevents recreation)
     await saveCanvasToSession(canvasImagesRef.current);
-  }, [isDirty, currentSession, saveCanvasToSession]);
+  }, [currentSession, saveCanvasToSession]); // Removed isDirty - use ref instead
 
   const closeImageContextMenu = useCallback(() => {
     setImageContextMenu(null);
@@ -298,23 +298,23 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
 
     const intervalMs = autoSaveInterval * 60 * 1000; // Convert minutes to ms
     const autoSaveTimer = setInterval(() => {
-      if (isDirty) {
+      if (isDirtyRef.current) {
         console.log('[AutoSave] Running auto-save...');
         handleManualSave();
       }
     }, intervalMs);
 
     return () => clearInterval(autoSaveTimer);
-  }, [currentSession, autoSaveInterval, isDirty, handleManualSave]);
+  }, [currentSession, autoSaveInterval, handleManualSave]); // Removed isDirty - use ref instead
 
   // Save on exit (component unmount or session switch)
   useEffect(() => {
     return () => {
       // Save when component unmounts or session changes
-      if (isDirty && currentSession) {
+      if (isDirtyRef.current && currentSession) {
         console.log('[SaveOnExit] Saving before unmount...');
         // Use sync save for unmount to ensure it completes
-        const imagesToSave = canvasImages.map(img => {
+        const imagesToSave = canvasImagesRef.current.map(img => {
           if (img.thumbnailPath) {
             const { thumbnailUri, ...imageWithoutUri } = img;
             return imageWithoutUri;
@@ -329,7 +329,7 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
         StorageService.saveSession(updatedSession as any);
       }
     };
-  }, [isDirty, currentSession, canvasImages]);
+  }, [currentSession]); // Only depend on currentSession, not canvasImages or isDirty
 
   // Save on browser close/refresh
   useEffect(() => {
@@ -1280,10 +1280,10 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
   };
 
   // Delete selected images
-  const handleDeleteSelected = () => {
+  const handleDeleteSelected = useCallback(() => {
     setCanvasImages(prev => prev.filter(img => !img.selected));
     markDirty();
-  };
+  }, [markDirty]);
 
   // Zoom controls
   const handleZoomIn = () => setZoom(prev => Math.min(prev + 0.1, 3));
@@ -1312,7 +1312,7 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [canvasImages, handleManualSave]);
+  }, [handleDeleteSelected, handleManualSave]); // Removed canvasImages - not needed!
 
   const selectedCount = canvasImages.filter(img => img.selected).length;
 
