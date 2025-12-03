@@ -115,6 +115,11 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
     y: number;
     imageId: string;
   } | null>(null);
+  const [boardContextMenu, setBoardContextMenu] = useState<{
+    x: number;
+    y: number;
+    boardId: string;
+  } | null>(null);
   const [editModalOpen, setEditModalOpen] = useState(false);
   const [editingImage, setEditingImage] = useState<CanvasImage | null>(null);
   const [isGeneratingThumbnails, setIsGeneratingThumbnails] = useState(false);
@@ -207,6 +212,10 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
 
   const closeImageContextMenu = useCallback(() => {
     setImageContextMenu(null);
+  }, []);
+
+  const closeBoardContextMenu = useCallback(() => {
+    setBoardContextMenu(null);
   }, []);
 
   // Load canvas from session when session changes
@@ -793,8 +802,87 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
   const handleDeleteImage = () => {
     if (!imageContextMenu) return;
     setCanvasImages(prev => prev.filter(img => img.id !== imageContextMenu.imageId));
-    
+
     closeImageContextMenu();
+  };
+
+  // Board context menu handlers
+  const handleBoardContextMenu = (e: React.MouseEvent, boardId: string) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setBoardContextMenu({
+      x: e.clientX,
+      y: e.clientY,
+      boardId
+    });
+  };
+
+  const handleEditBoard = async () => {
+    if (!boardContextMenu) return;
+    const board = canvasImages.find(img => img.id === boardContextMenu.boardId);
+    if (!board) return;
+
+    // Convert board to an editable image (white canvas)
+    const canvas = document.createElement('canvas');
+    canvas.width = board.originalWidth || board.width;
+    canvas.height = board.originalHeight || board.height;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
+    // Fill with board's background color
+    ctx.fillStyle = board.backgroundColor || '#ffffff';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+    const dataUri = canvas.toDataURL('image/png');
+    setEditingImage({ ...board, dataUri });
+    setEditModalOpen(true);
+    closeBoardContextMenu();
+  };
+
+  const handleChangeBoardAspectRatio = (ratio: string) => {
+    if (!boardContextMenu) return;
+    const board = canvasImages.find(img => img.id === boardContextMenu.boardId);
+    if (!board) return;
+
+    const aspectRatios: Record<string, { w: number; h: number }> = {
+      '1:1': { w: 1, h: 1 },
+      '3:4': { w: 3, h: 4 },
+      '4:3': { w: 4, h: 3 },
+      '16:9': { w: 16, h: 9 },
+      '9:16': { w: 9, h: 16 }
+    };
+
+    const selectedRatio = aspectRatios[ratio];
+    if (!selectedRatio) return;
+
+    // Calculate new dimensions while maintaining area approximately
+    const currentArea = board.width * board.height;
+    const ratioValue = selectedRatio.w / selectedRatio.h;
+    const newHeight = Math.sqrt(currentArea / ratioValue);
+    const newWidth = newHeight * ratioValue;
+
+    setCanvasImages(prev =>
+      prev.map(img =>
+        img.id === boardContextMenu.boardId
+          ? {
+              ...img,
+              width: newWidth,
+              height: newHeight,
+              originalWidth: newWidth,
+              originalHeight: newHeight
+            }
+          : img
+      )
+    );
+
+    closeBoardContextMenu();
+  };
+
+  const handleDeleteBoard = () => {
+    if (!boardContextMenu) return;
+    setCanvasImages(prev => prev.filter(img => img.id !== boardContextMenu.boardId));
+
+    closeBoardContextMenu();
   };
 
   const handleSaveEditedImage = async (editedDataUri: string) => {
@@ -1545,7 +1633,9 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
               }}
               onMouseDown={(e) => handleImageMouseDown(e, image.id)}
               onContextMenu={(e) => {
-                if (image.type !== 'text' && image.type !== 'board' && image.dataUri) {
+                if (image.type === 'board') {
+                  handleBoardContextMenu(e, image.id);
+                } else if (image.type !== 'text' && image.dataUri) {
                   handleImageContextMenu(e, image.id);
                 }
               }}
@@ -1914,6 +2004,71 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
             </button>
             <button
               onClick={handleDeleteImage}
+              className="w-full px-4 py-2 text-left text-sm hover:bg-zinc-100 dark:hover:bg-zinc-700 text-red-600 dark:text-red-400 flex items-center gap-2"
+            >
+              <Trash2 size={14} />
+              Delete
+            </button>
+          </div>
+        </>
+      )}
+
+      {/* Board Context Menu */}
+      {boardContextMenu && (
+        <>
+          <div
+            className="fixed inset-0 z-40"
+            onClick={closeBoardContextMenu}
+          />
+          <div
+            className="fixed z-50 bg-white dark:bg-zinc-800 rounded-lg shadow-xl border border-zinc-200 dark:border-zinc-700 py-1 min-w-[160px]"
+            style={{
+              left: `${boardContextMenu.x}px`,
+              top: `${boardContextMenu.y}px`,
+            }}
+          >
+            <button
+              onClick={handleEditBoard}
+              className="w-full px-4 py-2 text-left text-sm hover:bg-zinc-100 dark:hover:bg-zinc-700 text-zinc-700 dark:text-zinc-200 flex items-center gap-2"
+            >
+              <Edit2 size={14} />
+              Edit Whiteboard
+            </button>
+            <div className="border-t border-zinc-200 dark:border-zinc-700 my-1" />
+            <div className="px-3 py-1 text-xs font-semibold text-zinc-500 dark:text-zinc-400">Aspect Ratio</div>
+            <button
+              onClick={() => handleChangeBoardAspectRatio('1:1')}
+              className="w-full px-4 py-2 text-left text-sm hover:bg-zinc-100 dark:hover:bg-zinc-700 text-zinc-700 dark:text-zinc-200"
+            >
+              1:1 (Square)
+            </button>
+            <button
+              onClick={() => handleChangeBoardAspectRatio('3:4')}
+              className="w-full px-4 py-2 text-left text-sm hover:bg-zinc-100 dark:hover:bg-zinc-700 text-zinc-700 dark:text-zinc-200"
+            >
+              3:4 (Portrait)
+            </button>
+            <button
+              onClick={() => handleChangeBoardAspectRatio('4:3')}
+              className="w-full px-4 py-2 text-left text-sm hover:bg-zinc-100 dark:hover:bg-zinc-700 text-zinc-700 dark:text-zinc-200"
+            >
+              4:3 (Landscape)
+            </button>
+            <button
+              onClick={() => handleChangeBoardAspectRatio('16:9')}
+              className="w-full px-4 py-2 text-left text-sm hover:bg-zinc-100 dark:hover:bg-zinc-700 text-zinc-700 dark:text-zinc-200"
+            >
+              16:9 (Widescreen)
+            </button>
+            <button
+              onClick={() => handleChangeBoardAspectRatio('9:16')}
+              className="w-full px-4 py-2 text-left text-sm hover:bg-zinc-100 dark:hover:bg-zinc-700 text-zinc-700 dark:text-zinc-200"
+            >
+              9:16 (Vertical)
+            </button>
+            <div className="border-t border-zinc-200 dark:border-zinc-700 my-1" />
+            <button
+              onClick={handleDeleteBoard}
               className="w-full px-4 py-2 text-left text-sm hover:bg-zinc-100 dark:hover:bg-zinc-700 text-red-600 dark:text-red-400 flex items-center gap-2"
             >
               <Trash2 size={14} />
