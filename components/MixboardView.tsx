@@ -130,6 +130,8 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
   const canvasEngineRef = useRef<CanvasEngine | null>(persistentCanvasEngine);
   const rafRef = useRef<number | null>(null);
   const lastUpdateRef = useRef<number>(0);
+  const canvasImagesRef = useRef<CanvasImage[]>(canvasImages);
+  const isDirtyRef = useRef(false);
 
   const closeContextMenu = useCallback(() => {
     setContextMenu({
@@ -143,11 +145,12 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
 
   // Mark session as having unsaved changes
   const markDirty = useCallback(() => {
-    if (!isDirty) {
+    if (!isDirtyRef.current) {
+      isDirtyRef.current = true;
       setIsDirty(true);
       setSaveStatus('unsaved');
     }
-  }, [isDirty]);
+  }, []); // No dependencies - stable reference
 
   // Helper function to save current canvas state to session (async, non-blocking)
   const saveCanvasToSession = useCallback(async (images: CanvasImage[]) => {
@@ -175,6 +178,7 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
 
       await StorageService.saveSessionAsync(updatedSession as any);
       onSessionUpdate(updatedSession);
+      isDirtyRef.current = false;
       setIsDirty(false);
       setSaveStatus('saved');
       console.log('[MixboardView] Canvas saved to session:', images.length, 'images');
@@ -184,11 +188,17 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
     }
   }, [currentSession, onSessionUpdate]);
 
+  // Keep ref in sync with state
+  useEffect(() => {
+    canvasImagesRef.current = canvasImages;
+  }, [canvasImages]);
+
   // Manual save function (called by user or auto-save)
   const handleManualSave = useCallback(async () => {
     if (!isDirty || !currentSession) return;
-    await saveCanvasToSession(canvasImages);
-  }, [isDirty, currentSession, canvasImages, saveCanvasToSession]);
+    // Use ref to avoid dependency on canvasImages (prevents recreation on every drag)
+    await saveCanvasToSession(canvasImagesRef.current);
+  }, [isDirty, currentSession, saveCanvasToSession]);
 
   const closeImageContextMenu = useCallback(() => {
     setImageContextMenu(null);
@@ -1212,26 +1222,40 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
       const canvasRect = canvasRef.current?.getBoundingClientRect();
       if (!canvasRect) return;
 
+      // Throttle to 60fps
+      const now = Date.now();
+      if (now - lastUpdateRef.current < 16) return;
+
       const endX = (e.clientX - canvasRect.left - panOffset.x) / zoom;
       const endY = (e.clientY - canvasRect.top - panOffset.y) / zoom;
 
       setSelectionBox(prev => prev ? { ...prev, endX, endY } : null);
 
-      // Update selection
-      const minX = Math.min(selectionBox.startX, endX);
-      const maxX = Math.max(selectionBox.startX, endX);
-      const minY = Math.min(selectionBox.startY, endY);
-      const maxY = Math.max(selectionBox.startY, endY);
+      // Cancel any pending RAF
+      if (rafRef.current) {
+        cancelAnimationFrame(rafRef.current);
+      }
 
-      setCanvasImages(prev => prev.map(img => {
-        const imgCenterX = img.x + img.width / 2;
-        const imgCenterY = img.y + img.height / 2;
-        const intersects =
-          imgCenterX >= minX && imgCenterX <= maxX &&
-          imgCenterY >= minY && imgCenterY <= maxY;
+      // Use RAF to batch updates
+      rafRef.current = requestAnimationFrame(() => {
+        // Update selection
+        const minX = Math.min(selectionBox.startX, endX);
+        const maxX = Math.max(selectionBox.startX, endX);
+        const minY = Math.min(selectionBox.startY, endY);
+        const maxY = Math.max(selectionBox.startY, endY);
 
-        return { ...img, selected: intersects || (e.ctrlKey || e.metaKey ? img.selected : false) };
-      }));
+        setCanvasImages(prev => prev.map(img => {
+          const imgCenterX = img.x + img.width / 2;
+          const imgCenterY = img.y + img.height / 2;
+          const intersects =
+            imgCenterX >= minX && imgCenterX <= maxX &&
+            imgCenterY >= minY && imgCenterY <= maxY;
+
+          return { ...img, selected: intersects || (e.ctrlKey || e.metaKey ? img.selected : false) };
+        }));
+
+        lastUpdateRef.current = now;
+      });
     }
   };
 
