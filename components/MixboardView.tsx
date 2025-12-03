@@ -121,7 +121,6 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
 
   // Save system state
   const [isDirty, setIsDirty] = useState(false);
-  const [saveStatus, setSaveStatus] = useState<'saved' | 'unsaved' | 'saving'>('saved');
   const [autoSaveInterval, setAutoSaveInterval] = useState(5); // minutes
 
   const canvasRef = useRef<HTMLDivElement>(null);
@@ -155,7 +154,6 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
     dirtyTimerRef.current = setTimeout(() => {
       isDirtyRef.current = true;
       setIsDirty(true);
-      setSaveStatus('unsaved');
       console.log('[DirtyTimer] Marked as dirty after 30 seconds');
     }, 30000);
   }, []);
@@ -163,8 +161,6 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
   // Helper function to save current canvas state to session (async, non-blocking)
   const saveCanvasToSession = useCallback(async (images: CanvasImage[]) => {
     if (!currentSession) return;
-
-    setSaveStatus('saving');
 
     try {
       // Strip thumbnailUri from images before saving to reduce JSON size
@@ -188,14 +184,12 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
       onSessionUpdate(updatedSession);
       isDirtyRef.current = false;
       setIsDirty(false);
-      setSaveStatus('saved');
       console.log('[MixboardView] Canvas saved to session:', images.length, 'images');
 
       // Start timer to mark as dirty after 30 seconds
       startDirtyTimer();
     } catch (error) {
       console.error('[MixboardView] Failed to save session:', error);
-      setSaveStatus('unsaved');
     }
   }, [currentSession, onSessionUpdate, startDirtyTimer]);
 
@@ -206,10 +200,10 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
 
   // Manual save function (called by user or auto-save)
   const handleManualSave = useCallback(async () => {
-    if (!isDirtyRef.current || !currentSession) return;
-    // Use ref to avoid dependency on isDirty and canvasImages (prevents recreation)
+    if (!currentSession) return;
+    // Allow save anytime - just overwrites
     await saveCanvasToSession(canvasImagesRef.current);
-  }, [currentSession, saveCanvasToSession]); // Removed isDirty - use ref instead
+  }, [currentSession, saveCanvasToSession]);
 
   const closeImageContextMenu = useCallback(() => {
     setImageContextMenu(null);
@@ -1608,40 +1602,12 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
             />
           )}
 
-          {/* Save Button and Status */}
-          <div className="absolute top-4 right-4 flex flex-col gap-3">
-            {/* Save Status Indicator */}
-            <div className="flex items-center justify-center gap-2 px-3 py-2 bg-white dark:bg-zinc-900 border border-zinc-300 dark:border-zinc-700 rounded shadow text-xs">
-              {saveStatus === 'saved' && (
-                <span className="text-green-600 dark:text-green-400 flex items-center gap-1">
-                  <span className="w-2 h-2 rounded-full bg-green-600 dark:bg-green-400"></span>
-                  Saved
-                </span>
-              )}
-              {saveStatus === 'unsaved' && (
-                <span className="text-orange-600 dark:text-orange-400 flex items-center gap-1">
-                  <span className="w-2 h-2 rounded-full bg-orange-600 dark:bg-orange-400"></span>
-                  Unsaved
-                </span>
-              )}
-              {saveStatus === 'saving' && (
-                <span className="text-blue-600 dark:text-blue-400 flex items-center gap-1">
-                  <span className="w-2 h-2 rounded-full bg-blue-600 dark:bg-blue-400 animate-pulse"></span>
-                  Saving...
-                </span>
-              )}
-            </div>
-
-            {/* Manual Save Button */}
+          {/* Save Button */}
+          <div className="absolute top-4 right-4 flex flex-col gap-2">
             <button
               onClick={handleManualSave}
-              disabled={!isDirty || saveStatus === 'saving'}
               title={`Save session (Ctrl+S) - Auto-save every ${autoSaveInterval} min`}
-              className={`p-2 border rounded shadow transition-all ${
-                isDirty && saveStatus !== 'saving'
-                  ? 'bg-orange-500 hover:bg-orange-600 border-orange-600 text-white cursor-pointer'
-                  : 'bg-white dark:bg-zinc-900 border-zinc-300 dark:border-zinc-700 text-zinc-400 dark:text-zinc-600 cursor-not-allowed'
-              }`}
+              className="p-2 bg-white dark:bg-zinc-900 border border-zinc-300 dark:border-zinc-700 rounded shadow hover:bg-zinc-50 dark:hover:bg-zinc-800 text-zinc-700 dark:text-zinc-300"
             >
               <Save size={16} />
             </button>
@@ -1650,7 +1616,7 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
           </div>
 
           {/* Zoom Controls */}
-          <div className="absolute top-36 right-4 flex flex-col gap-2">
+          <div className="absolute top-20 right-4 flex flex-col gap-2">
             <button
               onClick={handleZoomIn}
               className="p-2 bg-white dark:bg-zinc-900 border border-zinc-300 dark:border-zinc-700 rounded shadow hover:bg-zinc-50 dark:hover:bg-zinc-800"
