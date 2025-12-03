@@ -479,6 +479,72 @@ ipcMain.on('export-image-sync', (event, folder, filename) => {
     }
 });
 
+// Save thumbnail to disk
+ipcMain.on('save-thumbnail-sync', (event, sessionId, imageId, thumbnailBase64) => {
+    try {
+        const dataPath = getDataPath();
+        const thumbnailsDir = path.join(dataPath, 'thumbnails', sessionId);
+
+        // Create thumbnails directory if it doesn't exist
+        if (!fs.existsSync(thumbnailsDir)) {
+            fs.mkdirSync(thumbnailsDir, { recursive: true });
+        }
+
+        const thumbnailPath = path.join(thumbnailsDir, `${imageId}.jpg`);
+
+        // Remove data URI header if present
+        const base64Data = thumbnailBase64.includes(',')
+            ? thumbnailBase64.split(',')[1]
+            : thumbnailBase64;
+
+        // Write thumbnail to disk
+        fs.writeFileSync(thumbnailPath, Buffer.from(base64Data, 'base64'));
+
+        // Return relative path for storage in session
+        const relativePath = path.join('thumbnails', sessionId, `${imageId}.jpg`);
+        event.returnValue = { success: true, path: relativePath };
+    } catch (e) {
+        console.error("Save thumbnail failed", e);
+        event.returnValue = { success: false, error: e.message };
+    }
+});
+
+// Load thumbnail from disk
+ipcMain.on('load-thumbnail-sync', (event, thumbnailPath) => {
+    try {
+        const dataPath = getDataPath();
+        const fullPath = path.join(dataPath, thumbnailPath);
+
+        if (fs.existsSync(fullPath)) {
+            const buffer = fs.readFileSync(fullPath);
+            const base64 = buffer.toString('base64');
+            // Return as data URI
+            event.returnValue = `data:image/jpeg;base64,${base64}`;
+        } else {
+            event.returnValue = null;
+        }
+    } catch (e) {
+        console.error("Load thumbnail failed", e);
+        event.returnValue = null;
+    }
+});
+
+// Delete thumbnail from disk
+ipcMain.on('delete-thumbnail-sync', (event, thumbnailPath) => {
+    try {
+        const dataPath = getDataPath();
+        const fullPath = path.join(dataPath, thumbnailPath);
+
+        if (fs.existsSync(fullPath)) {
+            fs.unlinkSync(fullPath);
+        }
+        event.returnValue = { success: true };
+    } catch (e) {
+        console.error("Delete thumbnail failed", e);
+        event.returnValue = { success: false, error: e.message };
+    }
+});
+
 // List all sessions
 ipcMain.on('list-sessions-sync', (event) => {
     try {
@@ -510,6 +576,17 @@ ipcMain.on('save-session-sync', (event, sessionId, sessionData) => {
     } catch (e) {
         console.error("Save session failed", e);
         event.returnValue = { success: false, error: e.message };
+    }
+});
+
+// Async version of save-session (non-blocking)
+ipcMain.handle('save-session', async (event, sessionId, sessionData) => {
+    try {
+        writeFileBoth(path.join('sessions', `${sessionId}.json`), JSON.stringify(sessionData, null, 2));
+        return { success: true };
+    } catch (e) {
+        console.error("Save session failed", e);
+        return { success: false, error: e.message };
     }
 });
 

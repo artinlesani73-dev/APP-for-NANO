@@ -1,8 +1,9 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { Sparkles, Image as ImageIcon, Type, Trash2, ZoomIn, ZoomOut, Move, Download, Edit2, Check, X, LayoutTemplate, Bold, Italic } from 'lucide-react';
+import { Sparkles, Image as ImageIcon, Type, Trash2, ZoomIn, ZoomOut, Move, Download, Edit2, Check, X, LayoutTemplate, Bold, Italic, Save } from 'lucide-react';
 import { GeminiService } from '../services/geminiService';
 import { StorageService } from '../services/newStorageService';
 import { GenerationConfig, CanvasImage, MixboardSession, MixboardGeneration, StoredImageMeta } from '../types';
+import { ImageEditModal } from './ImageEditModal';
 
 type CanvasEngine = {
   attach: (element: HTMLDivElement, options: { onZoom: (delta: number) => void }) => void;
@@ -108,10 +109,29 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
     canvasY: 0
   });
 
+  // Image context menu and edit modal state
+  const [imageContextMenu, setImageContextMenu] = useState<{
+    x: number;
+    y: number;
+    imageId: string;
+  } | null>(null);
+  const [editModalOpen, setEditModalOpen] = useState(false);
+  const [editingImage, setEditingImage] = useState<CanvasImage | null>(null);
+  const [isGeneratingThumbnails, setIsGeneratingThumbnails] = useState(false);
+
+  // Save system state
+  const [isDirty, setIsDirty] = useState(false);
+  const [autoSaveInterval, setAutoSaveInterval] = useState(5); // minutes
+
   const canvasRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const textToolbarRef = useRef<HTMLDivElement>(null);
   const canvasEngineRef = useRef<CanvasEngine | null>(persistentCanvasEngine);
+  const rafRef = useRef<number | null>(null);
+  const lastUpdateRef = useRef<number>(0);
+  const canvasImagesRef = useRef<CanvasImage[]>(canvasImages);
+  const isDirtyRef = useRef(false);
+  const dirtyTimerRef = useRef<NodeJS.Timeout | null>(null);
 
   const closeContextMenu = useCallback(() => {
     setContextMenu({
@@ -123,16 +143,223 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
     });
   }, []);
 
+  // Start timer to mark as dirty 30 seconds after save
+  const startDirtyTimer = useCallback(() => {
+    // Clear any existing timer
+    if (dirtyTimerRef.current) {
+      clearTimeout(dirtyTimerRef.current);
+    }
+
+    // Set dirty flag after 30 seconds
+    dirtyTimerRef.current = setTimeout(() => {
+      isDirtyRef.current = true;
+      setIsDirty(true);
+      console.log('[DirtyTimer] Marked as dirty after 30 seconds');
+    }, 30000);
+  }, []);
+
+  // Helper function to save current canvas state to session (async, non-blocking)
+  const saveCanvasToSession = useCallback(async (images: CanvasImage[]) => {
+    if (!currentSession) return;
+
+    try {
+      // Strip thumbnailUri from images before saving to reduce JSON size
+      // Thumbnails are loaded from disk on session open
+      const imagesToSave = images.map(img => {
+        if (img.thumbnailPath) {
+          // If thumbnail is saved to disk, don't include URI in session
+          const { thumbnailUri, ...imageWithoutUri } = img;
+          return imageWithoutUri;
+        }
+        return img;
+      });
+
+      const updatedSession: MixboardSession = {
+        ...currentSession,
+        canvas_images: imagesToSave,
+        updated_at: new Date().toISOString()
+      };
+
+      await StorageService.saveSessionAsync(updatedSession as any);
+      onSessionUpdate(updatedSession);
+      isDirtyRef.current = false;
+      setIsDirty(false);
+      console.log('[MixboardView] Canvas saved to session:', images.length, 'images');
+
+      // Start timer to mark as dirty after 30 seconds
+      startDirtyTimer();
+    } catch (error) {
+      console.error('[MixboardView] Failed to save session:', error);
+    }
+  }, [currentSession, onSessionUpdate, startDirtyTimer]);
+
+  // Keep ref in sync with state
+  useEffect(() => {
+    canvasImagesRef.current = canvasImages;
+  }, [canvasImages]);
+
+  // Manual save function (called by user or auto-save)
+  const handleManualSave = useCallback(async () => {
+    if (!currentSession) return;
+    // Allow save anytime - just overwrites
+    await saveCanvasToSession(canvasImagesRef.current);
+  }, [currentSession, saveCanvasToSession]);
+
+  const closeImageContextMenu = useCallback(() => {
+    setImageContextMenu(null);
+  }, []);
+
   // Load canvas from session when session changes
   useEffect(() => {
-    if (currentSession && currentSession.canvas_images) {
-      console.log('[MixboardView] Loading canvas images from session:', currentSession.canvas_images.length);
-      setCanvasImages(currentSession.canvas_images);
-    } else if (currentSession) {
-      console.log('[MixboardView] Session has no canvas images, starting with empty canvas');
-      setCanvasImages([]);
-    }
+    const loadCanvasImages = async () => {
+      if (currentSession && currentSession.canvas_images) {
+        console.log('[MixboardView] Loading canvas images from session:', currentSession.canvas_images.length);
+
+        // Load thumbnails from disk if they exist
+        const { loadThumbnail } = await import('../utils/imageUtils');
+        const loadedImages = currentSession.canvas_images.map(img => {
+          if (img.thumbnailPath && !img.thumbnailUri) {
+            // Load thumbnail from disk
+            const thumbnailUri = loadThumbnail(img.thumbnailPath);
+            return thumbnailUri ? { ...img, thumbnailUri } : img;
+          }
+          return img;
+        });
+
+        setCanvasImages(loadedImages);
+      } else if (currentSession) {
+        console.log('[MixboardView] Session has no canvas images, starting with empty canvas');
+        setCanvasImages([]);
+      }
+    };
+
+    loadCanvasImages();
   }, [currentSession?.session_id]);
+
+  // Migration: Generate thumbnails for existing images without thumbnails
+  useEffect(() => {
+    const migrateImages = async () => {
+      // Only migrate if there are images and some don't have thumbnails
+      const needsMigration = canvasImages.some(
+        img => img.type !== 'text' && img.type !== 'board' && img.dataUri && !img.thumbnailUri
+      );
+
+      if (!needsMigration || canvasImages.length === 0) return;
+
+      console.log('[MixboardView] Migrating images without thumbnails...');
+      setIsGeneratingThumbnails(true);
+
+      try {
+        const { generateThumbnail, saveThumbnail } = await import('../utils/imageUtils');
+
+        const migratedImages = await Promise.all(
+          canvasImages.map(async (img) => {
+            // Only generate thumbnail for images that don't have one
+            if (img.type !== 'text' && img.type !== 'board' && img.dataUri && !img.thumbnailUri) {
+              try {
+                const thumbnailUri = await generateThumbnail(img.dataUri, 256, 0.85);
+
+                // Save thumbnail to disk (Electron) or keep in memory (web)
+                const { thumbnailUri: savedThumbnailUri, thumbnailPath } = currentSession
+                  ? saveThumbnail(currentSession.session_id, img.id, thumbnailUri)
+                  : { thumbnailUri };
+
+                console.log(`[Migration] Generated and saved thumbnail for existing image:`, img.id);
+                return { ...img, thumbnailUri: savedThumbnailUri, thumbnailPath };
+              } catch (err) {
+                console.error('Failed to generate thumbnail for image:', img.id, err);
+                return img; // Keep original if thumbnail generation fails
+              }
+            }
+            return img;
+          })
+        );
+
+        // Only update if we actually migrated something
+        const hasChanges = migratedImages.some((img, idx) => img.thumbnailUri !== canvasImages[idx].thumbnailUri);
+        if (hasChanges) {
+          setCanvasImages(migratedImages);
+          saveCanvasToSession(migratedImages);
+          console.log(`[MixboardView] Migration complete, ${migratedImages.filter(i => i.thumbnailUri).length} thumbnails generated`);
+        }
+      } catch (error) {
+        console.error('Failed to migrate images:', error);
+      } finally {
+        setIsGeneratingThumbnails(false);
+      }
+    };
+
+    // Run migration after a short delay to not block initial render
+    const migrationTimeout = setTimeout(() => {
+      migrateImages();
+    }, 500);
+
+    return () => clearTimeout(migrationTimeout);
+  }, [currentSession?.session_id]); // Run when session changes
+
+  // Auto-save interval timer
+  useEffect(() => {
+    if (!currentSession || autoSaveInterval === 0) return; // 0 = disabled
+
+    const intervalMs = autoSaveInterval * 60 * 1000; // Convert minutes to ms
+    const autoSaveTimer = setInterval(() => {
+      if (isDirtyRef.current) {
+        console.log('[AutoSave] Running auto-save...');
+        handleManualSave();
+      }
+    }, intervalMs);
+
+    return () => clearInterval(autoSaveTimer);
+  }, [currentSession, autoSaveInterval, handleManualSave]); // Removed isDirty - use ref instead
+
+  // Save on exit (component unmount or session switch)
+  useEffect(() => {
+    return () => {
+      // Save when component unmounts or session changes
+      if (isDirtyRef.current && currentSession) {
+        console.log('[SaveOnExit] Saving before unmount...');
+        // Use sync save for unmount to ensure it completes
+        const imagesToSave = canvasImagesRef.current.map(img => {
+          if (img.thumbnailPath) {
+            const { thumbnailUri, ...imageWithoutUri } = img;
+            return imageWithoutUri;
+          }
+          return img;
+        });
+        const updatedSession: MixboardSession = {
+          ...currentSession,
+          canvas_images: imagesToSave,
+          updated_at: new Date().toISOString()
+        };
+        StorageService.saveSession(updatedSession as any);
+      }
+    };
+  }, [currentSession]); // Only depend on currentSession, not canvasImages or isDirty
+
+  // Save on browser close/refresh
+  useEffect(() => {
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      if (isDirty) {
+        // Show browser confirmation dialog
+        e.preventDefault();
+        e.returnValue = '';
+        // Try to save before unload
+        handleManualSave();
+      }
+    };
+
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+  }, [isDirty, handleManualSave]);
+
+  // Cleanup dirty timer on unmount
+  useEffect(() => {
+    return () => {
+      if (dirtyTimerRef.current) {
+        clearTimeout(dirtyTimerRef.current);
+      }
+    };
+  }, []);
 
   useEffect(() => {
     const handleGlobalClick = () => closeContextMenu();
@@ -149,6 +376,11 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
     return () => {
       window.removeEventListener('click', handleGlobalClick);
       window.removeEventListener('keydown', handleEscape);
+
+      // Cleanup any pending animation frames on unmount
+      if (rafRef.current) {
+        cancelAnimationFrame(rafRef.current);
+      }
     };
   }, [closeContextMenu]);
 
@@ -213,21 +445,6 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
       engine.detach();
     };
   }, [currentSession?.session_id]);
-
-  // Helper function to save current canvas state to session
-  const saveCanvasToSession = (images: CanvasImage[]) => {
-    if (!currentSession) return;
-
-    const updatedSession: MixboardSession = {
-      ...currentSession,
-      canvas_images: images,
-      updated_at: new Date().toISOString()
-    };
-
-    StorageService.saveSession(updatedSession as any);
-    onSessionUpdate(updatedSession);
-    console.log('[MixboardView] Canvas saved to session:', images.length, 'images');
-  };
 
   // Handle generation (image or text) with full history tracking
   const handleGenerate = async () => {
@@ -324,37 +541,92 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
 
         // Add generated image to canvas
         const img = new Image();
-        img.onload = () => {
-          const newCanvasImage: CanvasImage = {
-            id: `img-${Date.now()}`,
-            dataUri: imageDataUri,
-            x: 100 + (canvasImages.length * 50),
-            y: 100 + (canvasImages.length * 50),
-            width: 300,
-            height: (300 * img.height) / img.width,
-            selected: false,
-            originalWidth: img.width,
-            originalHeight: img.height,
-            generationId: generationId,
-            imageMetaId: outputImageMeta.id
-          };
+        img.onload = async () => {
+          // Generate thumbnail for the output image
+          setIsGeneratingThumbnails(true);
+          try {
+            const { generateThumbnail, saveThumbnail } = await import('../utils/imageUtils');
+            const thumbnailUri = await generateThumbnail(imageDataUri, 256, 0.85);
+            const imageId = `img-${Date.now()}`;
 
-          const updatedCanvasImages = [...canvasImages, newCanvasImage];
-          setCanvasImages(updatedCanvasImages);
+            // Save thumbnail to disk (Electron) or keep in memory (web)
+            const { thumbnailUri: savedThumbnailUri, thumbnailPath } = currentSession
+              ? saveThumbnail(currentSession.session_id, imageId, thumbnailUri)
+              : { thumbnailUri };
 
-          // Update session with new generation and canvas state
-          const updatedSession: MixboardSession = {
-            ...currentSession,
-            generations: [...existingGenerations, completedGeneration],
-            canvas_images: updatedCanvasImages,
-            updated_at: new Date().toISOString()
-          };
+            const newCanvasImage: CanvasImage = {
+              id: imageId,
+              dataUri: imageDataUri,
+              thumbnailUri: savedThumbnailUri,
+              thumbnailPath,
+              x: 100,
+              y: 100,
+              width: 300,
+              height: (300 * img.height) / img.width,
+              selected: false,
+              originalWidth: img.width,
+              originalHeight: img.height,
+              generationId: generationId,
+              imageMetaId: outputImageMeta.id
+            };
 
-          // Persist session
-          StorageService.saveSession(updatedSession as any);
-          onSessionUpdate(updatedSession);
+            setCanvasImages(prev => {
+              const updatedCanvasImages = [...prev, newCanvasImage];
 
-          setCurrentGeneration(completedGeneration);
+              // Update session with new generation and canvas state
+              const updatedSession: MixboardSession = {
+                ...currentSession,
+                generations: [...existingGenerations, completedGeneration],
+                canvas_images: updatedCanvasImages,
+                updated_at: new Date().toISOString()
+              };
+
+              // Persist session
+              StorageService.saveSession(updatedSession as any);
+              onSessionUpdate(updatedSession);
+
+              return updatedCanvasImages;
+            });
+
+            setCurrentGeneration(completedGeneration);
+            console.log(`[Generation] Output image added:`, imageId, `Thumbnail path: ${thumbnailPath || 'in-memory'}`);
+          } catch (error) {
+            console.error('Failed to generate thumbnail for output image:', error);
+            // Still add image without thumbnail as fallback
+            const newCanvasImage: CanvasImage = {
+              id: `img-${Date.now()}`,
+              dataUri: imageDataUri,
+              x: 100,
+              y: 100,
+              width: 300,
+              height: (300 * img.height) / img.width,
+              selected: false,
+              originalWidth: img.width,
+              originalHeight: img.height,
+              generationId: generationId,
+              imageMetaId: outputImageMeta.id
+            };
+
+            setCanvasImages(prev => {
+              const updatedCanvasImages = [...prev, newCanvasImage];
+
+              const updatedSession: MixboardSession = {
+                ...currentSession,
+                generations: [...existingGenerations, completedGeneration],
+                canvas_images: updatedCanvasImages,
+                updated_at: new Date().toISOString()
+              };
+
+              StorageService.saveSession(updatedSession as any);
+              onSessionUpdate(updatedSession);
+
+              return updatedCanvasImages;
+            });
+
+            setCurrentGeneration(completedGeneration);
+          } finally {
+            setIsGeneratingThumbnails(false);
+          }
         };
         img.src = imageDataUri;
       }
@@ -485,56 +757,166 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
         originalHeight: textHeight
       };
 
-      const updated = [...prev, newCanvasText];
-      saveCanvasToSession(updated);
-      return updated;
+      return [...prev, newCanvasText];
     });
+    
   };
 
   const updateTextEntity = (id: string, updates: Partial<CanvasImage>) => {
     setCanvasImages(prev => {
-      const updated = prev.map(img => img.id === id ? { ...img, ...updates } : img);
-      saveCanvasToSession(updated);
-      return updated;
+      return prev.map(img => img.id === id ? { ...img, ...updates } : img);
     });
+    
+  };
+
+  // Image context menu handlers
+  const handleImageContextMenu = (e: React.MouseEvent, imageId: string) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setImageContextMenu({
+      x: e.clientX,
+      y: e.clientY,
+      imageId
+    });
+  };
+
+  const handleEditImage = async () => {
+    if (!imageContextMenu) return;
+    const image = canvasImages.find(img => img.id === imageContextMenu.imageId);
+    if (image && image.dataUri) {
+      setEditingImage(image);
+      setEditModalOpen(true);
+    }
+    closeImageContextMenu();
+  };
+
+  const handleDeleteImage = () => {
+    if (!imageContextMenu) return;
+    setCanvasImages(prev => prev.filter(img => img.id !== imageContextMenu.imageId));
+    
+    closeImageContextMenu();
+  };
+
+  const handleSaveEditedImage = async (editedDataUri: string) => {
+    if (!editingImage) return;
+
+    // Import thumbnail generator and saver
+    const { generateThumbnail, saveThumbnail } = await import('../utils/imageUtils');
+
+    // Generate new thumbnail from edited image
+    setIsGeneratingThumbnails(true);
+    try {
+      const newThumbnail = await generateThumbnail(editedDataUri, 256, 0.85);
+
+      // Save thumbnail to disk (Electron) or keep in memory (web)
+      const { thumbnailUri: savedThumbnailUri, thumbnailPath } = currentSession
+        ? saveThumbnail(currentSession.session_id, editingImage.id, newThumbnail)
+        : { thumbnailUri: newThumbnail };
+
+      // Update canvas image with new original and thumbnail
+      setCanvasImages(prev =>
+        prev.map(img =>
+          img.id === editingImage.id
+            ? { ...img, dataUri: editedDataUri, thumbnailUri: savedThumbnailUri, thumbnailPath }
+            : img
+        )
+      );
+      
+
+      console.log(`[Edit] Image updated:`, editingImage.id, `Thumbnail path: ${thumbnailPath || 'in-memory'}`);
+    } catch (error) {
+      console.error('Failed to generate thumbnail for edited image:', error);
+      // Still update the image even if thumbnail generation fails
+      setCanvasImages(prev =>
+        prev.map(img =>
+          img.id === editingImage.id
+            ? { ...img, dataUri: editedDataUri }
+            : img
+        )
+      );
+      
+    } finally {
+      setIsGeneratingThumbnails(false);
+      setEditingImage(null);
+    }
   };
 
   // Handle file upload
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
     if (!files) return;
 
-    Array.from(files).forEach(file => {
-      const reader = new FileReader();
-      reader.onload = (event) => {
-        const dataUri = event.target?.result as string;
-        const img = new Image();
-        img.onload = () => {
-          const newImage: CanvasImage = {
-            id: `img-${Date.now()}-${Math.random()}`,
-            dataUri,
-            x: 100 + (canvasImages.length * 50),
-            y: 100 + (canvasImages.length * 50),
-            width: 300,
-            height: (300 * img.height) / img.width,
-            selected: false,
-            originalWidth: img.width,
-            originalHeight: img.height
-          };
-          const updatedImages = [...canvasImages, newImage];
-          setCanvasImages(updatedImages);
-          saveCanvasToSession(updatedImages);
-        };
-        img.src = dataUri;
-      };
-      reader.readAsDataURL(file);
-    });
+    setIsGeneratingThumbnails(true);
 
-    e.target.value = '';
+    try {
+      const { generateThumbnail, saveThumbnail } = await import('../utils/imageUtils');
+
+      for (const file of Array.from(files)) {
+        const reader = new FileReader();
+        reader.onload = async (event) => {
+          const dataUri = event.target?.result as string;
+          const img = new Image();
+          img.onload = async () => {
+            try {
+              // Generate thumbnail for canvas display (256px for better performance)
+              const thumbnailUri = await generateThumbnail(dataUri, 256, 0.85);
+              const imageId = `img-${Date.now()}-${Math.random()}`;
+
+              // Save thumbnail to disk (Electron) or keep in memory (web)
+              const { thumbnailUri: savedThumbnailUri, thumbnailPath } = currentSession
+                ? saveThumbnail(currentSession.session_id, imageId, thumbnailUri)
+                : { thumbnailUri };
+
+              const newImage: CanvasImage = {
+                id: imageId,
+                dataUri,
+                thumbnailUri: savedThumbnailUri,
+                thumbnailPath,
+                x: 100,
+                y: 100,
+                width: 300,
+                height: (300 * img.height) / img.width,
+                selected: false,
+                originalWidth: img.width,
+                originalHeight: img.height
+              };
+
+              // Use functional update to avoid stale state
+              setCanvasImages(prev => [...prev, newImage]);
+              
+
+              console.log(`[Upload] Image added:`, newImage.id, `Thumbnail path: ${thumbnailPath || 'in-memory'}`);
+            } catch (error) {
+              console.error('Failed to generate thumbnail:', error);
+              // Still add the image without thumbnail as fallback
+              const newImage: CanvasImage = {
+                id: `img-${Date.now()}-${Math.random()}`,
+                dataUri,
+                x: 100,
+                y: 100,
+                width: 300,
+                height: (300 * img.height) / img.width,
+                selected: false,
+                originalWidth: img.width,
+                originalHeight: img.height
+              };
+
+              setCanvasImages(prev => [...prev, newImage]);
+              
+            }
+          };
+          img.src = dataUri;
+        };
+        reader.readAsDataURL(file);
+      }
+    } finally {
+      setTimeout(() => setIsGeneratingThumbnails(false), 1000);
+      e.target.value = '';
+    }
   };
 
   // Handle drag and drop from outside
-  const handleDrop = (e: React.DragEvent) => {
+  const handleDrop = async (e: React.DragEvent) => {
     e.preventDefault();
     e.stopPropagation();
 
@@ -544,38 +926,76 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
     const canvasRect = canvasRef.current?.getBoundingClientRect();
     if (!canvasRect) return;
 
-    Array.from(files).forEach((file, index) => {
-      if (!file.type.startsWith('image/')) return;
+    setIsGeneratingThumbnails(true);
 
-      const reader = new FileReader();
-      reader.onload = (event) => {
-        const dataUri = event.target?.result as string;
-        const img = new Image();
-        img.onload = () => {
-          const dropX = (e.clientX - canvasRect.left - panOffset.x) / zoom;
-          const dropY = (e.clientY - canvasRect.top - panOffset.y) / zoom;
+    try {
+      const { generateThumbnail, saveThumbnail } = await import('../utils/imageUtils');
 
-          const newImage: CanvasImage = {
-            id: `img-${Date.now()}-${index}`,
-            dataUri,
-            x: dropX,
-            y: dropY,
-            width: 300,
-            height: (300 * img.height) / img.width,
-            selected: false,
-            originalWidth: img.width,
-            originalHeight: img.height
+      for (const [index, file] of Array.from(files).entries()) {
+        if (!file.type.startsWith('image/')) continue;
+
+        const reader = new FileReader();
+        reader.onload = async (event) => {
+          const dataUri = event.target?.result as string;
+          const img = new Image();
+          img.onload = async () => {
+            const dropX = (e.clientX - canvasRect.left - panOffset.x) / zoom;
+            const dropY = (e.clientY - canvasRect.top - panOffset.y) / zoom;
+
+            try {
+              // Generate thumbnail for canvas display (256px for better performance)
+              const thumbnailUri = await generateThumbnail(dataUri, 256, 0.85);
+              const imageId = `img-${Date.now()}-${index}`;
+
+              // Save thumbnail to disk (Electron) or keep in memory (web)
+              const { thumbnailUri: savedThumbnailUri, thumbnailPath } = currentSession
+                ? saveThumbnail(currentSession.session_id, imageId, thumbnailUri)
+                : { thumbnailUri };
+
+              const newImage: CanvasImage = {
+                id: imageId,
+                dataUri,
+                thumbnailUri: savedThumbnailUri,
+                thumbnailPath,
+                x: dropX,
+                y: dropY,
+                width: 300,
+                height: (300 * img.height) / img.width,
+                selected: false,
+                originalWidth: img.width,
+                originalHeight: img.height
+              };
+
+              setCanvasImages(prev => [...prev, newImage]);
+              
+
+              console.log(`[Drop] Image added:`, newImage.id, `Thumbnail path: ${thumbnailPath || 'in-memory'}`);
+            } catch (error) {
+              console.error('Failed to generate thumbnail:', error);
+              // Still add the image without thumbnail as fallback
+              const newImage: CanvasImage = {
+                id: `img-${Date.now()}-${index}`,
+                dataUri,
+                x: dropX,
+                y: dropY,
+                width: 300,
+                height: (300 * img.height) / img.width,
+                selected: false,
+                originalWidth: img.width,
+                originalHeight: img.height
+              };
+
+              setCanvasImages(prev => [...prev, newImage]);
+              
+            }
           };
-          setCanvasImages(prev => {
-            const updated = [...prev, newImage];
-            saveCanvasToSession(updated);
-            return updated;
-          });
+          img.src = dataUri;
         };
-        img.src = dataUri;
-      };
-      reader.readAsDataURL(file);
-    });
+        reader.readAsDataURL(file);
+      }
+    } finally {
+      setTimeout(() => setIsGeneratingThumbnails(false), 1000);
+    }
   };
 
   const handleDragOver = (e: React.DragEvent) => {
@@ -622,10 +1042,9 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
         originalHeight: boardHeight
       };
 
-      const updated = [...prev, newBoard];
-      saveCanvasToSession(updated);
-      return updated;
+      return [...prev, newBoard];
     });
+    
   };
 
   const handleTextDoubleClick = (e: React.MouseEvent, image: CanvasImage) => {
@@ -732,11 +1151,19 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
   };
 
   const handleMouseMove = (e: React.MouseEvent) => {
+    // Throttle updates using requestAnimationFrame
+    const now = Date.now();
+    const timeSinceLastUpdate = now - lastUpdateRef.current;
+
+    // Skip if we updated less than 16ms ago (60fps)
+    if (timeSinceLastUpdate < 16) return;
+
     if (isPanning && dragStart) {
       const dx = e.clientX - dragStart.x;
       const dy = e.clientY - dragStart.y;
       setPanOffset(prev => ({ x: prev.x + dx, y: prev.y + dy }));
       setDragStart({ x: e.clientX, y: e.clientY });
+      lastUpdateRef.current = now;
     } else if (resizingImage && dragStart) {
       const canvasRect = canvasRef.current?.getBoundingClientRect();
       if (!canvasRect) return;
@@ -744,30 +1171,39 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
       const dx = (e.clientX - canvasRect.left - dragStart.x) / zoom;
       const dy = (e.clientY - canvasRect.top - dragStart.y) / zoom;
 
-      setCanvasImages(prev => prev.map(img => {
-        if (img.id === resizingImage) {
-          const minSize = 50;
+      // Cancel any pending RAF
+      if (rafRef.current) {
+        cancelAnimationFrame(rafRef.current);
+      }
 
-          if (img.type === 'text') {
+      // Use RAF to batch updates
+      rafRef.current = requestAnimationFrame(() => {
+        setCanvasImages(prev => prev.map(img => {
+          if (img.id === resizingImage) {
+            const minSize = 50;
+
+            if (img.type === 'text') {
+              return {
+                ...img,
+                width: Math.max(minSize, img.width + dx),
+                height: Math.max(minSize, img.height + dy)
+              };
+            }
+
+            const aspectRatio = img.originalHeight / img.originalWidth;
+            const newWidth = Math.max(minSize, img.width + dx);
             return {
               ...img,
-              width: Math.max(minSize, img.width + dx),
-              height: Math.max(minSize, img.height + dy)
+              width: newWidth,
+              height: newWidth * aspectRatio
             };
           }
+          return img;
+        }));
 
-          const aspectRatio = img.originalHeight / img.originalWidth;
-          const newWidth = Math.max(minSize, img.width + dx);
-          return {
-            ...img,
-            width: newWidth,
-            height: newWidth * aspectRatio
-          };
-        }
-        return img;
-      }));
-
-      setDragStart({ x: e.clientX - canvasRect.left, y: e.clientY - canvasRect.top });
+        setDragStart({ x: e.clientX - canvasRect.left, y: e.clientY - canvasRect.top });
+        lastUpdateRef.current = now;
+      });
     } else if (draggedImage && dragStart) {
       const canvasRect = canvasRef.current?.getBoundingClientRect();
       if (!canvasRect) return;
@@ -775,49 +1211,73 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
       const dx = (e.clientX - canvasRect.left - dragStart.x) / zoom;
       const dy = (e.clientY - canvasRect.top - dragStart.y) / zoom;
 
-      setCanvasImages(prev => prev.map(img => {
-        if (img.selected || img.id === draggedImage) {
-          return {
-            ...img,
-            x: img.x + dx,
-            y: img.y + dy
-          };
-        }
-        return img;
-      }));
+      // Cancel any pending RAF
+      if (rafRef.current) {
+        cancelAnimationFrame(rafRef.current);
+      }
 
-      setDragStart({ x: e.clientX - canvasRect.left, y: e.clientY - canvasRect.top });
+      // Use RAF to batch updates
+      rafRef.current = requestAnimationFrame(() => {
+        setCanvasImages(prev => prev.map(img => {
+          if (img.selected || img.id === draggedImage) {
+            return {
+              ...img,
+              x: img.x + dx,
+              y: img.y + dy
+            };
+          }
+          return img;
+        }));
+
+        setDragStart({ x: e.clientX - canvasRect.left, y: e.clientY - canvasRect.top });
+        lastUpdateRef.current = now;
+      });
     } else if (isSelecting && selectionBox) {
       const canvasRect = canvasRef.current?.getBoundingClientRect();
       if (!canvasRect) return;
+
+      // Throttle to 60fps
+      const now = Date.now();
+      if (now - lastUpdateRef.current < 16) return;
 
       const endX = (e.clientX - canvasRect.left - panOffset.x) / zoom;
       const endY = (e.clientY - canvasRect.top - panOffset.y) / zoom;
 
       setSelectionBox(prev => prev ? { ...prev, endX, endY } : null);
 
-      // Update selection
-      const minX = Math.min(selectionBox.startX, endX);
-      const maxX = Math.max(selectionBox.startX, endX);
-      const minY = Math.min(selectionBox.startY, endY);
-      const maxY = Math.max(selectionBox.startY, endY);
+      // Cancel any pending RAF
+      if (rafRef.current) {
+        cancelAnimationFrame(rafRef.current);
+      }
 
-      setCanvasImages(prev => prev.map(img => {
-        const imgCenterX = img.x + img.width / 2;
-        const imgCenterY = img.y + img.height / 2;
-        const intersects =
-          imgCenterX >= minX && imgCenterX <= maxX &&
-          imgCenterY >= minY && imgCenterY <= maxY;
+      // Use RAF to batch updates
+      rafRef.current = requestAnimationFrame(() => {
+        // Update selection
+        const minX = Math.min(selectionBox.startX, endX);
+        const maxX = Math.max(selectionBox.startX, endX);
+        const minY = Math.min(selectionBox.startY, endY);
+        const maxY = Math.max(selectionBox.startY, endY);
 
-        return { ...img, selected: intersects || (e.ctrlKey || e.metaKey ? img.selected : false) };
-      }));
+        setCanvasImages(prev => prev.map(img => {
+          const imgCenterX = img.x + img.width / 2;
+          const imgCenterY = img.y + img.height / 2;
+          const intersects =
+            imgCenterX >= minX && imgCenterX <= maxX &&
+            imgCenterY >= minY && imgCenterY <= maxY;
+
+          return { ...img, selected: intersects || (e.ctrlKey || e.metaKey ? img.selected : false) };
+        }));
+
+        lastUpdateRef.current = now;
+      });
     }
   };
 
   const handleMouseUp = () => {
-    // Save canvas if we were dragging or resizing
-    if (draggedImage || resizingImage) {
-      saveCanvasToSession(canvasImages);
+    // Cancel any pending animation frame
+    if (rafRef.current) {
+      cancelAnimationFrame(rafRef.current);
+      rafRef.current = null;
     }
 
     setDraggedImage(null);
@@ -829,13 +1289,9 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
   };
 
   // Delete selected images
-  const handleDeleteSelected = () => {
-    setCanvasImages(prev => {
-      const updated = prev.filter(img => !img.selected);
-      saveCanvasToSession(updated);
-      return updated;
-    });
-  };
+  const handleDeleteSelected = useCallback(() => {
+    setCanvasImages(prev => prev.filter(img => !img.selected));
+  }, []);
 
   // Zoom controls
   const handleZoomIn = () => setZoom(prev => Math.min(prev + 0.1, 3));
@@ -856,12 +1312,15 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
       } else if (e.key === 'a' && (e.ctrlKey || e.metaKey) && !isTyping) {
         e.preventDefault();
         setCanvasImages(prev => prev.map(img => ({ ...img, selected: true })));
+      } else if (e.key === 's' && (e.ctrlKey || e.metaKey)) {
+        e.preventDefault();
+        handleManualSave();
       }
     };
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [canvasImages]);
+  }, [handleDeleteSelected, handleManualSave]); // Removed canvasImages - not needed!
 
   const selectedCount = canvasImages.filter(img => img.selected).length;
 
@@ -1073,9 +1532,18 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
                 top: `${image.y * zoom + panOffset.y}px`,
                 width: `${image.width * zoom}px`,
                 height: `${image.height * zoom}px`,
-                transformOrigin: 'top left'
+                transformOrigin: 'top left',
+                userSelect: 'none',
+                WebkitUserSelect: 'none',
+                MozUserSelect: 'none',
+                msUserSelect: 'none'
               }}
               onMouseDown={(e) => handleImageMouseDown(e, image.id)}
+              onContextMenu={(e) => {
+                if (image.type !== 'text' && image.type !== 'board' && image.dataUri) {
+                  handleImageContextMenu(e, image.id);
+                }
+              }}
               onDoubleClick={(e) => {
                 if (image.type === 'text') {
                   handleTextDoubleClick(e, image);
@@ -1102,10 +1570,17 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
                 />
               ) : (
                 <img
-                  src={image.dataUri}
+                  src={image.thumbnailUri || image.dataUri}
                   alt="Canvas item"
                   className="w-full h-full object-cover pointer-events-none"
                   draggable={false}
+                  style={{
+                    userSelect: 'none',
+                    WebkitUserSelect: 'none',
+                    MozUserSelect: 'none',
+                    msUserSelect: 'none'
+                  } as React.CSSProperties}
+                  onDragStart={(e) => e.preventDefault()}
                 />
               )}
               {image.selected && (
@@ -1127,8 +1602,21 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
             />
           )}
 
-          {/* Zoom Controls */}
+          {/* Save Button */}
           <div className="absolute top-4 right-4 flex flex-col gap-2">
+            <button
+              onClick={handleManualSave}
+              title={`Save session (Ctrl+S) - Auto-save every ${autoSaveInterval} min`}
+              className="p-2 bg-white dark:bg-zinc-900 border border-zinc-300 dark:border-zinc-700 rounded shadow hover:bg-zinc-50 dark:hover:bg-zinc-800 text-zinc-700 dark:text-zinc-300"
+            >
+              <Save size={16} />
+            </button>
+
+            <div className="border-t border-zinc-300 dark:border-zinc-700 my-1"></div>
+          </div>
+
+          {/* Zoom Controls */}
+          <div className="absolute top-20 right-4 flex flex-col gap-2">
             <button
               onClick={handleZoomIn}
               className="p-2 bg-white dark:bg-zinc-900 border border-zinc-300 dark:border-zinc-700 rounded shadow hover:bg-zinc-50 dark:hover:bg-zinc-800"
@@ -1395,6 +1883,57 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
               You can always pick a specific session from the sidebar to resume where you left off.
             </p>
           </div>
+        </div>
+      )}
+
+      {/* Image Context Menu */}
+      {imageContextMenu && (
+        <>
+          <div
+            className="fixed inset-0 z-40"
+            onClick={closeImageContextMenu}
+          />
+          <div
+            className="fixed z-50 bg-white dark:bg-zinc-800 rounded-lg shadow-xl border border-zinc-200 dark:border-zinc-700 py-1 min-w-[160px]"
+            style={{
+              left: `${imageContextMenu.x}px`,
+              top: `${imageContextMenu.y}px`,
+            }}
+          >
+            <button
+              onClick={handleEditImage}
+              className="w-full px-4 py-2 text-left text-sm hover:bg-zinc-100 dark:hover:bg-zinc-700 text-zinc-700 dark:text-zinc-200 flex items-center gap-2"
+            >
+              <Edit2 size={14} />
+              Edit Image
+            </button>
+            <button
+              onClick={handleDeleteImage}
+              className="w-full px-4 py-2 text-left text-sm hover:bg-zinc-100 dark:hover:bg-zinc-700 text-red-600 dark:text-red-400 flex items-center gap-2"
+            >
+              <Trash2 size={14} />
+              Delete
+            </button>
+          </div>
+        </>
+      )}
+
+      {/* ImageEditModal */}
+      <ImageEditModal
+        isOpen={editModalOpen}
+        image={editingImage?.dataUri || null}
+        onClose={() => {
+          setEditModalOpen(false);
+          setEditingImage(null);
+        }}
+        onSave={handleSaveEditedImage}
+      />
+
+      {/* Thumbnail Generation Loading Indicator */}
+      {isGeneratingThumbnails && (
+        <div className="fixed bottom-4 right-4 bg-blue-600 text-white px-4 py-2 rounded-lg shadow-lg flex items-center gap-2 z-50">
+          <div className="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent" />
+          Generating thumbnails...
         </div>
       )}
       </div>
