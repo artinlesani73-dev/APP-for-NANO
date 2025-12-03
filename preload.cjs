@@ -25,6 +25,7 @@ contextBridge.exposeInMainWorld('electron', {
   // Session operations
   listSessionsSync: () => ipcRenderer.sendSync('list-sessions-sync'),
   saveSessionSync: (sessionId, sessionData) => ipcRenderer.sendSync('save-session-sync', sessionId, sessionData),
+  saveSession: (sessionId, sessionData) => ipcRenderer.invoke('save-session', sessionId, sessionData),
   loadSessionSync: (sessionId) => ipcRenderer.sendSync('load-session-sync', sessionId),
   deleteSessionSync: (sessionId) => ipcRenderer.sendSync('delete-session-sync', sessionId),
   renameSessionFileSync: (sessionId, newExtension) => ipcRenderer.sendSync('rename-session-file-sync', sessionId, newExtension),

@@ -579,6 +579,17 @@ ipcMain.on('save-session-sync', (event, sessionId, sessionData) => {
     }
 });
 
+// Async version of save-session (non-blocking)
+ipcMain.handle('save-session', async (event, sessionId, sessionData) => {
+    try {
+        writeFileBoth(path.join('sessions', `${sessionId}.json`), JSON.stringify(sessionData, null, 2));
+        return { success: true };
+    } catch (e) {
+        console.error("Save session failed", e);
+        return { success: false, error: e.message };
+    }
+});
+
 // Load session file
 ipcMain.on('load-session-sync', (event, sessionId) => {
     try {

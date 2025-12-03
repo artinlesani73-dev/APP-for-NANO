@@ -86,7 +86,7 @@ export const StorageService = {
     return session;
   },
 
-  // Save session to storage
+  // Save session to storage (synchronous - blocks UI)
   saveSession: (session: Session) => {
     session.updated_at = new Date().toISOString();
     ensureGraphState(session);
@@ -96,6 +96,20 @@ export const StorageService = {
       window.electron.saveSessionSync(session.session_id, session);
     } else {
       // For web, store in localStorage
+      localStorage.setItem(`session_${session.session_id}`, JSON.stringify(session));
+    }
+  },
+
+  // Save session to storage (async - non-blocking)
+  saveSessionAsync: async (session: Session) => {
+    session.updated_at = new Date().toISOString();
+    ensureGraphState(session);
+
+    if (isElectron()) {
+      // @ts-ignore
+      await window.electron.saveSession(session.session_id, session);
+    } else {
+      // For web, store in localStorage (still synchronous but fast)
       localStorage.setItem(`session_${session.session_id}`, JSON.stringify(session));
     }
   },
