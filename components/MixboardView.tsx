@@ -141,6 +141,59 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
     });
   }, []);
 
+  // Mark session as having unsaved changes
+  const markDirty = useCallback(() => {
+    if (!isDirty) {
+      setIsDirty(true);
+      setSaveStatus('unsaved');
+    }
+  }, [isDirty]);
+
+  // Helper function to save current canvas state to session (async, non-blocking)
+  const saveCanvasToSession = useCallback(async (images: CanvasImage[]) => {
+    if (!currentSession) return;
+
+    setSaveStatus('saving');
+
+    try {
+      // Strip thumbnailUri from images before saving to reduce JSON size
+      // Thumbnails are loaded from disk on session open
+      const imagesToSave = images.map(img => {
+        if (img.thumbnailPath) {
+          // If thumbnail is saved to disk, don't include URI in session
+          const { thumbnailUri, ...imageWithoutUri } = img;
+          return imageWithoutUri;
+        }
+        return img;
+      });
+
+      const updatedSession: MixboardSession = {
+        ...currentSession,
+        canvas_images: imagesToSave,
+        updated_at: new Date().toISOString()
+      };
+
+      await StorageService.saveSessionAsync(updatedSession as any);
+      onSessionUpdate(updatedSession);
+      setIsDirty(false);
+      setSaveStatus('saved');
+      console.log('[MixboardView] Canvas saved to session:', images.length, 'images');
+    } catch (error) {
+      console.error('[MixboardView] Failed to save session:', error);
+      setSaveStatus('unsaved');
+    }
+  }, [currentSession, onSessionUpdate]);
+
+  // Manual save function (called by user or auto-save)
+  const handleManualSave = useCallback(async () => {
+    if (!isDirty || !currentSession) return;
+    await saveCanvasToSession(canvasImages);
+  }, [isDirty, currentSession, canvasImages, saveCanvasToSession]);
+
+  const closeImageContextMenu = useCallback(() => {
+    setImageContextMenu(null);
+  }, []);
+
   // Load canvas from session when session changes
   useEffect(() => {
     const loadCanvasImages = async () => {
@@ -368,55 +421,6 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
       engine.detach();
     };
   }, [currentSession?.session_id]);
-
-  // Mark session as having unsaved changes
-  const markDirty = useCallback(() => {
-    if (!isDirty) {
-      setIsDirty(true);
-      setSaveStatus('unsaved');
-    }
-  }, [isDirty]);
-
-  // Helper function to save current canvas state to session (async, non-blocking)
-  const saveCanvasToSession = useCallback(async (images: CanvasImage[]) => {
-    if (!currentSession) return;
-
-    setSaveStatus('saving');
-
-    try {
-      // Strip thumbnailUri from images before saving to reduce JSON size
-      // Thumbnails are loaded from disk on session open
-      const imagesToSave = images.map(img => {
-        if (img.thumbnailPath) {
-          // If thumbnail is saved to disk, don't include URI in session
-          const { thumbnailUri, ...imageWithoutUri } = img;
-          return imageWithoutUri;
-        }
-        return img;
-      });
-
-      const updatedSession: MixboardSession = {
-        ...currentSession,
-        canvas_images: imagesToSave,
-        updated_at: new Date().toISOString()
-      };
-
-      await StorageService.saveSessionAsync(updatedSession as any);
-      onSessionUpdate(updatedSession);
-      setIsDirty(false);
-      setSaveStatus('saved');
-      console.log('[MixboardView] Canvas saved to session:', images.length, 'images');
-    } catch (error) {
-      console.error('[MixboardView] Failed to save session:', error);
-      setSaveStatus('unsaved');
-    }
-  }, [currentSession, onSessionUpdate]);
-
-  // Manual save function (called by user or auto-save)
-  const handleManualSave = useCallback(async () => {
-    if (!isDirty || !currentSession) return;
-    await saveCanvasToSession(canvasImages);
-  }, [isDirty, currentSession, canvasImages, saveCanvasToSession]);
 
   // Handle generation (image or text) with full history tracking
   const handleGenerate = async () => {
@@ -750,10 +754,6 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
       y: e.clientY,
       imageId
     });
-  };
-
-  const closeImageContextMenu = () => {
-    setImageContextMenu(null);
   };
 
   const handleEditImage = async () => {
