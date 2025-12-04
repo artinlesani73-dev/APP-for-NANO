@@ -233,11 +233,14 @@ function AppContent() {
       const preferredSession = StorageService.loadSession(preferredSessionId);
       if (preferredSession && preferredSession.user?.id === currentUser.id) {
         setSessions([preferredSession]);
-        handleSelectSession(preferredSession.session_id);
+        // Only select if not already selected to prevent infinite loop
+        if (currentSessionId !== preferredSession.session_id) {
+          handleSelectSession(preferredSession.session_id);
+        }
       }
     }
 
-    if (!preferredSessionId) {
+    if (!preferredSessionId && currentSessionId === null) {
       handleNewSession();
     }
 
@@ -252,7 +255,7 @@ function AppContent() {
         clearTimeout(idleHandle as any);
       }
     };
-  }, [currentUser, hydrateSessions, userHistory.lastSessionId]);
+  }, [currentUser, currentSessionId, hydrateSessions, userHistory.lastSessionId]);
 
   useEffect(() => {
     if ((showHistory || showGraphView) && !hasHydratedSessions) {
