@@ -1460,7 +1460,7 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
                       className="fixed inset-0 z-40"
                       onClick={() => setSessionDropdownOpen(false)}
                     />
-                    <div className="absolute right-0 top-full mt-2 w-64 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 rounded-lg shadow-xl z-50 overflow-hidden">
+                    <div className="absolute left-0 top-full mt-2 w-64 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 rounded-lg shadow-xl z-50 overflow-hidden">
                       <button
                         onClick={() => {
                           setShowProjectsPage(true);
