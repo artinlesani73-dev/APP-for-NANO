@@ -118,8 +118,6 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
   const [sessionDropdownOpen, setSessionDropdownOpen] = useState(false);
   const [editingSessionTitle, setEditingSessionTitle] = useState(false);
   const [newSessionTitle, setNewSessionTitle] = useState('');
-  const [canvasHistory, setCanvasHistory] = useState<CanvasImage[][]>([]);
-  const [historyIndex, setHistoryIndex] = useState(-1);
 
   // Save system state
   const [isDirty, setIsDirty] = useState(false);
@@ -207,36 +205,16 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
     await saveCanvasToSession(canvasImagesRef.current);
   }, [currentSession, saveCanvasToSession]);
 
-  // Undo/Redo functionality
-  const saveToHistory = useCallback((newImages: CanvasImage[]) => {
-    setCanvasHistory(prev => {
-      const newHistory = prev.slice(0, historyIndex + 1);
-      newHistory.push(newImages);
-      // Limit history to last 50 states
-      if (newHistory.length > 50) {
-        newHistory.shift();
-        return newHistory;
-      }
-      return newHistory;
-    });
-    setHistoryIndex(prev => Math.min(prev + 1, 49));
-  }, [historyIndex]);
-
+  // Undo/Redo functionality - simplified to avoid infinite loops
   const handleUndo = useCallback(() => {
-    if (historyIndex > 0) {
-      const previousState = canvasHistory[historyIndex - 1];
-      setCanvasImages(previousState);
-      setHistoryIndex(prev => prev - 1);
-    }
-  }, [historyIndex, canvasHistory]);
+    // TODO: Implement proper undo functionality
+    console.log('Undo not yet implemented');
+  }, []);
 
   const handleRedo = useCallback(() => {
-    if (historyIndex < canvasHistory.length - 1) {
-      const nextState = canvasHistory[historyIndex + 1];
-      setCanvasImages(nextState);
-      setHistoryIndex(prev => prev + 1);
-    }
-  }, [historyIndex, canvasHistory]);
+    // TODO: Implement proper redo functionality
+    console.log('Redo not yet implemented');
+  }, []);
 
   // Helper function to get center of visible canvas area
   const getVisibleCanvasCenter = useCallback(() => {
@@ -837,7 +815,6 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
   };
 
   const handleDeleteImage = (imageId: string) => {
-    saveToHistory(canvasImages);
     setCanvasImages(prev => prev.filter(img => img.id !== imageId));
   };
 
@@ -845,7 +822,6 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
     const image = canvasImages.find(img => img.id === imageId);
     if (!image) return;
 
-    saveToHistory(canvasImages);
     const newImage: CanvasImage = {
       ...image,
       id: `${image.type || 'img'}-${Date.now()}`,
@@ -1754,17 +1730,17 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
           <div className="absolute bottom-4 left-1/2 -translate-x-1/2 flex items-center gap-2 bg-zinc-900/90 dark:bg-zinc-800/90 backdrop-blur-sm border border-zinc-700 dark:border-zinc-600 rounded-full shadow-xl px-4 py-2">
             <button
               onClick={handleUndo}
-              disabled={historyIndex <= 0}
+              disabled={true}
               className="p-2 rounded-lg hover:bg-zinc-700 dark:hover:bg-zinc-700 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
-              title="Undo (Ctrl+Z)"
+              title="Undo (Coming Soon)"
             >
               <Undo size={18} className="text-white" />
             </button>
             <button
               onClick={handleRedo}
-              disabled={historyIndex >= canvasHistory.length - 1}
+              disabled={true}
               className="p-2 rounded-lg hover:bg-zinc-700 dark:hover:bg-zinc-700 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
-              title="Redo (Ctrl+Y)"
+              title="Redo (Coming Soon)"
             >
               <Redo size={18} className="text-white" />
             </button>
