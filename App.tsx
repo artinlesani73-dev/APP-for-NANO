@@ -184,6 +184,32 @@ function AppContent() {
       .catch((err) => console.warn('Failed to persist user history', err));
   }, [preferencesReady, currentSessionId, currentMixboardSessionId]);
 
+  // Define handlers before they're used in callbacks
+  const handleSelectSession = useCallback((id: string) => {
+    setCurrentSessionId(id);
+    const session = StorageService.loadSession(id);
+    if (!session) return;
+
+    // If the session has generations, load the most recent one
+    if (session.generations.length > 0) {
+      const lastGen = session.generations[session.generations.length - 1];
+      loadGenerationIntoView(lastGen, { includeInputs: false });
+    } else {
+        resetInputs();
+    }
+  }, [loadGenerationIntoView, resetInputs]);
+
+  const handleNewSession = useCallback(() => {
+    const newSession = StorageService.createSession("New Session", currentUser || undefined);
+    setSessions(prev => [newSession, ...prev]);
+    setCurrentSessionId(newSession.session_id);
+    resetInputs();
+    LoggerService.logAction('Created new session', {
+      sessionId: newSession.session_id,
+      user: currentUser?.displayName
+    });
+  }, [currentUser, resetInputs]);
+
   const hydrateSessions = useCallback(async () => {
     if (!currentUser || hasHydratedSessions) return;
 
@@ -378,17 +404,6 @@ function AppContent() {
     }
   }, [currentUser]);
 
-  const handleNewSession = useCallback(() => {
-    const newSession = StorageService.createSession("New Session", currentUser || undefined);
-    setSessions(prev => [newSession, ...prev]);
-    setCurrentSessionId(newSession.session_id);
-    resetInputs();
-    LoggerService.logAction('Created new session', {
-      sessionId: newSession.session_id,
-      user: currentUser?.displayName
-    });
-  }, [currentUser, resetInputs]);
-
   const handleRenameSession = (id: string, newTitle: string) => {
     StorageService.renameSession(id, newTitle);
     // Reload and filter sessions for current user
@@ -426,20 +441,6 @@ function AppContent() {
       }
     }
   };
-
-  const handleSelectSession = useCallback((id: string) => {
-    setCurrentSessionId(id);
-    const session = StorageService.loadSession(id);
-    if (!session) return;
-
-    // If the session has generations, load the most recent one
-    if (session.generations.length > 0) {
-      const lastGen = session.generations[session.generations.length - 1];
-      loadGenerationIntoView(lastGen, { includeInputs: false });
-    } else {
-        resetInputs();
-    }
-  }, [loadGenerationIntoView, resetInputs]);
 
   const handleEditControlImage = (index: number) => {
     setEditingControlIndex(index);
