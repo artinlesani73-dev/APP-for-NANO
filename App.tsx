@@ -210,11 +210,15 @@ function AppContent() {
       )?.session_id;
 
       const nextSessionId = preferredSessionId || userSessions[0].session_id;
-      handleSelectSession(nextSessionId);
-    } else {
+      // Only select session if it's different from current to prevent infinite loop
+      if (currentSessionId !== nextSessionId) {
+        handleSelectSession(nextSessionId);
+      }
+    } else if (currentSessionId !== null) {
+      // Only create new session if we don't already have one
       handleNewSession();
     }
-  }, [currentUser, handleNewSession, handleSelectSession, hasHydratedSessions, userHistory.lastSessionId]);
+  }, [currentUser, currentSessionId, handleNewSession, handleSelectSession, hasHydratedSessions, userHistory.lastSessionId]);
 
   useEffect(() => {
     if (!currentUser) {
