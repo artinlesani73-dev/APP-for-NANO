@@ -1,10 +1,11 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { Sparkles, Image as ImageIcon, Type, Trash2, ZoomIn, ZoomOut, Move, Download, Edit2, Check, X, LayoutTemplate, Bold, Italic, Save, Upload, Settings, Folder, Undo, Redo, ChevronDown, Copy, FileText } from 'lucide-react';
+import { Sparkles, Image as ImageIcon, Type, Trash2, ZoomIn, ZoomOut, Move, Download, Edit2, Check, X, LayoutTemplate, Bold, Italic, Save, Upload, Settings, Folder, Undo, Redo, ChevronDown, Copy, FileText, Square } from 'lucide-react';
 import { GeminiService } from '../services/geminiService';
 import { StorageService } from '../services/newStorageService';
 import { GenerationConfig, CanvasImage, MixboardSession, MixboardGeneration, StoredImageMeta } from '../types';
 import { ImageEditModal } from './ImageEditModal';
 import { ProjectsPage } from './ProjectsPage';
+import { SettingsModal } from './SettingsModal';
 
 type CanvasEngine = {
   attach: (element: HTMLDivElement, options: { onZoom: (delta: number) => void }) => void;
@@ -118,6 +119,7 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
   const [sessionDropdownOpen, setSessionDropdownOpen] = useState(false);
   const [editingSessionTitle, setEditingSessionTitle] = useState(false);
   const [newSessionTitle, setNewSessionTitle] = useState('');
+  const [showSettings, setShowSettings] = useState(false);
 
   // Save system state
   const [isDirty, setIsDirty] = useState(false);
@@ -1391,8 +1393,8 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
           onChange={handleFileUpload}
         />
 
-        {/* Top-Right Session Toolbar */}
-        <div className="absolute top-4 right-4 z-40">
+        {/* Top-Left Session Toolbar */}
+        <div className="absolute top-4 left-4 z-40">
           <div className="relative">
             {editingSessionTitle ? (
               <div className="flex items-center gap-2 bg-white dark:bg-zinc-900 border border-zinc-300 dark:border-zinc-700 rounded-lg shadow-lg px-3 py-2">
@@ -1527,32 +1529,40 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
           </div>
         </div>
 
-        {/* Right-Side Vertical Toolbar */}
-        <div className="absolute right-4 top-1/2 -translate-y-1/2 z-30 flex flex-col gap-2">
+        {/* Left-Side Vertical Toolbar - Unified */}
+        <div className="absolute left-4 top-1/2 -translate-y-1/2 z-30 bg-white dark:bg-zinc-900 border border-zinc-300 dark:border-zinc-700 rounded-lg shadow-lg overflow-hidden">
           <button
-            className="p-3 bg-white dark:bg-zinc-900 border border-zinc-300 dark:border-zinc-700 rounded-lg shadow hover:bg-zinc-50 dark:hover:bg-zinc-800 transition-colors"
+            className="p-3 w-full hover:bg-zinc-50 dark:hover:bg-zinc-800 transition-colors border-b border-zinc-200 dark:border-zinc-700"
             title="Templates (Coming Soon)"
           >
-            <LayoutTemplate size={20} className="text-zinc-600 dark:text-zinc-400" />
+            <LayoutTemplate size={20} className="text-zinc-600 dark:text-zinc-400 mx-auto" />
           </button>
           <button
-            className="p-3 bg-white dark:bg-zinc-900 border border-zinc-300 dark:border-zinc-700 rounded-lg shadow hover:bg-zinc-50 dark:hover:bg-zinc-800 transition-colors"
+            className="p-3 w-full hover:bg-zinc-50 dark:hover:bg-zinc-800 transition-colors border-b border-zinc-200 dark:border-zinc-700"
             title="Assets (Coming Soon)"
           >
-            <ImageIcon size={20} className="text-zinc-600 dark:text-zinc-400" />
+            <ImageIcon size={20} className="text-zinc-600 dark:text-zinc-400 mx-auto" />
           </button>
           <button
             onClick={() => fileInputRef.current?.click()}
-            className="p-3 bg-white dark:bg-zinc-900 border border-zinc-300 dark:border-zinc-700 rounded-lg shadow hover:bg-zinc-50 dark:hover:bg-zinc-800 transition-colors"
-            title="Upload"
+            className="p-3 w-full hover:bg-zinc-50 dark:hover:bg-zinc-800 transition-colors border-b border-zinc-200 dark:border-zinc-700"
+            title="Upload Image"
           >
-            <Upload size={20} className="text-zinc-600 dark:text-zinc-400" />
+            <Upload size={20} className="text-zinc-600 dark:text-zinc-400 mx-auto" />
           </button>
           <button
-            className="p-3 bg-white dark:bg-zinc-900 border border-zinc-300 dark:border-zinc-700 rounded-lg shadow hover:bg-zinc-50 dark:hover:bg-zinc-800 transition-colors"
-            title="Settings (Coming Soon)"
+            onClick={handleAddWhiteboardFromContext}
+            className="p-3 w-full hover:bg-zinc-50 dark:hover:bg-zinc-800 transition-colors border-b border-zinc-200 dark:border-zinc-700"
+            title="Add Whiteboard"
           >
-            <Settings size={20} className="text-zinc-600 dark:text-zinc-400" />
+            <Square size={20} className="text-zinc-600 dark:text-zinc-400 mx-auto" />
+          </button>
+          <button
+            onClick={() => setShowSettings(true)}
+            className="p-3 w-full hover:bg-zinc-50 dark:hover:bg-zinc-800 transition-colors"
+            title="Settings"
+          >
+            <Settings size={20} className="text-zinc-600 dark:text-zinc-400 mx-auto" />
           </button>
         </div>
 
@@ -1821,6 +1831,116 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
           })()}
 
           </div>
+
+          {/* Right Sidebar - Generation Controls */}
+          <div className="w-96 border-l border-zinc-200 dark:border-zinc-800 p-6 overflow-y-auto bg-zinc-50 dark:bg-zinc-900/50">
+            <h3 className="text-lg font-bold mb-4 text-zinc-900 dark:text-zinc-100">Generate</h3>
+
+            {/* Mode Toggle */}
+            <div className="flex gap-2 mb-4">
+              <button
+                onClick={() => setShowImageInput(false)}
+                className={`flex-1 flex items-center justify-center gap-2 py-2 px-3 rounded border transition-colors ${
+                  !showImageInput
+                    ? 'bg-orange-50 dark:bg-orange-950/30 border-orange-300 dark:border-orange-900 text-orange-700 dark:text-orange-400'
+                    : 'bg-white dark:bg-zinc-800 border-zinc-300 dark:border-zinc-700 text-zinc-700 dark:text-zinc-400'
+                }`}
+              >
+                <Type size={16} />
+                Text
+              </button>
+              <button
+                onClick={() => setShowImageInput(true)}
+                className={`flex-1 flex items-center justify-center gap-2 py-2 px-3 rounded border transition-colors ${
+                  showImageInput
+                    ? 'bg-orange-50 dark:bg-orange-950/30 border-orange-300 dark:border-orange-900 text-orange-700 dark:text-orange-400'
+                    : 'bg-white dark:bg-zinc-800 border-zinc-300 dark:border-zinc-700 text-zinc-700 dark:text-zinc-400'
+                }`}
+              >
+                <ImageIcon size={16} />
+                Image
+              </button>
+            </div>
+
+            {/* Prompt Input */}
+            <div className="mb-4">
+              <label className="block text-sm font-medium mb-2 text-zinc-700 dark:text-zinc-300">
+                Prompt
+              </label>
+              <textarea
+                value={prompt}
+                onChange={(e) => setPrompt(e.target.value)}
+                placeholder={selectedCount > 0 ? "Describe how to transform selected images..." : "Describe an image to generate..."}
+                className="w-full h-32 px-3 py-2 border border-zinc-300 dark:border-zinc-700 rounded bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 placeholder-zinc-400 dark:placeholder-zinc-600 resize-none focus:outline-none focus:ring-2 focus:ring-orange-500"
+              />
+            </div>
+
+            {/* Selected Images Info */}
+            {selectedCount > 0 && (
+              <div className="mb-4 p-3 bg-orange-50 dark:bg-orange-950/30 border border-orange-200 dark:border-orange-900 rounded">
+                <p className="text-sm text-orange-700 dark:text-orange-400">
+                  {selectedCount} image{selectedCount > 1 ? 's' : ''} selected and will be used as reference
+                </p>
+              </div>
+            )}
+
+            {/* Model Selection */}
+            <div className="mb-4">
+              <label className="block text-sm font-medium mb-2 text-zinc-700 dark:text-zinc-300">
+                Model
+              </label>
+              <select
+                value={config.model}
+                onChange={(e) => setConfig(prev => ({ ...prev, model: e.target.value }))}
+                className="w-full px-3 py-2 border border-zinc-300 dark:border-zinc-700 rounded bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-orange-500"
+              >
+                <option value="gemini-2.5-flash-image">Flash (Free, Fast)</option>
+                <option value="gemini-3-pro-image-preview">Pro (Paid, Higher Quality)</option>
+              </select>
+            </div>
+
+            {/* Aspect Ratio */}
+            <div className="mb-4">
+              <label className="block text-sm font-medium mb-2 text-zinc-700 dark:text-zinc-300">
+                Aspect Ratio
+              </label>
+              <div className="grid grid-cols-3 gap-2">
+                {['1:1', '16:9', '9:16', '3:4', '4:3'].map(ratio => (
+                  <button
+                    key={ratio}
+                    onClick={() => setConfig(prev => ({ ...prev, aspect_ratio: ratio }))}
+                    className={`py-2 px-3 rounded border transition-colors text-sm ${
+                      config.aspect_ratio === ratio
+                        ? 'bg-orange-50 dark:bg-orange-950/30 border-orange-300 dark:border-orange-900 text-orange-700 dark:text-orange-400'
+                        : 'bg-white dark:bg-zinc-800 border-zinc-300 dark:border-zinc-700 text-zinc-700 dark:text-zinc-400'
+                    }`}
+                  >
+                    {ratio}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Generate Button */}
+            <button
+              onClick={handleGenerate}
+              disabled={isGenerating}
+              className={`w-full py-3 rounded font-bold flex items-center justify-center gap-2 transition-all ${
+                isGenerating
+                  ? 'bg-zinc-200 dark:bg-zinc-800 text-zinc-400 dark:text-zinc-500 cursor-not-allowed'
+                  : 'bg-gradient-to-r from-orange-600 to-orange-500 hover:from-orange-500 hover:to-orange-400 text-white shadow-lg'
+              }`}
+            >
+              {isGenerating ? (
+                'Generating...'
+              ) : (
+                <>
+                  <Sparkles size={18} />
+                  Generate
+                </>
+              )}
+            </button>
+          </div>
         </div>
         ) : (
           <div className="flex-1 flex items-center justify-center bg-zinc-100 dark:bg-zinc-900/80">
@@ -1831,7 +1951,7 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
             </div>
             <h3 className="text-2xl font-bold text-zinc-900 dark:text-zinc-100">Choose where to start</h3>
             <p className="text-sm text-zinc-600 dark:text-zinc-400">
-              Create a fresh Mixboard or select a session from the menu in the top-right.
+              Create a fresh Mixboard or select a session from the menu in the top-left.
             </p>
             <div className="flex flex-wrap items-center justify-center gap-3">
               <button
@@ -1850,7 +1970,7 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
               )}
             </div>
             <p className="text-xs text-zinc-500 dark:text-zinc-500">
-              Use the session menu in the top-right corner to switch between your projects.
+              Use the session menu in the top-left corner to switch between your projects.
             </p>
           </div>
           </div>
@@ -1865,6 +1985,17 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
             setEditingImage(null);
           }}
           onSave={handleSaveEditedImage}
+        />
+
+        {/* SettingsModal */}
+        <SettingsModal
+          isOpen={showSettings}
+          onClose={() => setShowSettings(false)}
+          theme={theme}
+          onThemeChange={(newTheme: 'dark' | 'light') => {
+            // Theme change will be handled by parent component
+            console.log('Theme change requested:', newTheme);
+          }}
         />
 
         {/* Thumbnail Generation Loading Indicator */}
