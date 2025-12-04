@@ -185,7 +185,9 @@ function AppContent() {
   }, [preferencesReady, currentSessionId, currentMixboardSessionId]);
 
   // Define handlers before they're used in callbacks
-  const handleSelectSession = useCallback((id: string) => {
+  // Note: Using regular functions (not useCallback) since they reference
+  // loadGenerationIntoView and resetInputs which are also regular functions
+  const handleSelectSession = (id: string) => {
     setCurrentSessionId(id);
     const session = StorageService.loadSession(id);
     if (!session) return;
@@ -197,9 +199,9 @@ function AppContent() {
     } else {
         resetInputs();
     }
-  }, [loadGenerationIntoView, resetInputs]);
+  };
 
-  const handleNewSession = useCallback(() => {
+  const handleNewSession = () => {
     const newSession = StorageService.createSession("New Session", currentUser || undefined);
     setSessions(prev => [newSession, ...prev]);
     setCurrentSessionId(newSession.session_id);
@@ -208,7 +210,7 @@ function AppContent() {
       sessionId: newSession.session_id,
       user: currentUser?.displayName
     });
-  }, [currentUser, resetInputs]);
+  };
 
   const hydrateSessions = useCallback(async () => {
     if (!currentUser || hasHydratedSessions) return;
@@ -244,7 +246,8 @@ function AppContent() {
       // Only create new session if we don't already have one
       handleNewSession();
     }
-  }, [currentUser, currentSessionId, handleNewSession, handleSelectSession, hasHydratedSessions, userHistory.lastSessionId]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentUser, currentSessionId, hasHydratedSessions, userHistory.lastSessionId]);
 
   useEffect(() => {
     if (!currentUser) {
@@ -281,6 +284,7 @@ function AppContent() {
         clearTimeout(idleHandle as any);
       }
     };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentUser, currentSessionId, hydrateSessions, userHistory.lastSessionId]);
 
   useEffect(() => {
