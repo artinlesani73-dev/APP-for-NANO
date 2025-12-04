@@ -378,7 +378,7 @@ function AppContent() {
     }
   }, [currentUser]);
 
-  function handleNewSession() {
+  const handleNewSession = useCallback(() => {
     const newSession = StorageService.createSession("New Session", currentUser || undefined);
     setSessions(prev => [newSession, ...prev]);
     setCurrentSessionId(newSession.session_id);
@@ -387,7 +387,7 @@ function AppContent() {
       sessionId: newSession.session_id,
       user: currentUser?.displayName
     });
-  }
+  }, [currentUser, resetInputs]);
 
   const handleRenameSession = (id: string, newTitle: string) => {
     StorageService.renameSession(id, newTitle);
@@ -427,7 +427,7 @@ function AppContent() {
     }
   };
 
-  function handleSelectSession(id: string) {
+  const handleSelectSession = useCallback((id: string) => {
     setCurrentSessionId(id);
     const session = StorageService.loadSession(id);
     if (!session) return;
@@ -439,7 +439,7 @@ function AppContent() {
     } else {
         resetInputs();
     }
-  }
+  }, [loadGenerationIntoView, resetInputs]);
 
   const handleEditControlImage = (index: number) => {
     setEditingControlIndex(index);
