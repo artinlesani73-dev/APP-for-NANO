@@ -1,9 +1,11 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { Sparkles, Image as ImageIcon, Type, Trash2, ZoomIn, ZoomOut, Move, Download, Edit2, Check, X, LayoutTemplate, Bold, Italic, Save } from 'lucide-react';
+import { Sparkles, Image as ImageIcon, Type, Trash2, ZoomIn, ZoomOut, Move, Download, Edit2, Check, X, LayoutTemplate, Bold, Italic, Save, Upload, Settings, Folder, Undo, Redo, ChevronDown, Copy, FileText, Square } from 'lucide-react';
 import { GeminiService } from '../services/geminiService';
 import { StorageService } from '../services/newStorageService';
 import { GenerationConfig, CanvasImage, MixboardSession, MixboardGeneration, StoredImageMeta } from '../types';
 import { ImageEditModal } from './ImageEditModal';
+import { ProjectsPage } from './ProjectsPage';
+import { SettingsModal } from './SettingsModal';
 
 type CanvasEngine = {
   attach: (element: HTMLDivElement, options: { onZoom: (delta: number) => void }) => void;
@@ -97,10 +99,7 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
   const [isPanning, setIsPanning] = useState(false);
   const [showImageInput, setShowImageInput] = useState(true);  // Default to Image mode
   const [currentGeneration, setCurrentGeneration] = useState<MixboardGeneration | null>(null);
-  const [editingSessionId, setEditingSessionId] = useState<string | null>(null);
-  const [editingSessionTitle, setEditingSessionTitle] = useState('');
-  const [textToolbar, setTextToolbar] = useState<{ targetId: string | null; x: number; y: number }>({ targetId: null, x: 0, y: 0 });
-  const [draftFontSize, setDraftFontSize] = useState(16);
+  const [editingTextId, setEditingTextId] = useState<string | null>(null);
   const [contextMenu, setContextMenu] = useState({
     visible: false,
     x: 0,
@@ -109,20 +108,17 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
     canvasY: 0
   });
 
-  // Image context menu and edit modal state
-  const [imageContextMenu, setImageContextMenu] = useState<{
-    x: number;
-    y: number;
-    imageId: string;
-  } | null>(null);
-  const [boardContextMenu, setBoardContextMenu] = useState<{
-    x: number;
-    y: number;
-    boardId: string;
-  } | null>(null);
+  // Edit modal state
   const [editModalOpen, setEditModalOpen] = useState(false);
   const [editingImage, setEditingImage] = useState<CanvasImage | null>(null);
   const [isGeneratingThumbnails, setIsGeneratingThumbnails] = useState(false);
+
+  // New UI state
+  const [showProjectsPage, setShowProjectsPage] = useState(false);
+  const [sessionDropdownOpen, setSessionDropdownOpen] = useState(false);
+  const [editingSessionTitle, setEditingSessionTitle] = useState(false);
+  const [newSessionTitle, setNewSessionTitle] = useState('');
+  const [showSettings, setShowSettings] = useState(false);
 
   // Save system state
   const [isDirty, setIsDirty] = useState(false);
@@ -130,7 +126,6 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
 
   const canvasRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const textToolbarRef = useRef<HTMLDivElement>(null);
   const canvasEngineRef = useRef<CanvasEngine | null>(persistentCanvasEngine);
   const rafRef = useRef<number | null>(null);
   const lastUpdateRef = useRef<number>(0);
@@ -210,12 +205,15 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
     await saveCanvasToSession(canvasImagesRef.current);
   }, [currentSession, saveCanvasToSession]);
 
-  const closeImageContextMenu = useCallback(() => {
-    setImageContextMenu(null);
+  // Undo/Redo functionality - simplified to avoid infinite loops
+  const handleUndo = useCallback(() => {
+    // TODO: Implement proper undo functionality
+    console.log('Undo not yet implemented');
   }, []);
 
-  const closeBoardContextMenu = useCallback(() => {
-    setBoardContextMenu(null);
+  const handleRedo = useCallback(() => {
+    // TODO: Implement proper redo functionality
+    console.log('Redo not yet implemented');
   }, []);
 
   // Helper function to get center of visible canvas area
@@ -391,7 +389,7 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
     const handleEscape = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
         closeContextMenu();
-        setTextToolbar({ targetId: null, x: 0, y: 0 });
+        setEditingTextId(null);
       }
     };
 
@@ -408,17 +406,6 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
       }
     };
   }, [closeContextMenu]);
-
-  useEffect(() => {
-    const handleOutsideClick = (event: MouseEvent) => {
-      if (textToolbar.targetId && textToolbarRef.current && !textToolbarRef.current.contains(event.target as Node)) {
-        setTextToolbar({ targetId: null, x: 0, y: 0 });
-      }
-    };
-
-    window.addEventListener('mousedown', handleOutsideClick);
-    return () => window.removeEventListener('mousedown', handleOutsideClick);
-  }, [textToolbar.targetId]);
 
   useEffect(() => {
     const engine = canvasEngineRef.current ?? createCanvasEngine();
@@ -807,111 +794,31 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
     
   };
 
-  // Image context menu handlers
-  const handleImageContextMenu = (e: React.MouseEvent, imageId: string) => {
-    e.preventDefault();
-    e.stopPropagation();
-    setImageContextMenu({
-      x: e.clientX,
-      y: e.clientY,
-      imageId
-    });
-  };
-
-  const handleEditImage = async () => {
-    if (!imageContextMenu) return;
-    const image = canvasImages.find(img => img.id === imageContextMenu.imageId);
+  // Inline toolbar handlers for selected items
+  const handleEditImage = (imageId: string) => {
+    const image = canvasImages.find(img => img.id === imageId);
     if (image && image.dataUri) {
       setEditingImage(image);
       setEditModalOpen(true);
     }
-    closeImageContextMenu();
   };
 
-  const handleDeleteImage = () => {
-    if (!imageContextMenu) return;
-    setCanvasImages(prev => prev.filter(img => img.id !== imageContextMenu.imageId));
-
-    closeImageContextMenu();
+  const handleDeleteImage = (imageId: string) => {
+    setCanvasImages(prev => prev.filter(img => img.id !== imageId));
   };
 
-  // Board context menu handlers
-  const handleBoardContextMenu = (e: React.MouseEvent, boardId: string) => {
-    e.preventDefault();
-    e.stopPropagation();
-    setBoardContextMenu({
-      x: e.clientX,
-      y: e.clientY,
-      boardId
-    });
-  };
+  const handleDuplicateImage = (imageId: string) => {
+    const image = canvasImages.find(img => img.id === imageId);
+    if (!image) return;
 
-  const handleEditBoard = async () => {
-    if (!boardContextMenu) return;
-    const board = canvasImages.find(img => img.id === boardContextMenu.boardId);
-    if (!board) return;
-
-    // Convert board to an editable image (white canvas)
-    const canvas = document.createElement('canvas');
-    canvas.width = board.originalWidth || board.width;
-    canvas.height = board.originalHeight || board.height;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
-
-    // Fill with board's background color
-    ctx.fillStyle = board.backgroundColor || '#ffffff';
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-    const dataUri = canvas.toDataURL('image/png');
-    setEditingImage({ ...board, dataUri });
-    setEditModalOpen(true);
-    closeBoardContextMenu();
-  };
-
-  const handleChangeBoardAspectRatio = (ratio: string) => {
-    if (!boardContextMenu) return;
-    const board = canvasImages.find(img => img.id === boardContextMenu.boardId);
-    if (!board) return;
-
-    const aspectRatios: Record<string, { w: number; h: number }> = {
-      '1:1': { w: 1, h: 1 },
-      '3:4': { w: 3, h: 4 },
-      '4:3': { w: 4, h: 3 },
-      '16:9': { w: 16, h: 9 },
-      '9:16': { w: 9, h: 16 }
+    const newImage: CanvasImage = {
+      ...image,
+      id: `${image.type || 'img'}-${Date.now()}`,
+      x: image.x + 20,
+      y: image.y + 20,
+      selected: false
     };
-
-    const selectedRatio = aspectRatios[ratio];
-    if (!selectedRatio) return;
-
-    // Calculate new dimensions while maintaining area approximately
-    const currentArea = board.width * board.height;
-    const ratioValue = selectedRatio.w / selectedRatio.h;
-    const newHeight = Math.sqrt(currentArea / ratioValue);
-    const newWidth = newHeight * ratioValue;
-
-    setCanvasImages(prev =>
-      prev.map(img =>
-        img.id === boardContextMenu.boardId
-          ? {
-              ...img,
-              width: newWidth,
-              height: newHeight,
-              originalWidth: newWidth,
-              originalHeight: newHeight
-            }
-          : img
-      )
-    );
-
-    closeBoardContextMenu();
-  };
-
-  const handleDeleteBoard = () => {
-    if (!boardContextMenu) return;
-    setCanvasImages(prev => prev.filter(img => img.id !== boardContextMenu.boardId));
-
-    closeBoardContextMenu();
+    setCanvasImages(prev => [...prev, newImage]);
   };
 
   const handleSaveEditedImage = async (editedDataUri: string) => {
@@ -1166,15 +1073,7 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
 
   const handleTextDoubleClick = (e: React.MouseEvent, image: CanvasImage) => {
     e.stopPropagation();
-    const canvasRect = canvasRef.current?.getBoundingClientRect();
-    if (!canvasRect) return;
-
-    setDraftFontSize(image.fontSize || 16);
-    setTextToolbar({
-      targetId: image.id,
-      x: e.clientX - canvasRect.left + 10,
-      y: e.clientY - canvasRect.top - 10
-    });
+    setEditingTextId(image.id);
   };
 
   // Handle image selection and dragging
@@ -1225,7 +1124,7 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
 
   const handleCanvasMouseDown = (e: React.MouseEvent) => {
     closeContextMenu();
-    setTextToolbar({ targetId: null, x: 0, y: 0 });
+    setEditingTextId(null);
     if (e.target === canvasRef.current || (e.target as HTMLElement).classList.contains('canvas-background')) {
       // Start panning with middle mouse or space+left click
       if (e.button === 1 || (e.button === 0 && e.shiftKey)) {
@@ -1432,175 +1331,234 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
       } else if (e.key === 's' && (e.ctrlKey || e.metaKey)) {
         e.preventDefault();
         handleManualSave();
+      } else if (e.key === 'z' && (e.ctrlKey || e.metaKey) && !e.shiftKey && !isTyping) {
+        e.preventDefault();
+        handleUndo();
+      } else if ((e.key === 'y' && (e.ctrlKey || e.metaKey) && !isTyping) ||
+                 (e.key === 'z' && (e.ctrlKey || e.metaKey) && e.shiftKey && !isTyping)) {
+        e.preventDefault();
+        handleRedo();
       }
     };
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [handleDeleteSelected, handleManualSave]); // Removed canvasImages - not needed!
+  }, [handleDeleteSelected, handleManualSave, handleUndo, handleRedo]);
 
   const selectedCount = canvasImages.filter(img => img.selected).length;
 
   return (
-    <div className="h-full w-full flex bg-white dark:bg-black">
-      <input
-        type="file"
-        accept="image/*"
-        multiple
-        ref={fileInputRef}
-        className="hidden"
-        onChange={handleFileUpload}
-      />
-      {/* Left Sidebar - Session & History */}
-      <div className="w-72 border-r border-zinc-200 dark:border-zinc-800 flex flex-col bg-zinc-50 dark:bg-zinc-900/50">
-        {/* Header */}
-        <div className="p-4 border-b border-zinc-200 dark:border-zinc-800">
-          <div className="flex items-center gap-2 mb-3">
-            <Sparkles className="text-orange-500" size={20} />
-            <h2 className="text-lg font-bold text-zinc-900 dark:text-zinc-100">Mixboard</h2>
-            <span className="text-[10px] px-1.5 py-0.5 bg-orange-100 dark:bg-orange-900/30 text-orange-700 dark:text-orange-400 rounded font-medium">
-              Beta
-            </span>
+    <>
+      {showProjectsPage && (
+        <ProjectsPage
+          theme={theme}
+          sessions={allSessions}
+          onSelectSession={onSelectSession}
+          onClose={() => setShowProjectsPage(false)}
+          onDeleteSession={(sessionId) => {
+            StorageService.deleteSession(sessionId);
+            window.location.reload();
+          }}
+        />
+      )}
+
+      <div className="h-full w-full flex bg-white dark:bg-black relative">
+        <input
+          type="file"
+          accept="image/*"
+          multiple
+          ref={fileInputRef}
+          className="hidden"
+          onChange={handleFileUpload}
+        />
+
+        {/* Top-Left Session Toolbar */}
+        <div className="absolute top-4 left-4 z-40">
+          <div className="relative">
+            {editingSessionTitle ? (
+              <div className="flex items-center gap-2 bg-white dark:bg-zinc-900 border border-zinc-300 dark:border-zinc-700 rounded-lg shadow-lg px-3 py-2">
+                <input
+                  type="text"
+                  value={newSessionTitle}
+                  onChange={(e) => setNewSessionTitle(e.target.value)}
+                  className="w-48 px-2 py-1 text-sm bg-white dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-700 rounded text-zinc-900 dark:text-zinc-100 focus:outline-none focus:border-orange-500"
+                  autoFocus
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && currentSession) {
+                      StorageService.renameSession(currentSession.session_id, newSessionTitle);
+                      const updatedSession = { ...currentSession, title: newSessionTitle };
+                      onSessionUpdate(updatedSession as MixboardSession);
+                      setEditingSessionTitle(false);
+                    } else if (e.key === 'Escape') {
+                      setEditingSessionTitle(false);
+                    }
+                  }}
+                />
+                <button
+                  onClick={() => {
+                    if (currentSession) {
+                      StorageService.renameSession(currentSession.session_id, newSessionTitle);
+                      const updatedSession = { ...currentSession, title: newSessionTitle };
+                      onSessionUpdate(updatedSession as MixboardSession);
+                      setEditingSessionTitle(false);
+                    }
+                  }}
+                  className="p-1 text-green-600 dark:text-green-400 hover:bg-green-100 dark:hover:bg-green-900/30 rounded"
+                >
+                  <Check size={16} />
+                </button>
+                <button
+                  onClick={() => setEditingSessionTitle(false)}
+                  className="p-1 text-zinc-500 dark:text-zinc-400 hover:bg-zinc-200 dark:hover:bg-zinc-700 rounded"
+                >
+                  <X size={16} />
+                </button>
+              </div>
+            ) : (
+              <>
+                <button
+                  onClick={() => setSessionDropdownOpen(!sessionDropdownOpen)}
+                  onDoubleClick={() => {
+                    if (currentSession) {
+                      setNewSessionTitle(currentSession.title);
+                      setEditingSessionTitle(true);
+                    }
+                  }}
+                  className="flex items-center gap-2 bg-white dark:bg-zinc-900 border border-zinc-300 dark:border-zinc-700 rounded-lg shadow-lg px-4 py-2 hover:bg-zinc-50 dark:hover:bg-zinc-800 transition-colors"
+                >
+                  <FileText size={16} className="text-zinc-600 dark:text-zinc-400" />
+                  <span className="text-sm font-medium text-zinc-900 dark:text-zinc-100">
+                    {currentSession?.title || 'No Session'}
+                  </span>
+                  <ChevronDown size={16} className="text-zinc-600 dark:text-zinc-400" />
+                </button>
+
+                {sessionDropdownOpen && (
+                  <>
+                    <div
+                      className="fixed inset-0 z-40"
+                      onClick={() => setSessionDropdownOpen(false)}
+                    />
+                    <div className="absolute left-0 top-full mt-2 w-64 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 rounded-lg shadow-xl z-50 overflow-hidden">
+                      <button
+                        onClick={() => {
+                          setShowProjectsPage(true);
+                          setSessionDropdownOpen(false);
+                        }}
+                        className="w-full px-4 py-2 text-left text-sm hover:bg-zinc-100 dark:hover:bg-zinc-800 text-zinc-700 dark:text-zinc-200 flex items-center gap-2 border-b border-zinc-200 dark:border-zinc-700"
+                      >
+                        <Folder size={16} />
+                        Projects
+                      </button>
+                      <button
+                        onClick={() => {
+                          onCreateSession && onCreateSession();
+                          setSessionDropdownOpen(false);
+                        }}
+                        className="w-full px-4 py-2 text-left text-sm hover:bg-zinc-100 dark:hover:bg-zinc-800 text-zinc-700 dark:text-zinc-200 flex items-center gap-2 border-b border-zinc-200 dark:border-zinc-700"
+                      >
+                        <Sparkles size={16} />
+                        New Session
+                      </button>
+                      <div className="px-3 py-2 text-xs font-semibold text-zinc-500 dark:text-zinc-400 border-b border-zinc-200 dark:border-zinc-700">
+                        Recent Sessions
+                      </div>
+                      {allSessions.slice(0, 3).map(session => (
+                        <button
+                          key={session.session_id}
+                          onClick={() => {
+                            onSelectSession(session.session_id);
+                            setSessionDropdownOpen(false);
+                          }}
+                          className={`w-full px-4 py-2 text-left text-sm hover:bg-zinc-100 dark:hover:bg-zinc-800 ${
+                            currentSession?.session_id === session.session_id
+                              ? 'bg-orange-50 dark:bg-orange-950/30 text-orange-700 dark:text-orange-400'
+                              : 'text-zinc-700 dark:text-zinc-200'
+                          }`}
+                        >
+                          <div className="truncate">{session.title}</div>
+                        </button>
+                      ))}
+                      <button
+                        onClick={() => {
+                          if (currentSession) {
+                            const dataStr = JSON.stringify(currentSession, null, 2);
+                            const blob = new Blob([dataStr], { type: 'application/json' });
+                            const url = URL.createObjectURL(blob);
+                            const link = document.createElement('a');
+                            link.href = url;
+                            link.download = `mixboard-session-${currentSession.session_id}.json`;
+                            document.body.appendChild(link);
+                            link.click();
+                            document.body.removeChild(link);
+                            URL.revokeObjectURL(url);
+                          }
+                          setSessionDropdownOpen(false);
+                        }}
+                        className="w-full px-4 py-2 text-left text-sm hover:bg-zinc-100 dark:hover:bg-zinc-800 text-zinc-700 dark:text-zinc-200 flex items-center gap-2 border-t border-zinc-200 dark:border-zinc-700"
+                      >
+                        <Download size={16} />
+                        Export JSON
+                      </button>
+                    </div>
+                  </>
+                )}
+              </>
+            )}
           </div>
         </div>
 
-        {/* Sessions List */}
-        <div className="flex items-center justify-between px-4 py-3 border-b border-zinc-200 dark:border-zinc-700">
-          <h4 className="text-xs font-bold text-zinc-700 dark:text-zinc-300">Sessions</h4>
+        {/* Left-Side Vertical Toolbar - Unified */}
+        <div className="absolute left-4 top-1/2 -translate-y-1/2 z-30 bg-white dark:bg-zinc-900 border border-zinc-300 dark:border-zinc-700 rounded-lg shadow-lg flex flex-col">
           <button
-            onClick={() => onCreateSession && onCreateSession()}
-            className="text-xs px-2 py-1 bg-orange-500 text-white rounded hover:bg-orange-600 transition-colors"
+            className="p-2 hover:bg-zinc-50 dark:hover:bg-zinc-800 transition-colors"
+            title="Templates (Coming Soon)"
           >
-            + New
+            <LayoutTemplate size={20} className="text-zinc-600 dark:text-zinc-400" />
           </button>
-        </div>
-
-        <div className="flex-1 overflow-y-auto">
-          {allSessions.map(session => (
-            <div
-              key={session.session_id}
-              className={`group px-4 py-2 border-b border-zinc-200 dark:border-zinc-700 ${
-                currentSession?.session_id === session.session_id
-                  ? 'bg-orange-50 dark:bg-orange-950/30'
-                  : 'hover:bg-zinc-100 dark:hover:bg-zinc-800'
-              }`}
-            >
-              {editingSessionId === session.session_id ? (
-                <div className="flex items-center gap-2">
-                  <input
-                    type="text"
-                    value={editingSessionTitle}
-                    onChange={(e) => setEditingSessionTitle(e.target.value)}
-                    className="flex-1 px-2 py-1 text-xs bg-white dark:bg-zinc-900 border border-zinc-300 dark:border-zinc-700 rounded text-zinc-900 dark:text-zinc-100 focus:outline-none focus:border-orange-500"
-                    autoFocus
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter') {
-                        StorageService.renameSession(session.session_id, editingSessionTitle);
-                        setEditingSessionId(null);
-                        // Update the session in the parent component
-                        const updatedSession = { ...session, title: editingSessionTitle };
-                        onSessionUpdate(updatedSession as MixboardSession);
-                      } else if (e.key === 'Escape') {
-                        setEditingSessionId(null);
-                      }
-                    }}
-                  />
-                  <button
-                    onClick={() => {
-                      StorageService.renameSession(session.session_id, editingSessionTitle);
-                      setEditingSessionId(null);
-                      const updatedSession = { ...session, title: editingSessionTitle };
-                      onSessionUpdate(updatedSession as MixboardSession);
-                    }}
-                    className="p-1 text-green-600 dark:text-green-400 hover:bg-green-100 dark:hover:bg-green-900/30 rounded"
-                  >
-                    <Check size={14} />
-                  </button>
-                  <button
-                    onClick={() => setEditingSessionId(null)}
-                    className="p-1 text-zinc-500 dark:text-zinc-400 hover:bg-zinc-200 dark:hover:bg-zinc-700 rounded"
-                  >
-                    <X size={14} />
-                  </button>
-                </div>
-              ) : (
-                <div className="flex items-center justify-between">
-                  <button
-                    onClick={() => onSelectSession(session.session_id)}
-                    className="flex-1 text-left text-xs text-zinc-900 dark:text-zinc-100 truncate"
-                  >
-                    {session.title}
-                  </button>
-                  <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                    <button
-                      onClick={() => {
-                        setEditingSessionId(session.session_id);
-                        setEditingSessionTitle(session.title);
-                      }}
-                      className="p-1 text-zinc-600 dark:text-zinc-400 hover:bg-zinc-200 dark:hover:bg-zinc-700 rounded"
-                    >
-                      <Edit2 size={12} />
-                    </button>
-                    <button
-                      onClick={() => {
-                        if ((session.generations ?? []).length > 0) {
-                          alert('Cannot delete session with generations. Please clear the session first.');
-                          return;
-                        }
-                        if (window.confirm(`Delete session "${session.title}"?`)) {
-                          StorageService.deleteSession(session.session_id);
-                          // If deleting current session, select another one
-                          if (currentSession?.session_id === session.session_id) {
-                            const otherSession = allSessions.find(s => s.session_id !== session.session_id);
-                            if (otherSession) {
-                              onSelectSession(otherSession.session_id);
-                            }
-                          }
-                          // Force a re-render by updating parent
-                          window.location.reload();
-                        }
-                      }}
-                      className="p-1 text-red-600 dark:text-red-400 hover:bg-red-100 dark:hover:bg-red-900/30 rounded"
-                    >
-                      <Trash2 size={12} />
-                    </button>
-                  </div>
-                </div>
-              )}
-            </div>
-          ))}
-        </div>
-
-        {/* Export Session */}
-        <div className="p-4 border-t border-zinc-200 dark:border-zinc-700">
+          <button
+            className="p-2 hover:bg-zinc-50 dark:hover:bg-zinc-800 transition-colors"
+            title="Assets (Coming Soon)"
+          >
+            <ImageIcon size={20} className="text-zinc-600 dark:text-zinc-400" />
+          </button>
+          <button
+            onClick={() => fileInputRef.current?.click()}
+            className="p-2 hover:bg-zinc-50 dark:hover:bg-zinc-800 transition-colors"
+            title="Upload Image"
+          >
+            <Upload size={20} className="text-zinc-600 dark:text-zinc-400" />
+          </button>
           <button
             onClick={() => {
-              if (!currentSession) return;
-              const dataStr = JSON.stringify(currentSession, null, 2);
-              const blob = new Blob([dataStr], { type: 'application/json' });
-              const url = URL.createObjectURL(blob);
-              const link = document.createElement('a');
-              link.href = url;
-              link.download = `mixboard-session-${currentSession.session_id}.json`;
-              document.body.appendChild(link);
-              link.click();
-              document.body.removeChild(link);
-              URL.revokeObjectURL(url);
+              const center = getVisibleCanvasCenter();
+              addTextToCanvas('Double-click to edit text', center.x, center.y);
             }}
-            className="w-full py-2 px-3 border border-zinc-300 dark:border-zinc-700 rounded text-zinc-700 dark:text-zinc-300 text-xs hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors flex items-center justify-center gap-2"
+            className="p-2 hover:bg-zinc-50 dark:hover:bg-zinc-800 transition-colors"
+            title="Add Text"
           >
-            <Download size={14} />
-            Export Session
+            <Type size={20} className="text-zinc-600 dark:text-zinc-400" />
+          </button>
+          <button
+            onClick={handleAddWhiteboardFromContext}
+            className="p-2 hover:bg-zinc-50 dark:hover:bg-zinc-800 transition-colors"
+            title="Add Whiteboard"
+          >
+            <Square size={20} className="text-zinc-600 dark:text-zinc-400" />
+          </button>
+          <button
+            onClick={() => setShowSettings(true)}
+            className="p-2 hover:bg-zinc-50 dark:hover:bg-zinc-800 transition-colors"
+            title="Settings"
+          >
+            <Settings size={20} className="text-zinc-600 dark:text-zinc-400" />
           </button>
         </div>
-      </div>
 
-      {/* Main Content */}
-      <div className="flex-1 flex flex-col">
-
-      {currentSession ? (
-      <div className="flex-1 flex overflow-hidden">
-        {/* Canvas Area */}
+        {/* Main Content */}
+        {currentSession ? (
+        <div className="flex-1 flex overflow-hidden">
+          {/* Canvas Area */}
         <div
           ref={canvasRef}
           className="flex-1 relative overflow-hidden cursor-crosshair canvas-background"
@@ -1618,11 +1576,6 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
           onDrop={handleDrop}
           onDragOver={handleDragOver}
           onContextMenu={handleCanvasContextMenu}
-          onWheel={(e) => {
-            e.preventDefault();
-            const delta = e.deltaY > 0 ? -0.05 : 0.05;
-            setZoom(prev => Math.max(0.1, Math.min(3, prev + delta)));
-          }}
         >
           {/* Empty Canvas Message */}
           {canvasImages.length === 0 && (
@@ -1646,71 +1599,270 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
 
           {/* Canvas Images & Text */}
           {canvasImages.map(image => (
-            <div
-              key={image.id}
-              className={`absolute cursor-move ${image.selected ? 'ring-4 ring-orange-500' : 'ring-1 ring-zinc-300 dark:ring-zinc-700'}`}
-              style={{
-                left: `${image.x * zoom + panOffset.x}px`,
-                top: `${image.y * zoom + panOffset.y}px`,
-                width: `${image.width * zoom}px`,
-                height: `${image.height * zoom}px`,
-                transformOrigin: 'top left',
-                userSelect: 'none',
-                WebkitUserSelect: 'none',
-                MozUserSelect: 'none',
-                msUserSelect: 'none'
-              }}
-              onMouseDown={(e) => handleImageMouseDown(e, image.id)}
-              onContextMenu={(e) => {
-                if (image.type === 'board') {
-                  handleBoardContextMenu(e, image.id);
-                } else if (image.type !== 'text' && image.dataUri) {
-                  handleImageContextMenu(e, image.id);
-                }
-              }}
-              onDoubleClick={(e) => {
-                if (image.type === 'text') {
-                  handleTextDoubleClick(e, image);
-                }
-              }}
-            >
-              {image.type === 'text' ? (
+            <React.Fragment key={image.id}>
+              <div
+                className={`absolute cursor-move ${image.selected ? 'ring-4 ring-orange-500' : 'ring-1 ring-zinc-300 dark:ring-zinc-700'}`}
+                style={{
+                  left: `${image.x * zoom + panOffset.x}px`,
+                  top: `${image.y * zoom + panOffset.y}px`,
+                  width: `${image.width * zoom}px`,
+                  height: `${image.height * zoom}px`,
+                  transformOrigin: 'top left',
+                  userSelect: 'none',
+                  WebkitUserSelect: 'none',
+                  MozUserSelect: 'none',
+                  msUserSelect: 'none'
+                }}
+                onMouseDown={(e) => handleImageMouseDown(e, image.id)}
+                onDoubleClick={(e) => {
+                  if (image.type === 'text') {
+                    handleTextDoubleClick(e, image);
+                  }
+                }}
+              >
+                {image.type === 'text' ? (
+                  <div
+                    contentEditable={editingTextId === image.id}
+                    suppressContentEditableWarning
+                    onBlur={(e) => {
+                      if (editingTextId === image.id) {
+                        updateTextEntity(image.id, { text: e.currentTarget.textContent || '' });
+                        setEditingTextId(null);
+                      }
+                    }}
+                    onInput={(e) => {
+                      if (editingTextId === image.id) {
+                        updateTextEntity(image.id, { text: e.currentTarget.textContent || '' });
+                      }
+                    }}
+                    className={`w-full h-full bg-white dark:bg-zinc-900 text-zinc-900 dark:text-zinc-100 overflow-auto ${editingTextId === image.id ? 'pointer-events-auto' : 'pointer-events-none'} outline-none`}
+                    style={{
+                      fontSize: `${(image.fontSize || 16) * zoom}px`,
+                      lineHeight: '1.5',
+                      fontWeight: image.fontWeight || 'normal',
+                      fontStyle: image.fontStyle || 'normal',
+                      fontFamily: image.fontFamily || 'Inter, system-ui, sans-serif',
+                      padding: `${12 * zoom}px`
+                    }}
+                  >
+                    {image.text}
+                  </div>
+                ) : image.type === 'board' ? (
+                  <div
+                    className="w-full h-full border border-dashed border-zinc-300 dark:border-zinc-700 bg-white/90 dark:bg-zinc-900/80 pointer-events-none"
+                    style={{ backgroundColor: image.backgroundColor || '#ffffff' }}
+                  />
+                ) : (
+                  <img
+                    src={image.thumbnailUri || image.dataUri}
+                    alt="Canvas item"
+                    className="w-full h-full object-cover pointer-events-none"
+                    draggable={false}
+                    style={{
+                      userSelect: 'none',
+                      WebkitUserSelect: 'none',
+                      MozUserSelect: 'none',
+                      msUserSelect: 'none'
+                    } as React.CSSProperties}
+                    onDragStart={(e) => e.preventDefault()}
+                  />
+                )}
+                {image.selected && (
+                  <div className="absolute bottom-0 right-0 w-4 h-4 bg-orange-500 cursor-nwse-resize" />
+                )}
+              </div>
+
+              {/* Inline Toolbar for Selected Item */}
+              {image.selected && selectedCount === 1 && (
                 <div
-                  className="w-full h-full p-3 bg-white dark:bg-zinc-900 text-zinc-900 dark:text-zinc-100 overflow-auto pointer-events-none"
+                  className="absolute flex items-center gap-1 bg-zinc-900/95 dark:bg-zinc-800/95 backdrop-blur-sm border border-zinc-700 dark:border-zinc-600 rounded-lg shadow-xl px-2 py-1.5"
                   style={{
-                    fontSize: `${(image.fontSize || 16) * zoom}px`,
-                    lineHeight: '1.5',
-                    fontWeight: image.fontWeight || 'normal',
-                    fontStyle: image.fontStyle || 'normal',
-                    fontFamily: image.fontFamily || 'Inter, system-ui, sans-serif'
+                    left: `${image.x * zoom + panOffset.x}px`,
+                    top: `${(image.y + image.height) * zoom + panOffset.y + 8}px`,
+                    zIndex: 1000
                   }}
+                  onMouseDown={(e) => e.stopPropagation()}
                 >
-                  {image.text}
+                  {image.type === 'board' ? (
+                    // Whiteboard-specific toolbar
+                    <>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          const color = window.prompt('Enter background color (hex, rgb, or color name):', image.backgroundColor || '#ffffff');
+                          if (color) {
+                            setCanvasImages(prev => prev.map(img =>
+                              img.id === image.id ? { ...img, backgroundColor: color } : img
+                            ));
+                          }
+                        }}
+                        className="p-1.5 rounded hover:bg-zinc-700 dark:hover:bg-zinc-700 transition-colors"
+                        title="Edit Color"
+                      >
+                        <Edit2 size={16} className="text-white" />
+                      </button>
+                      <div className="w-px h-4 bg-zinc-600 mx-1"></div>
+                      <div className="flex items-center gap-1">
+                        <span className="text-xs text-zinc-400 px-1">Aspect:</span>
+                        {['1:1', '16:9', '9:16', '4:3', '3:4'].map(ratio => {
+                          const [w, h] = ratio.split(':').map(Number);
+                          const aspectRatio = w / h;
+                          return (
+                            <button
+                              key={ratio}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                const currentWidth = image.width;
+                                const newHeight = currentWidth / aspectRatio;
+                                setCanvasImages(prev => prev.map(img =>
+                                  img.id === image.id
+                                    ? { ...img, height: newHeight, originalHeight: newHeight }
+                                    : img
+                                ));
+                              }}
+                              className="px-2 py-1 text-xs rounded hover:bg-zinc-700 dark:hover:bg-zinc-700 transition-colors text-white"
+                              title={`Set aspect ratio to ${ratio}`}
+                            >
+                              {ratio}
+                            </button>
+                          );
+                        })}
+                      </div>
+                      <div className="w-px h-4 bg-zinc-600 mx-1"></div>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleDuplicateImage(image.id);
+                        }}
+                        className="p-1.5 rounded hover:bg-zinc-700 dark:hover:bg-zinc-700 transition-colors"
+                        title="Duplicate"
+                      >
+                        <Copy size={16} className="text-white" />
+                      </button>
+                      <div className="w-px h-4 bg-zinc-600 mx-1"></div>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleDeleteImage(image.id);
+                        }}
+                        className="p-1.5 rounded hover:bg-red-600 dark:hover:bg-red-600 transition-colors"
+                        title="Delete"
+                      >
+                        <Trash2 size={16} className="text-white" />
+                      </button>
+                    </>
+                  ) : image.type === 'text' ? (
+                    // Text-specific toolbar
+                    <>
+                      <div className="flex items-center gap-1">
+                        <span className="text-xs text-zinc-400 px-1">Size:</span>
+                        <input
+                          type="number"
+                          min={10}
+                          max={72}
+                          value={image.fontSize || 16}
+                          onChange={(e) => {
+                            e.stopPropagation();
+                            const value = Number(e.target.value) || 10;
+                            updateTextEntity(image.id, { fontSize: value });
+                          }}
+                          onClick={(e) => e.stopPropagation()}
+                          className="w-14 px-1 py-0.5 text-xs bg-zinc-800 border border-zinc-600 rounded text-white focus:outline-none focus:border-orange-500"
+                        />
+                      </div>
+                      <div className="w-px h-4 bg-zinc-600 mx-1"></div>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          updateTextEntity(image.id, { fontWeight: image.fontWeight === 'bold' ? 'normal' : 'bold' });
+                        }}
+                        className={`p-1.5 rounded transition-colors ${
+                          image.fontWeight === 'bold'
+                            ? 'bg-orange-600 text-white'
+                            : 'hover:bg-zinc-700 text-white'
+                        }`}
+                        title="Bold"
+                      >
+                        <Bold size={14} />
+                      </button>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          updateTextEntity(image.id, { fontStyle: image.fontStyle === 'italic' ? 'normal' : 'italic' });
+                        }}
+                        className={`p-1.5 rounded transition-colors ${
+                          image.fontStyle === 'italic'
+                            ? 'bg-orange-600 text-white'
+                            : 'hover:bg-zinc-700 text-white'
+                        }`}
+                        title="Italic"
+                      >
+                        <Italic size={14} />
+                      </button>
+                      <div className="w-px h-4 bg-zinc-600 mx-1"></div>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleDuplicateImage(image.id);
+                        }}
+                        className="p-1.5 rounded hover:bg-zinc-700 dark:hover:bg-zinc-700 transition-colors"
+                        title="Duplicate"
+                      >
+                        <Copy size={16} className="text-white" />
+                      </button>
+                      <div className="w-px h-4 bg-zinc-600 mx-1"></div>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleDeleteImage(image.id);
+                        }}
+                        className="p-1.5 rounded hover:bg-red-600 dark:hover:bg-red-600 transition-colors"
+                        title="Delete"
+                      >
+                        <Trash2 size={16} className="text-white" />
+                      </button>
+                    </>
+                  ) : (
+                    // Image toolbar
+                    <>
+                      {image.dataUri && (
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleEditImage(image.id);
+                          }}
+                          className="p-1.5 rounded hover:bg-zinc-700 dark:hover:bg-zinc-700 transition-colors"
+                          title="Edit"
+                        >
+                          <Edit2 size={16} className="text-white" />
+                        </button>
+                      )}
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleDuplicateImage(image.id);
+                        }}
+                        className="p-1.5 rounded hover:bg-zinc-700 dark:hover:bg-zinc-700 transition-colors"
+                        title="Duplicate"
+                      >
+                        <Copy size={16} className="text-white" />
+                      </button>
+                      <div className="w-px h-4 bg-zinc-600 mx-1"></div>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleDeleteImage(image.id);
+                        }}
+                        className="p-1.5 rounded hover:bg-red-600 dark:hover:bg-red-600 transition-colors"
+                        title="Delete"
+                      >
+                        <Trash2 size={16} className="text-white" />
+                      </button>
+                    </>
+                  )}
                 </div>
-              ) : image.type === 'board' ? (
-                <div
-                  className="w-full h-full border border-dashed border-zinc-300 dark:border-zinc-700 bg-white/90 dark:bg-zinc-900/80 pointer-events-none"
-                  style={{ backgroundColor: image.backgroundColor || '#ffffff' }}
-                />
-              ) : (
-                <img
-                  src={image.thumbnailUri || image.dataUri}
-                  alt="Canvas item"
-                  className="w-full h-full object-cover pointer-events-none"
-                  draggable={false}
-                  style={{
-                    userSelect: 'none',
-                    WebkitUserSelect: 'none',
-                    MozUserSelect: 'none',
-                    msUserSelect: 'none'
-                  } as React.CSSProperties}
-                  onDragStart={(e) => e.preventDefault()}
-                />
               )}
-              {image.selected && (
-                <div className="absolute bottom-0 right-0 w-4 h-4 bg-orange-500 cursor-nwse-resize" />
-              )}
-            </div>
+            </React.Fragment>
           ))}
 
           {/* Selection Box */}
@@ -1726,258 +1878,160 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
             />
           )}
 
-          {/* Save Button */}
-          <div className="absolute top-4 right-4 flex flex-col gap-2">
+          {/* Bottom-Center Toolbar */}
+          <div className="absolute bottom-4 left-1/2 -translate-x-1/2 flex items-center gap-2 bg-zinc-900/90 dark:bg-zinc-800/90 backdrop-blur-sm border border-zinc-700 dark:border-zinc-600 rounded-full shadow-xl px-4 py-2">
             <button
-              onClick={handleManualSave}
-              title={`Save session (Ctrl+S) - Auto-save every ${autoSaveInterval} min`}
-              className="p-2 bg-white dark:bg-zinc-900 border border-zinc-300 dark:border-zinc-700 rounded shadow hover:bg-zinc-50 dark:hover:bg-zinc-800 text-zinc-700 dark:text-zinc-300"
+              onClick={handleUndo}
+              disabled={true}
+              className="p-2 rounded-lg hover:bg-zinc-700 dark:hover:bg-zinc-700 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+              title="Undo (Coming Soon)"
             >
-              <Save size={16} />
-            </button>
-
-            <div className="border-t border-zinc-300 dark:border-zinc-700 my-1"></div>
-          </div>
-
-          {/* Zoom Controls */}
-          <div className="absolute top-20 right-4 flex flex-col gap-2">
-            <button
-              onClick={handleZoomIn}
-              className="p-2 bg-white dark:bg-zinc-900 border border-zinc-300 dark:border-zinc-700 rounded shadow hover:bg-zinc-50 dark:hover:bg-zinc-800"
-            >
-              <ZoomIn size={16} className="text-zinc-700 dark:text-zinc-300" />
+              <Undo size={18} className="text-white" />
             </button>
             <button
-              onClick={handleZoomOut}
-              className="p-2 bg-white dark:bg-zinc-900 border border-zinc-300 dark:border-zinc-700 rounded shadow hover:bg-zinc-50 dark:hover:bg-zinc-800"
+              onClick={handleRedo}
+              disabled={true}
+              className="p-2 rounded-lg hover:bg-zinc-700 dark:hover:bg-zinc-700 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+              title="Redo (Coming Soon)"
             >
-              <ZoomOut size={16} className="text-zinc-700 dark:text-zinc-300" />
+              <Redo size={18} className="text-white" />
             </button>
-            <div className="px-2 py-1 bg-white dark:bg-zinc-900 border border-zinc-300 dark:border-zinc-700 rounded shadow text-xs text-zinc-700 dark:text-zinc-300">
+            <div className="w-px h-6 bg-zinc-600"></div>
+            <button
+              onClick={() => setZoom(prev => Math.round((prev - 0.1) * 10) / 10)}
+              disabled={zoom <= 0.1}
+              className="p-2 rounded-lg hover:bg-zinc-700 dark:hover:bg-zinc-700 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+              title="Zoom Out"
+            >
+              <ZoomOut size={18} className="text-white" />
+            </button>
+            <div className="px-3 py-1 min-w-[60px] text-center text-sm font-medium text-white">
               {Math.round(zoom * 100)}%
             </div>
-          </div>
-
-          {/* Selection Info */}
-          {selectedCount > 0 && (
-            <div className="absolute bottom-4 left-4 flex gap-2">
-              <div className="px-3 py-2 bg-white dark:bg-zinc-900 border border-zinc-300 dark:border-zinc-700 rounded shadow text-sm text-zinc-700 dark:text-zinc-300">
-                {selectedCount} selected
-              </div>
-              <button
-                onClick={handleDeleteSelected}
-                className="px-3 py-2 bg-red-500 text-white rounded shadow hover:bg-red-600 flex items-center gap-2"
-              >
-                <Trash2 size={16} />
-                Delete
-              </button>
-            </div>
-          )}
-
-          {textToolbar.targetId && (() => {
-            const textTarget = canvasImages.find(img => img.id === textToolbar.targetId && img.type === 'text');
-            if (!textTarget) return null;
-
-            return (
-              <div
-                ref={textToolbarRef}
-                className="absolute z-50 w-72 p-3 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 rounded shadow-lg space-y-2"
-                style={{ left: textToolbar.x, top: textToolbar.y }}
-                onMouseDown={(e) => e.stopPropagation()}
-              >
-                <div className="flex items-center justify-between gap-2">
-                  <label className="text-xs text-zinc-500 dark:text-zinc-400">Font size</label>
-                  <input
-                    type="number"
-                    min={10}
-                    max={72}
-                    value={draftFontSize}
-                    onChange={(e) => {
-                      const value = Number(e.target.value) || 10;
-                      setDraftFontSize(value);
-                      updateTextEntity(textTarget.id, { fontSize: value });
-                    }}
-                    className="w-20 px-2 py-1 text-xs bg-white dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-700 rounded focus:outline-none focus:border-orange-500"
-                  />
-                  <div className="flex items-center gap-1">
-                    <button
-                      onClick={() => updateTextEntity(textTarget.id, { fontWeight: textTarget.fontWeight === 'bold' ? 'normal' : 'bold' })}
-                      className={`p-1 rounded border ${textTarget.fontWeight === 'bold' ? 'bg-orange-100 dark:bg-orange-900/40 border-orange-300 dark:border-orange-800 text-orange-700 dark:text-orange-300' : 'border-zinc-300 dark:border-zinc-700 text-zinc-600 dark:text-zinc-300'}`}
-                      aria-label="Toggle bold"
-                    >
-                      <Bold size={14} />
-                    </button>
-                    <button
-                      onClick={() => updateTextEntity(textTarget.id, { fontStyle: textTarget.fontStyle === 'italic' ? 'normal' : 'italic' })}
-                      className={`p-1 rounded border ${textTarget.fontStyle === 'italic' ? 'bg-orange-100 dark:bg-orange-900/40 border-orange-300 dark:border-orange-800 text-orange-700 dark:text-orange-300' : 'border-zinc-300 dark:border-zinc-700 text-zinc-600 dark:text-zinc-300'}`}
-                      aria-label="Toggle italic"
-                    >
-                      <Italic size={14} />
-                    </button>
-                  </div>
-                </div>
-                <textarea
-                  value={textTarget.text || ''}
-                  onChange={(e) => updateTextEntity(textTarget.id, { text: e.target.value })}
-                  className="w-full h-24 text-sm px-2 py-1 bg-white dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-700 rounded focus:outline-none focus:border-orange-500 text-zinc-800 dark:text-zinc-100"
-                />
-                <div className="flex justify-end">
-                  <button
-                    onClick={() => setTextToolbar({ targetId: null, x: 0, y: 0 })}
-                    className="px-2 py-1 text-xs bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 rounded border border-zinc-300 dark:border-zinc-700 hover:bg-zinc-200 dark:hover:bg-zinc-700"
-                  >
-                    Close
-                  </button>
-                </div>
-              </div>
-            );
-          })()}
-
-          {contextMenu.visible && (
-            <div
-              className="fixed z-50 w-48 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 rounded shadow-lg overflow-hidden"
-              style={{ left: contextMenu.x, top: contextMenu.y }}
-              onClick={(e) => e.stopPropagation()}
-              onMouseDown={(e) => e.stopPropagation()}
-              onContextMenu={(e) => e.preventDefault()}
-            >
-              <button
-                onClick={handleOpenUploadFromContext}
-                className="w-full flex items-center gap-2 px-3 py-2 text-sm text-zinc-800 dark:text-zinc-100 hover:bg-zinc-100 dark:hover:bg-zinc-800"
-              >
-                <ImageIcon size={16} />
-                Upload image
-              </button>
-              <button
-                onClick={handleAddTextFromContext}
-                className="w-full flex items-center gap-2 px-3 py-2 text-sm text-zinc-800 dark:text-zinc-100 hover:bg-zinc-100 dark:hover:bg-zinc-800"
-              >
-                <Type size={16} />
-                Add text
-              </button>
-              <button
-                onClick={handleAddWhiteboardFromContext}
-                className="w-full flex items-center gap-2 px-3 py-2 text-sm text-zinc-800 dark:text-zinc-100 hover:bg-zinc-100 dark:hover:bg-zinc-800"
-              >
-                <LayoutTemplate size={16} />
-                Add whiteboard
-              </button>
-            </div>
-          )}
-        </div>
-
-        {/* Right Sidebar - Generation Controls */}
-        <div className="w-96 border-l border-zinc-200 dark:border-zinc-800 p-6 overflow-y-auto bg-zinc-50 dark:bg-zinc-900/50">
-          <h3 className="text-lg font-bold mb-4 text-zinc-900 dark:text-zinc-100">Generate</h3>
-
-          {/* Mode Toggle */}
-          <div className="flex gap-2 mb-4">
             <button
-              onClick={() => setShowImageInput(false)}
-              className={`flex-1 flex items-center justify-center gap-2 py-2 px-3 rounded border transition-colors ${
-                !showImageInput
-                  ? 'bg-orange-50 dark:bg-orange-950/30 border-orange-300 dark:border-orange-900 text-orange-700 dark:text-orange-400'
-                  : 'bg-white dark:bg-zinc-800 border-zinc-300 dark:border-zinc-700 text-zinc-700 dark:text-zinc-400'
-              }`}
+              onClick={() => setZoom(prev => Math.round((prev + 0.1) * 10) / 10)}
+              disabled={zoom >= 3}
+              className="p-2 rounded-lg hover:bg-zinc-700 dark:hover:bg-zinc-700 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+              title="Zoom In"
             >
-              <Type size={16} />
-              Text
-            </button>
-            <button
-              onClick={() => setShowImageInput(true)}
-              className={`flex-1 flex items-center justify-center gap-2 py-2 px-3 rounded border transition-colors ${
-                showImageInput
-                  ? 'bg-orange-50 dark:bg-orange-950/30 border-orange-300 dark:border-orange-900 text-orange-700 dark:text-orange-400'
-                  : 'bg-white dark:bg-zinc-800 border-zinc-300 dark:border-zinc-700 text-zinc-700 dark:text-zinc-400'
-              }`}
-            >
-              <ImageIcon size={16} />
-              Image
+              <ZoomIn size={18} className="text-white" />
             </button>
           </div>
 
-          {/* Prompt Input */}
-          <div className="mb-4">
-            <label className="block text-sm font-medium mb-2 text-zinc-700 dark:text-zinc-300">
-              Prompt
-            </label>
-            <textarea
-              value={prompt}
-              onChange={(e) => setPrompt(e.target.value)}
-              placeholder={selectedCount > 0 ? "Describe how to transform selected images..." : "Describe an image to generate..."}
-              className="w-full h-32 px-3 py-2 border border-zinc-300 dark:border-zinc-700 rounded bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 placeholder-zinc-400 dark:placeholder-zinc-600 resize-none focus:outline-none focus:ring-2 focus:ring-orange-500"
-            />
           </div>
 
-          {/* Selected Images Info */}
-          {selectedCount > 0 && (
-            <div className="mb-4 p-3 bg-orange-50 dark:bg-orange-950/30 border border-orange-200 dark:border-orange-900 rounded">
-              <p className="text-sm text-orange-700 dark:text-orange-400">
-                {selectedCount} image{selectedCount > 1 ? 's' : ''} selected and will be used as reference
-              </p>
+          {/* Right Sidebar - Generation Controls */}
+          <div className="w-64 border-l border-zinc-200 dark:border-zinc-800 p-3 overflow-y-auto bg-zinc-50 dark:bg-zinc-900/50">
+            <h3 className="text-sm font-bold mb-2 text-zinc-900 dark:text-zinc-100">Generate</h3>
+
+            {/* Mode Toggle */}
+            <div className="flex gap-1 mb-2">
+              <button
+                onClick={() => setShowImageInput(false)}
+                className={`flex-1 flex items-center justify-center gap-1 py-1.5 px-2 rounded border transition-colors text-xs ${
+                  !showImageInput
+                    ? 'bg-orange-50 dark:bg-orange-950/30 border-orange-300 dark:border-orange-900 text-orange-700 dark:text-orange-400'
+                    : 'bg-white dark:bg-zinc-800 border-zinc-300 dark:border-zinc-700 text-zinc-700 dark:text-zinc-400'
+                }`}
+              >
+                <Type size={14} />
+                Text
+              </button>
+              <button
+                onClick={() => setShowImageInput(true)}
+                className={`flex-1 flex items-center justify-center gap-1 py-1.5 px-2 rounded border transition-colors text-xs ${
+                  showImageInput
+                    ? 'bg-orange-50 dark:bg-orange-950/30 border-orange-300 dark:border-orange-900 text-orange-700 dark:text-orange-400'
+                    : 'bg-white dark:bg-zinc-800 border-zinc-300 dark:border-zinc-700 text-zinc-700 dark:text-zinc-400'
+                }`}
+              >
+                <ImageIcon size={14} />
+                Image
+              </button>
             </div>
-          )}
 
-          {/* Model Selection */}
-          <div className="mb-4">
-            <label className="block text-sm font-medium mb-2 text-zinc-700 dark:text-zinc-300">
-              Model
-            </label>
-            <select
-              value={config.model}
-              onChange={(e) => setConfig(prev => ({ ...prev, model: e.target.value }))}
-              className="w-full px-3 py-2 border border-zinc-300 dark:border-zinc-700 rounded bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-orange-500"
-            >
-              <option value="gemini-2.5-flash-image">Flash (Free, Fast)</option>
-              <option value="gemini-3-pro-image-preview">Pro (Paid, Higher Quality)</option>
-            </select>
-          </div>
-
-          {/* Aspect Ratio */}
-          <div className="mb-4">
-            <label className="block text-sm font-medium mb-2 text-zinc-700 dark:text-zinc-300">
-              Aspect Ratio
-            </label>
-            <div className="grid grid-cols-3 gap-2">
-              {['1:1', '16:9', '9:16', '3:4', '4:3'].map(ratio => (
-                <button
-                  key={ratio}
-                  onClick={() => setConfig(prev => ({ ...prev, aspect_ratio: ratio }))}
-                  className={`py-2 px-3 rounded border transition-colors text-sm ${
-                    config.aspect_ratio === ratio
-                      ? 'bg-orange-50 dark:bg-orange-950/30 border-orange-300 dark:border-orange-900 text-orange-700 dark:text-orange-400'
-                      : 'bg-white dark:bg-zinc-800 border-zinc-300 dark:border-zinc-700 text-zinc-700 dark:text-zinc-400'
-                  }`}
-                >
-                  {ratio}
-                </button>
-              ))}
+            {/* Prompt Input */}
+            <div className="mb-2">
+              <label className="block text-xs font-medium mb-1 text-zinc-700 dark:text-zinc-300">
+                Prompt
+              </label>
+              <textarea
+                value={prompt}
+                onChange={(e) => setPrompt(e.target.value)}
+                placeholder={selectedCount > 0 ? "Transform selected..." : "Describe image..."}
+                className="w-full h-20 px-2 py-1.5 text-xs border border-zinc-300 dark:border-zinc-700 rounded bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 placeholder-zinc-400 dark:placeholder-zinc-600 resize-none focus:outline-none focus:ring-1 focus:ring-orange-500"
+              />
             </div>
-          </div>
 
-          {/* Generate Button */}
-          <button
-            onClick={handleGenerate}
-            disabled={isGenerating}
-            className={`w-full py-3 rounded font-bold flex items-center justify-center gap-2 transition-all ${
-              isGenerating
-                ? 'bg-zinc-200 dark:bg-zinc-800 text-zinc-400 dark:text-zinc-500 cursor-not-allowed'
-                : 'bg-gradient-to-r from-orange-600 to-orange-500 hover:from-orange-500 hover:to-orange-400 text-white shadow-lg'
-            }`}
-          >
-            {isGenerating ? (
-              'Generating...'
-            ) : (
-              <>
-                <Sparkles size={18} />
-                Generate
-              </>
+            {/* Selected Images Info */}
+            {selectedCount > 0 && (
+              <div className="mb-2 p-2 bg-orange-50 dark:bg-orange-950/30 border border-orange-200 dark:border-orange-900 rounded">
+                <p className="text-xs text-orange-700 dark:text-orange-400">
+                  {selectedCount} image{selectedCount > 1 ? 's' : ''} selected
+                </p>
+              </div>
             )}
-          </button>
+
+            {/* Model Selection */}
+            <div className="mb-2">
+              <label className="block text-xs font-medium mb-1 text-zinc-700 dark:text-zinc-300">
+                Model
+              </label>
+              <select
+                value={config.model}
+                onChange={(e) => setConfig(prev => ({ ...prev, model: e.target.value }))}
+                className="w-full px-2 py-1.5 text-xs border border-zinc-300 dark:border-zinc-700 rounded bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 focus:outline-none focus:ring-1 focus:ring-orange-500"
+              >
+                <option value="gemini-2.5-flash-image">Flash (Free, Fast)</option>
+                <option value="gemini-3-pro-image-preview">Pro (Paid, Higher Quality)</option>
+              </select>
+            </div>
+
+            {/* Aspect Ratio */}
+            <div className="mb-2">
+              <label className="block text-xs font-medium mb-1 text-zinc-700 dark:text-zinc-300">
+                Aspect Ratio
+              </label>
+              <div className="grid grid-cols-3 gap-1">
+                {['1:1', '16:9', '9:16', '3:4', '4:3'].map(ratio => (
+                  <button
+                    key={ratio}
+                    onClick={() => setConfig(prev => ({ ...prev, aspect_ratio: ratio }))}
+                    className={`py-1 px-1.5 rounded border transition-colors text-xs ${
+                      config.aspect_ratio === ratio
+                        ? 'bg-orange-50 dark:bg-orange-950/30 border-orange-300 dark:border-orange-900 text-orange-700 dark:text-orange-400'
+                        : 'bg-white dark:bg-zinc-800 border-zinc-300 dark:border-zinc-700 text-zinc-700 dark:text-zinc-400'
+                    }`}
+                  >
+                    {ratio}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Generate Button */}
+            <button
+              onClick={handleGenerate}
+              disabled={isGenerating}
+              className={`w-full py-2 rounded text-sm font-bold flex items-center justify-center gap-1.5 transition-all ${
+                isGenerating
+                  ? 'bg-zinc-200 dark:bg-zinc-800 text-zinc-400 dark:text-zinc-500 cursor-not-allowed'
+                  : 'bg-gradient-to-r from-orange-600 to-orange-500 hover:from-orange-500 hover:to-orange-400 text-white shadow-lg'
+              }`}
+            >
+              {isGenerating ? (
+                'Generating...'
+              ) : (
+                <>
+                  <Sparkles size={16} />
+                  Generate
+                </>
+              )}
+            </button>
+          </div>
         </div>
-      </div>
-      ) : (
-        <div className="flex-1 flex items-center justify-center bg-zinc-100 dark:bg-zinc-900/80">
+        ) : (
+          <div className="flex-1 flex items-center justify-center bg-zinc-100 dark:bg-zinc-900/80">
           <div className="max-w-lg w-full mx-auto text-center space-y-4 p-8 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl shadow-sm">
             <div className="flex items-center justify-center gap-2 text-orange-600 dark:text-orange-400 text-sm font-semibold">
               <Sparkles size={18} />
@@ -1985,7 +2039,7 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
             </div>
             <h3 className="text-2xl font-bold text-zinc-900 dark:text-zinc-100">Choose where to start</h3>
             <p className="text-sm text-zinc-600 dark:text-zinc-400">
-              Create a fresh Mixboard or open one of your saved sessions from the list on the left.
+              Create a fresh Mixboard or select a session from the menu in the top-left.
             </p>
             <div className="flex flex-wrap items-center justify-center gap-3">
               <button
@@ -2004,128 +2058,42 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
               )}
             </div>
             <p className="text-xs text-zinc-500 dark:text-zinc-500">
-              You can always pick a specific session from the sidebar to resume where you left off.
+              Use the session menu in the top-left corner to switch between your projects.
             </p>
           </div>
-        </div>
-      )}
-
-      {/* Image Context Menu */}
-      {imageContextMenu && (
-        <>
-          <div
-            className="fixed inset-0 z-40"
-            onClick={closeImageContextMenu}
-          />
-          <div
-            className="fixed z-50 bg-white dark:bg-zinc-800 rounded-lg shadow-xl border border-zinc-200 dark:border-zinc-700 py-1 min-w-[160px]"
-            style={{
-              left: `${imageContextMenu.x}px`,
-              top: `${imageContextMenu.y}px`,
-            }}
-          >
-            <button
-              onClick={handleEditImage}
-              className="w-full px-4 py-2 text-left text-sm hover:bg-zinc-100 dark:hover:bg-zinc-700 text-zinc-700 dark:text-zinc-200 flex items-center gap-2"
-            >
-              <Edit2 size={14} />
-              Edit Image
-            </button>
-            <button
-              onClick={handleDeleteImage}
-              className="w-full px-4 py-2 text-left text-sm hover:bg-zinc-100 dark:hover:bg-zinc-700 text-red-600 dark:text-red-400 flex items-center gap-2"
-            >
-              <Trash2 size={14} />
-              Delete
-            </button>
           </div>
-        </>
-      )}
+        )}
 
-      {/* Board Context Menu */}
-      {boardContextMenu && (
-        <>
-          <div
-            className="fixed inset-0 z-40"
-            onClick={closeBoardContextMenu}
-          />
-          <div
-            className="fixed z-50 bg-white dark:bg-zinc-800 rounded-lg shadow-xl border border-zinc-200 dark:border-zinc-700 py-1 min-w-[160px]"
-            style={{
-              left: `${boardContextMenu.x}px`,
-              top: `${boardContextMenu.y}px`,
-            }}
-          >
-            <button
-              onClick={handleEditBoard}
-              className="w-full px-4 py-2 text-left text-sm hover:bg-zinc-100 dark:hover:bg-zinc-700 text-zinc-700 dark:text-zinc-200 flex items-center gap-2"
-            >
-              <Edit2 size={14} />
-              Edit Whiteboard
-            </button>
-            <div className="border-t border-zinc-200 dark:border-zinc-700 my-1" />
-            <div className="px-3 py-1 text-xs font-semibold text-zinc-500 dark:text-zinc-400">Aspect Ratio</div>
-            <button
-              onClick={() => handleChangeBoardAspectRatio('1:1')}
-              className="w-full px-4 py-2 text-left text-sm hover:bg-zinc-100 dark:hover:bg-zinc-700 text-zinc-700 dark:text-zinc-200"
-            >
-              1:1 (Square)
-            </button>
-            <button
-              onClick={() => handleChangeBoardAspectRatio('3:4')}
-              className="w-full px-4 py-2 text-left text-sm hover:bg-zinc-100 dark:hover:bg-zinc-700 text-zinc-700 dark:text-zinc-200"
-            >
-              3:4 (Portrait)
-            </button>
-            <button
-              onClick={() => handleChangeBoardAspectRatio('4:3')}
-              className="w-full px-4 py-2 text-left text-sm hover:bg-zinc-100 dark:hover:bg-zinc-700 text-zinc-700 dark:text-zinc-200"
-            >
-              4:3 (Landscape)
-            </button>
-            <button
-              onClick={() => handleChangeBoardAspectRatio('16:9')}
-              className="w-full px-4 py-2 text-left text-sm hover:bg-zinc-100 dark:hover:bg-zinc-700 text-zinc-700 dark:text-zinc-200"
-            >
-              16:9 (Widescreen)
-            </button>
-            <button
-              onClick={() => handleChangeBoardAspectRatio('9:16')}
-              className="w-full px-4 py-2 text-left text-sm hover:bg-zinc-100 dark:hover:bg-zinc-700 text-zinc-700 dark:text-zinc-200"
-            >
-              9:16 (Vertical)
-            </button>
-            <div className="border-t border-zinc-200 dark:border-zinc-700 my-1" />
-            <button
-              onClick={handleDeleteBoard}
-              className="w-full px-4 py-2 text-left text-sm hover:bg-zinc-100 dark:hover:bg-zinc-700 text-red-600 dark:text-red-400 flex items-center gap-2"
-            >
-              <Trash2 size={14} />
-              Delete
-            </button>
+        {/* ImageEditModal */}
+        <ImageEditModal
+          isOpen={editModalOpen}
+          image={editingImage?.dataUri || null}
+          onClose={() => {
+            setEditModalOpen(false);
+            setEditingImage(null);
+          }}
+          onSave={handleSaveEditedImage}
+        />
+
+        {/* SettingsModal */}
+        <SettingsModal
+          isOpen={showSettings}
+          onClose={() => setShowSettings(false)}
+          theme={theme}
+          onThemeChange={(newTheme: 'dark' | 'light') => {
+            // Theme change will be handled by parent component
+            console.log('Theme change requested:', newTheme);
+          }}
+        />
+
+        {/* Thumbnail Generation Loading Indicator */}
+        {isGeneratingThumbnails && (
+          <div className="fixed bottom-4 right-4 bg-blue-600 text-white px-4 py-2 rounded-lg shadow-lg flex items-center gap-2 z-50">
+            <div className="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent" />
+            Generating thumbnails...
           </div>
-        </>
-      )}
-
-      {/* ImageEditModal */}
-      <ImageEditModal
-        isOpen={editModalOpen}
-        image={editingImage?.dataUri || null}
-        onClose={() => {
-          setEditModalOpen(false);
-          setEditingImage(null);
-        }}
-        onSave={handleSaveEditedImage}
-      />
-
-      {/* Thumbnail Generation Loading Indicator */}
-      {isGeneratingThumbnails && (
-        <div className="fixed bottom-4 right-4 bg-blue-600 text-white px-4 py-2 rounded-lg shadow-lg flex items-center gap-2 z-50">
-          <div className="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent" />
-          Generating thumbnails...
-        </div>
-      )}
+        )}
       </div>
-    </div>
+    </>
   );
 };

@@ -184,6 +184,34 @@ function AppContent() {
       .catch((err) => console.warn('Failed to persist user history', err));
   }, [preferencesReady, currentSessionId, currentMixboardSessionId]);
 
+  // Define handlers before they're used in callbacks
+  // Note: Using regular functions (not useCallback) since they reference
+  // loadGenerationIntoView and resetInputs which are also regular functions
+  const handleSelectSession = (id: string) => {
+    setCurrentSessionId(id);
+    const session = StorageService.loadSession(id);
+    if (!session) return;
+
+    // If the session has generations, load the most recent one
+    if (session.generations.length > 0) {
+      const lastGen = session.generations[session.generations.length - 1];
+      loadGenerationIntoView(lastGen, { includeInputs: false });
+    } else {
+        resetInputs();
+    }
+  };
+
+  const handleNewSession = () => {
+    const newSession = StorageService.createSession("New Session", currentUser || undefined);
+    setSessions(prev => [newSession, ...prev]);
+    setCurrentSessionId(newSession.session_id);
+    resetInputs();
+    LoggerService.logAction('Created new session', {
+      sessionId: newSession.session_id,
+      user: currentUser?.displayName
+    });
+  };
+
   const hydrateSessions = useCallback(async () => {
     if (!currentUser || hasHydratedSessions) return;
 
@@ -210,11 +238,16 @@ function AppContent() {
       )?.session_id;
 
       const nextSessionId = preferredSessionId || userSessions[0].session_id;
-      handleSelectSession(nextSessionId);
-    } else {
+      // Only select session if it's different from current to prevent infinite loop
+      if (currentSessionId !== nextSessionId) {
+        handleSelectSession(nextSessionId);
+      }
+    } else if (currentSessionId !== null) {
+      // Only create new session if we don't already have one
       handleNewSession();
     }
-  }, [currentUser, handleNewSession, handleSelectSession, hasHydratedSessions, userHistory.lastSessionId]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentUser, currentSessionId, hasHydratedSessions, userHistory.lastSessionId]);
 
   useEffect(() => {
     if (!currentUser) {
@@ -229,11 +262,14 @@ function AppContent() {
       const preferredSession = StorageService.loadSession(preferredSessionId);
       if (preferredSession && preferredSession.user?.id === currentUser.id) {
         setSessions([preferredSession]);
-        handleSelectSession(preferredSession.session_id);
+        // Only select if not already selected to prevent infinite loop
+        if (currentSessionId !== preferredSession.session_id) {
+          handleSelectSession(preferredSession.session_id);
+        }
       }
     }
 
-    if (!preferredSessionId) {
+    if (!preferredSessionId && currentSessionId === null) {
       handleNewSession();
     }
 
@@ -248,7 +284,8 @@ function AppContent() {
         clearTimeout(idleHandle as any);
       }
     };
-  }, [currentUser, hydrateSessions, userHistory.lastSessionId]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentUser, currentSessionId, hydrateSessions, userHistory.lastSessionId]);
 
   useEffect(() => {
     if ((showHistory || showGraphView) && !hasHydratedSessions) {
@@ -371,17 +408,6 @@ function AppContent() {
     }
   }, [currentUser]);
 
-  function handleNewSession() {
-    const newSession = StorageService.createSession("New Session", currentUser || undefined);
-    setSessions(prev => [newSession, ...prev]);
-    setCurrentSessionId(newSession.session_id);
-    resetInputs();
-    LoggerService.logAction('Created new session', {
-      sessionId: newSession.session_id,
-      user: currentUser?.displayName
-    });
-  }
-
   const handleRenameSession = (id: string, newTitle: string) => {
     StorageService.renameSession(id, newTitle);
     // Reload and filter sessions for current user
@@ -419,20 +445,6 @@ function AppContent() {
       }
     }
   };
-
-  function handleSelectSession(id: string) {
-    setCurrentSessionId(id);
-    const session = StorageService.loadSession(id);
-    if (!session) return;
-
-    // If the session has generations, load the most recent one
-    if (session.generations.length > 0) {
-      const lastGen = session.generations[session.generations.length - 1];
-      loadGenerationIntoView(lastGen, { includeInputs: false });
-    } else {
-        resetInputs();
-    }
-  }
 
   const handleEditControlImage = (index: number) => {
     setEditingControlIndex(index);
@@ -776,7 +788,7 @@ function AppContent() {
                   Graph View
                 </button>
 
-                {/* History Toggle */}
+                {/* Gallery Toggle */}
                 {(
                   <button
                     onClick={() => {
@@ -790,17 +802,9 @@ function AppContent() {
                     }`}
                   >
                     <History size={12} />
-                    History ({historyItems.length})
+                    Gallery ({historyItems.length})
                   </button>
                 )}
-
-                <button
-                  onClick={() => setIsSettingsOpen(true)}
-                  className="flex items-center gap-2 text-xs px-3 py-1.5 rounded border bg-white dark:bg-zinc-800/50 border-zinc-300 dark:border-zinc-700 text-zinc-700 dark:text-zinc-300 hover:bg-zinc-50 dark:hover:bg-zinc-800 transition-colors"
-                >
-                  <Settings size={12} />
-                  Settings
-                </button>
 
                 {config.model === 'gemini-3-pro-image-preview' && (
                     <a
