@@ -99,8 +99,7 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
   const [isPanning, setIsPanning] = useState(false);
   const [showImageInput, setShowImageInput] = useState(true);  // Default to Image mode
   const [currentGeneration, setCurrentGeneration] = useState<MixboardGeneration | null>(null);
-  const [textToolbar, setTextToolbar] = useState<{ targetId: string | null; x: number; y: number }>({ targetId: null, x: 0, y: 0 });
-  const [draftFontSize, setDraftFontSize] = useState(16);
+  const [editingTextId, setEditingTextId] = useState<string | null>(null);
   const [contextMenu, setContextMenu] = useState({
     visible: false,
     x: 0,
@@ -127,7 +126,6 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
 
   const canvasRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const textToolbarRef = useRef<HTMLDivElement>(null);
   const canvasEngineRef = useRef<CanvasEngine | null>(persistentCanvasEngine);
   const rafRef = useRef<number | null>(null);
   const lastUpdateRef = useRef<number>(0);
@@ -391,7 +389,7 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
     const handleEscape = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
         closeContextMenu();
-        setTextToolbar({ targetId: null, x: 0, y: 0 });
+        setEditingTextId(null);
       }
     };
 
@@ -408,17 +406,6 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
       }
     };
   }, [closeContextMenu]);
-
-  useEffect(() => {
-    const handleOutsideClick = (event: MouseEvent) => {
-      if (textToolbar.targetId && textToolbarRef.current && !textToolbarRef.current.contains(event.target as Node)) {
-        setTextToolbar({ targetId: null, x: 0, y: 0 });
-      }
-    };
-
-    window.addEventListener('mousedown', handleOutsideClick);
-    return () => window.removeEventListener('mousedown', handleOutsideClick);
-  }, [textToolbar.targetId]);
 
   useEffect(() => {
     const engine = canvasEngineRef.current ?? createCanvasEngine();
@@ -1086,15 +1073,7 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
 
   const handleTextDoubleClick = (e: React.MouseEvent, image: CanvasImage) => {
     e.stopPropagation();
-    const canvasRect = canvasRef.current?.getBoundingClientRect();
-    if (!canvasRect) return;
-
-    setDraftFontSize(image.fontSize || 16);
-    setTextToolbar({
-      targetId: image.id,
-      x: e.clientX - canvasRect.left + 10,
-      y: e.clientY - canvasRect.top - 10
-    });
+    setEditingTextId(image.id);
   };
 
   // Handle image selection and dragging
@@ -1145,7 +1124,7 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
 
   const handleCanvasMouseDown = (e: React.MouseEvent) => {
     closeContextMenu();
-    setTextToolbar({ targetId: null, x: 0, y: 0 });
+    setEditingTextId(null);
     if (e.target === canvasRef.current || (e.target as HTMLElement).classList.contains('canvas-background')) {
       // Start panning with middle mouse or space+left click
       if (e.button === 1 || (e.button === 0 && e.shiftKey)) {
@@ -1643,7 +1622,20 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
               >
                 {image.type === 'text' ? (
                   <div
-                    className="w-full h-full p-3 bg-white dark:bg-zinc-900 text-zinc-900 dark:text-zinc-100 overflow-auto pointer-events-none"
+                    contentEditable={editingTextId === image.id}
+                    suppressContentEditableWarning
+                    onBlur={(e) => {
+                      if (editingTextId === image.id) {
+                        updateTextEntity(image.id, { text: e.currentTarget.textContent || '' });
+                        setEditingTextId(null);
+                      }
+                    }}
+                    onInput={(e) => {
+                      if (editingTextId === image.id) {
+                        updateTextEntity(image.id, { text: e.currentTarget.textContent || '' });
+                      }
+                    }}
+                    className={`w-full h-full p-3 bg-white dark:bg-zinc-900 text-zinc-900 dark:text-zinc-100 overflow-auto ${editingTextId === image.id ? 'pointer-events-auto' : 'pointer-events-none'} outline-none`}
                     style={{
                       fontSize: `${(image.fontSize || 16) * zoom}px`,
                       lineHeight: '1.5',
@@ -1758,10 +1750,81 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
                         <Trash2 size={16} className="text-white" />
                       </button>
                     </>
-                  ) : (
-                    // Regular image/text toolbar
+                  ) : image.type === 'text' ? (
+                    // Text-specific toolbar
                     <>
-                      {image.type !== 'text' && image.dataUri && (
+                      <div className="flex items-center gap-1">
+                        <span className="text-xs text-zinc-400 px-1">Size:</span>
+                        <input
+                          type="number"
+                          min={10}
+                          max={72}
+                          value={image.fontSize || 16}
+                          onChange={(e) => {
+                            e.stopPropagation();
+                            const value = Number(e.target.value) || 10;
+                            updateTextEntity(image.id, { fontSize: value });
+                          }}
+                          onClick={(e) => e.stopPropagation()}
+                          className="w-14 px-1 py-0.5 text-xs bg-zinc-800 border border-zinc-600 rounded text-white focus:outline-none focus:border-orange-500"
+                        />
+                      </div>
+                      <div className="w-px h-4 bg-zinc-600 mx-1"></div>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          updateTextEntity(image.id, { fontWeight: image.fontWeight === 'bold' ? 'normal' : 'bold' });
+                        }}
+                        className={`p-1.5 rounded transition-colors ${
+                          image.fontWeight === 'bold'
+                            ? 'bg-orange-600 text-white'
+                            : 'hover:bg-zinc-700 text-white'
+                        }`}
+                        title="Bold"
+                      >
+                        <Bold size={14} />
+                      </button>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          updateTextEntity(image.id, { fontStyle: image.fontStyle === 'italic' ? 'normal' : 'italic' });
+                        }}
+                        className={`p-1.5 rounded transition-colors ${
+                          image.fontStyle === 'italic'
+                            ? 'bg-orange-600 text-white'
+                            : 'hover:bg-zinc-700 text-white'
+                        }`}
+                        title="Italic"
+                      >
+                        <Italic size={14} />
+                      </button>
+                      <div className="w-px h-4 bg-zinc-600 mx-1"></div>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleDuplicateImage(image.id);
+                        }}
+                        className="p-1.5 rounded hover:bg-zinc-700 dark:hover:bg-zinc-700 transition-colors"
+                        title="Duplicate"
+                      >
+                        <Copy size={16} className="text-white" />
+                      </button>
+                      <div className="w-px h-4 bg-zinc-600 mx-1"></div>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleDeleteImage(image.id);
+                        }}
+                        className="p-1.5 rounded hover:bg-red-600 dark:hover:bg-red-600 transition-colors"
+                        title="Delete"
+                      >
+                        <Trash2 size={16} className="text-white" />
+                      </button>
+                    </>
+                  ) : (
+                    // Image toolbar
+                    <>
+                      {image.dataUri && (
                         <button
                           onClick={(e) => {
                             e.stopPropagation();
@@ -1853,65 +1916,6 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
               <ZoomIn size={18} className="text-white" />
             </button>
           </div>
-
-          {textToolbar.targetId && (() => {
-            const textTarget = canvasImages.find(img => img.id === textToolbar.targetId && img.type === 'text');
-            if (!textTarget) return null;
-
-            return (
-              <div
-                ref={textToolbarRef}
-                className="absolute z-50 w-72 p-3 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 rounded shadow-lg space-y-2"
-                style={{ left: textToolbar.x, top: textToolbar.y }}
-                onMouseDown={(e) => e.stopPropagation()}
-              >
-                <div className="flex items-center justify-between gap-2">
-                  <label className="text-xs text-zinc-500 dark:text-zinc-400">Font size</label>
-                  <input
-                    type="number"
-                    min={10}
-                    max={72}
-                    value={draftFontSize}
-                    onChange={(e) => {
-                      const value = Number(e.target.value) || 10;
-                      setDraftFontSize(value);
-                      updateTextEntity(textTarget.id, { fontSize: value });
-                    }}
-                    className="w-20 px-2 py-1 text-xs bg-white dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-700 rounded focus:outline-none focus:border-orange-500"
-                  />
-                  <div className="flex items-center gap-1">
-                    <button
-                      onClick={() => updateTextEntity(textTarget.id, { fontWeight: textTarget.fontWeight === 'bold' ? 'normal' : 'bold' })}
-                      className={`p-1 rounded border ${textTarget.fontWeight === 'bold' ? 'bg-orange-100 dark:bg-orange-900/40 border-orange-300 dark:border-orange-800 text-orange-700 dark:text-orange-300' : 'border-zinc-300 dark:border-zinc-700 text-zinc-600 dark:text-zinc-300'}`}
-                      aria-label="Toggle bold"
-                    >
-                      <Bold size={14} />
-                    </button>
-                    <button
-                      onClick={() => updateTextEntity(textTarget.id, { fontStyle: textTarget.fontStyle === 'italic' ? 'normal' : 'italic' })}
-                      className={`p-1 rounded border ${textTarget.fontStyle === 'italic' ? 'bg-orange-100 dark:bg-orange-900/40 border-orange-300 dark:border-orange-800 text-orange-700 dark:text-orange-300' : 'border-zinc-300 dark:border-zinc-700 text-zinc-600 dark:text-zinc-300'}`}
-                      aria-label="Toggle italic"
-                    >
-                      <Italic size={14} />
-                    </button>
-                  </div>
-                </div>
-                <textarea
-                  value={textTarget.text || ''}
-                  onChange={(e) => updateTextEntity(textTarget.id, { text: e.target.value })}
-                  className="w-full h-24 text-sm px-2 py-1 bg-white dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-700 rounded focus:outline-none focus:border-orange-500 text-zinc-800 dark:text-zinc-100"
-                />
-                <div className="flex justify-end">
-                  <button
-                    onClick={() => setTextToolbar({ targetId: null, x: 0, y: 0 })}
-                    className="px-2 py-1 text-xs bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 rounded border border-zinc-300 dark:border-zinc-700 hover:bg-zinc-200 dark:hover:bg-zinc-700"
-                  >
-                    Close
-                  </button>
-                </div>
-              </div>
-            );
-          })()}
 
           </div>
 
