@@ -1551,6 +1551,19 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
             <Upload size={20} className="text-zinc-600 dark:text-zinc-400" />
           </button>
           <button
+            onClick={() => {
+              const manualText = window.prompt('Enter text to add to the canvas:');
+              if (manualText && manualText.trim()) {
+                const center = getVisibleCanvasCenter();
+                addTextToCanvas(manualText, center.x, center.y);
+              }
+            }}
+            className="p-2 hover:bg-zinc-50 dark:hover:bg-zinc-800 transition-colors"
+            title="Add Text"
+          >
+            <Type size={20} className="text-zinc-600 dark:text-zinc-400" />
+          </button>
+          <button
             onClick={handleAddWhiteboardFromContext}
             className="p-2 hover:bg-zinc-50 dark:hover:bg-zinc-800 transition-colors"
             title="Add Whiteboard"
@@ -1906,66 +1919,66 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
           </div>
 
           {/* Right Sidebar - Generation Controls */}
-          <div className="w-96 border-l border-zinc-200 dark:border-zinc-800 p-6 overflow-y-auto bg-zinc-50 dark:bg-zinc-900/50">
-            <h3 className="text-lg font-bold mb-4 text-zinc-900 dark:text-zinc-100">Generate</h3>
+          <div className="w-64 border-l border-zinc-200 dark:border-zinc-800 p-3 overflow-y-auto bg-zinc-50 dark:bg-zinc-900/50">
+            <h3 className="text-sm font-bold mb-2 text-zinc-900 dark:text-zinc-100">Generate</h3>
 
             {/* Mode Toggle */}
-            <div className="flex gap-2 mb-4">
+            <div className="flex gap-1 mb-2">
               <button
                 onClick={() => setShowImageInput(false)}
-                className={`flex-1 flex items-center justify-center gap-2 py-2 px-3 rounded border transition-colors ${
+                className={`flex-1 flex items-center justify-center gap-1 py-1.5 px-2 rounded border transition-colors text-xs ${
                   !showImageInput
                     ? 'bg-orange-50 dark:bg-orange-950/30 border-orange-300 dark:border-orange-900 text-orange-700 dark:text-orange-400'
                     : 'bg-white dark:bg-zinc-800 border-zinc-300 dark:border-zinc-700 text-zinc-700 dark:text-zinc-400'
                 }`}
               >
-                <Type size={16} />
+                <Type size={14} />
                 Text
               </button>
               <button
                 onClick={() => setShowImageInput(true)}
-                className={`flex-1 flex items-center justify-center gap-2 py-2 px-3 rounded border transition-colors ${
+                className={`flex-1 flex items-center justify-center gap-1 py-1.5 px-2 rounded border transition-colors text-xs ${
                   showImageInput
                     ? 'bg-orange-50 dark:bg-orange-950/30 border-orange-300 dark:border-orange-900 text-orange-700 dark:text-orange-400'
                     : 'bg-white dark:bg-zinc-800 border-zinc-300 dark:border-zinc-700 text-zinc-700 dark:text-zinc-400'
                 }`}
               >
-                <ImageIcon size={16} />
+                <ImageIcon size={14} />
                 Image
               </button>
             </div>
 
             {/* Prompt Input */}
-            <div className="mb-4">
-              <label className="block text-sm font-medium mb-2 text-zinc-700 dark:text-zinc-300">
+            <div className="mb-2">
+              <label className="block text-xs font-medium mb-1 text-zinc-700 dark:text-zinc-300">
                 Prompt
               </label>
               <textarea
                 value={prompt}
                 onChange={(e) => setPrompt(e.target.value)}
-                placeholder={selectedCount > 0 ? "Describe how to transform selected images..." : "Describe an image to generate..."}
-                className="w-full h-32 px-3 py-2 border border-zinc-300 dark:border-zinc-700 rounded bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 placeholder-zinc-400 dark:placeholder-zinc-600 resize-none focus:outline-none focus:ring-2 focus:ring-orange-500"
+                placeholder={selectedCount > 0 ? "Transform selected..." : "Describe image..."}
+                className="w-full h-20 px-2 py-1.5 text-xs border border-zinc-300 dark:border-zinc-700 rounded bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 placeholder-zinc-400 dark:placeholder-zinc-600 resize-none focus:outline-none focus:ring-1 focus:ring-orange-500"
               />
             </div>
 
             {/* Selected Images Info */}
             {selectedCount > 0 && (
-              <div className="mb-4 p-3 bg-orange-50 dark:bg-orange-950/30 border border-orange-200 dark:border-orange-900 rounded">
-                <p className="text-sm text-orange-700 dark:text-orange-400">
-                  {selectedCount} image{selectedCount > 1 ? 's' : ''} selected and will be used as reference
+              <div className="mb-2 p-2 bg-orange-50 dark:bg-orange-950/30 border border-orange-200 dark:border-orange-900 rounded">
+                <p className="text-xs text-orange-700 dark:text-orange-400">
+                  {selectedCount} image{selectedCount > 1 ? 's' : ''} selected
                 </p>
               </div>
             )}
 
             {/* Model Selection */}
-            <div className="mb-4">
-              <label className="block text-sm font-medium mb-2 text-zinc-700 dark:text-zinc-300">
+            <div className="mb-2">
+              <label className="block text-xs font-medium mb-1 text-zinc-700 dark:text-zinc-300">
                 Model
               </label>
               <select
                 value={config.model}
                 onChange={(e) => setConfig(prev => ({ ...prev, model: e.target.value }))}
-                className="w-full px-3 py-2 border border-zinc-300 dark:border-zinc-700 rounded bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-orange-500"
+                className="w-full px-2 py-1.5 text-xs border border-zinc-300 dark:border-zinc-700 rounded bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 focus:outline-none focus:ring-1 focus:ring-orange-500"
               >
                 <option value="gemini-2.5-flash-image">Flash (Free, Fast)</option>
                 <option value="gemini-3-pro-image-preview">Pro (Paid, Higher Quality)</option>
@@ -1973,16 +1986,16 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
             </div>
 
             {/* Aspect Ratio */}
-            <div className="mb-4">
-              <label className="block text-sm font-medium mb-2 text-zinc-700 dark:text-zinc-300">
+            <div className="mb-2">
+              <label className="block text-xs font-medium mb-1 text-zinc-700 dark:text-zinc-300">
                 Aspect Ratio
               </label>
-              <div className="grid grid-cols-3 gap-2">
+              <div className="grid grid-cols-3 gap-1">
                 {['1:1', '16:9', '9:16', '3:4', '4:3'].map(ratio => (
                   <button
                     key={ratio}
                     onClick={() => setConfig(prev => ({ ...prev, aspect_ratio: ratio }))}
-                    className={`py-2 px-3 rounded border transition-colors text-sm ${
+                    className={`py-1 px-1.5 rounded border transition-colors text-xs ${
                       config.aspect_ratio === ratio
                         ? 'bg-orange-50 dark:bg-orange-950/30 border-orange-300 dark:border-orange-900 text-orange-700 dark:text-orange-400'
                         : 'bg-white dark:bg-zinc-800 border-zinc-300 dark:border-zinc-700 text-zinc-700 dark:text-zinc-400'
@@ -1998,7 +2011,7 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
             <button
               onClick={handleGenerate}
               disabled={isGenerating}
-              className={`w-full py-3 rounded font-bold flex items-center justify-center gap-2 transition-all ${
+              className={`w-full py-2 rounded text-sm font-bold flex items-center justify-center gap-1.5 transition-all ${
                 isGenerating
                   ? 'bg-zinc-200 dark:bg-zinc-800 text-zinc-400 dark:text-zinc-500 cursor-not-allowed'
                   : 'bg-gradient-to-r from-orange-600 to-orange-500 hover:from-orange-500 hover:to-orange-400 text-white shadow-lg'
@@ -2008,7 +2021,7 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
                 'Generating...'
               ) : (
                 <>
-                  <Sparkles size={18} />
+                  <Sparkles size={16} />
                   Generate
                 </>
               )}
