@@ -1552,11 +1552,8 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
           </button>
           <button
             onClick={() => {
-              const manualText = window.prompt('Enter text to add to the canvas:');
-              if (manualText && manualText.trim()) {
-                const center = getVisibleCanvasCenter();
-                addTextToCanvas(manualText, center.x, center.y);
-              }
+              const center = getVisibleCanvasCenter();
+              addTextToCanvas('Double-click to edit text', center.x, center.y);
             }}
             className="p-2 hover:bg-zinc-50 dark:hover:bg-zinc-800 transition-colors"
             title="Add Text"
