@@ -1635,13 +1635,14 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
                         updateTextEntity(image.id, { text: e.currentTarget.textContent || '' });
                       }
                     }}
-                    className={`w-full h-full p-3 bg-white dark:bg-zinc-900 text-zinc-900 dark:text-zinc-100 overflow-auto ${editingTextId === image.id ? 'pointer-events-auto' : 'pointer-events-none'} outline-none`}
+                    className={`w-full h-full bg-white dark:bg-zinc-900 text-zinc-900 dark:text-zinc-100 overflow-auto ${editingTextId === image.id ? 'pointer-events-auto' : 'pointer-events-none'} outline-none`}
                     style={{
-                      fontSize: `${(image.fontSize || 16) * zoom}px`,
+                      fontSize: `${image.fontSize || 16}px`,
                       lineHeight: '1.5',
                       fontWeight: image.fontWeight || 'normal',
                       fontStyle: image.fontStyle || 'normal',
-                      fontFamily: image.fontFamily || 'Inter, system-ui, sans-serif'
+                      fontFamily: image.fontFamily || 'Inter, system-ui, sans-serif',
+                      padding: '12px'
                     }}
                   >
                     {image.text}
