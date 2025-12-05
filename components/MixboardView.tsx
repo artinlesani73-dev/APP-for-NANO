@@ -1530,39 +1530,39 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
         </div>
 
         {/* Left-Side Vertical Toolbar - Unified */}
-        <div className="absolute left-4 top-1/2 -translate-y-1/2 z-30 bg-white dark:bg-zinc-900 border border-zinc-300 dark:border-zinc-700 rounded-lg shadow-lg overflow-hidden">
+        <div className="absolute left-4 top-1/2 -translate-y-1/2 z-30 bg-white dark:bg-zinc-900 border border-zinc-300 dark:border-zinc-700 rounded-lg shadow-lg flex flex-col">
           <button
-            className="p-3 w-full hover:bg-zinc-50 dark:hover:bg-zinc-800 transition-colors border-b border-zinc-200 dark:border-zinc-700"
+            className="p-2 hover:bg-zinc-50 dark:hover:bg-zinc-800 transition-colors"
             title="Templates (Coming Soon)"
           >
-            <LayoutTemplate size={20} className="text-zinc-600 dark:text-zinc-400 mx-auto" />
+            <LayoutTemplate size={20} className="text-zinc-600 dark:text-zinc-400" />
           </button>
           <button
-            className="p-3 w-full hover:bg-zinc-50 dark:hover:bg-zinc-800 transition-colors border-b border-zinc-200 dark:border-zinc-700"
+            className="p-2 hover:bg-zinc-50 dark:hover:bg-zinc-800 transition-colors"
             title="Assets (Coming Soon)"
           >
-            <ImageIcon size={20} className="text-zinc-600 dark:text-zinc-400 mx-auto" />
+            <ImageIcon size={20} className="text-zinc-600 dark:text-zinc-400" />
           </button>
           <button
             onClick={() => fileInputRef.current?.click()}
-            className="p-3 w-full hover:bg-zinc-50 dark:hover:bg-zinc-800 transition-colors border-b border-zinc-200 dark:border-zinc-700"
+            className="p-2 hover:bg-zinc-50 dark:hover:bg-zinc-800 transition-colors"
             title="Upload Image"
           >
-            <Upload size={20} className="text-zinc-600 dark:text-zinc-400 mx-auto" />
+            <Upload size={20} className="text-zinc-600 dark:text-zinc-400" />
           </button>
           <button
             onClick={handleAddWhiteboardFromContext}
-            className="p-3 w-full hover:bg-zinc-50 dark:hover:bg-zinc-800 transition-colors border-b border-zinc-200 dark:border-zinc-700"
+            className="p-2 hover:bg-zinc-50 dark:hover:bg-zinc-800 transition-colors"
             title="Add Whiteboard"
           >
-            <Square size={20} className="text-zinc-600 dark:text-zinc-400 mx-auto" />
+            <Square size={20} className="text-zinc-600 dark:text-zinc-400" />
           </button>
           <button
             onClick={() => setShowSettings(true)}
-            className="p-3 w-full hover:bg-zinc-50 dark:hover:bg-zinc-800 transition-colors"
+            className="p-2 hover:bg-zinc-50 dark:hover:bg-zinc-800 transition-colors"
             title="Settings"
           >
-            <Settings size={20} className="text-zinc-600 dark:text-zinc-400 mx-auto" />
+            <Settings size={20} className="text-zinc-600 dark:text-zinc-400" />
           </button>
         </div>
 
