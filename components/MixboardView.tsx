@@ -59,6 +59,7 @@ let persistentCanvasEngine: CanvasEngine | null = null;
 
 interface MixboardViewProps {
   theme: 'dark' | 'light';
+  toggleTheme: () => void;
   currentSession: MixboardSession | null;
   allSessions: MixboardSession[];
   onSessionUpdate: (session: MixboardSession) => void;
@@ -78,6 +79,7 @@ const DEFAULT_CONFIG: GenerationConfig = {
 
 export const MixboardView: React.FC<MixboardViewProps> = ({
   theme,
+  toggleTheme,
   currentSession,
   allSessions,
   onSessionUpdate,
@@ -2080,10 +2082,7 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
           isOpen={showSettings}
           onClose={() => setShowSettings(false)}
           theme={theme}
-          onThemeChange={(newTheme: 'dark' | 'light') => {
-            // Theme change will be handled by parent component
-            console.log('Theme change requested:', newTheme);
-          }}
+          toggleTheme={toggleTheme}
         />
 
         {/* Thumbnail Generation Loading Indicator */}
