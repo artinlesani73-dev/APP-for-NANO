@@ -788,7 +788,7 @@ function AppContent() {
                   Graph View
                 </button>
 
-                {/* History Toggle */}
+                {/* Gallery Toggle */}
                 {(
                   <button
                     onClick={() => {
@@ -802,17 +802,9 @@ function AppContent() {
                     }`}
                   >
                     <History size={12} />
-                    History ({historyItems.length})
+                    Gallery ({historyItems.length})
                   </button>
                 )}
-
-                <button
-                  onClick={() => setIsSettingsOpen(true)}
-                  className="flex items-center gap-2 text-xs px-3 py-1.5 rounded border bg-white dark:bg-zinc-800/50 border-zinc-300 dark:border-zinc-700 text-zinc-700 dark:text-zinc-300 hover:bg-zinc-50 dark:hover:bg-zinc-800 transition-colors"
-                >
-                  <Settings size={12} />
-                  Settings
-                </button>
 
                 {config.model === 'gemini-3-pro-image-preview' && (
                     <a

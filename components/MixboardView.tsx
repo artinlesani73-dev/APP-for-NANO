@@ -1680,39 +1680,112 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
                   }}
                   onMouseDown={(e) => e.stopPropagation()}
                 >
-                  {image.type !== 'text' && image.dataUri && (
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleEditImage(image.id);
-                      }}
-                      className="p-1.5 rounded hover:bg-zinc-700 dark:hover:bg-zinc-700 transition-colors"
-                      title="Edit"
-                    >
-                      <Edit2 size={16} className="text-white" />
-                    </button>
+                  {image.type === 'board' ? (
+                    // Whiteboard-specific toolbar
+                    <>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          const color = window.prompt('Enter background color (hex, rgb, or color name):', image.backgroundColor || '#ffffff');
+                          if (color) {
+                            setCanvasImages(prev => prev.map(img =>
+                              img.id === image.id ? { ...img, backgroundColor: color } : img
+                            ));
+                          }
+                        }}
+                        className="p-1.5 rounded hover:bg-zinc-700 dark:hover:bg-zinc-700 transition-colors"
+                        title="Edit Color"
+                      >
+                        <Edit2 size={16} className="text-white" />
+                      </button>
+                      <div className="w-px h-4 bg-zinc-600 mx-1"></div>
+                      <div className="flex items-center gap-1">
+                        <span className="text-xs text-zinc-400 px-1">Aspect:</span>
+                        {['1:1', '16:9', '9:16', '4:3', '3:4'].map(ratio => {
+                          const [w, h] = ratio.split(':').map(Number);
+                          const aspectRatio = w / h;
+                          return (
+                            <button
+                              key={ratio}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                const currentWidth = image.width;
+                                const newHeight = currentWidth / aspectRatio;
+                                setCanvasImages(prev => prev.map(img =>
+                                  img.id === image.id
+                                    ? { ...img, height: newHeight, originalHeight: newHeight }
+                                    : img
+                                ));
+                              }}
+                              className="px-2 py-1 text-xs rounded hover:bg-zinc-700 dark:hover:bg-zinc-700 transition-colors text-white"
+                              title={`Set aspect ratio to ${ratio}`}
+                            >
+                              {ratio}
+                            </button>
+                          );
+                        })}
+                      </div>
+                      <div className="w-px h-4 bg-zinc-600 mx-1"></div>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleDuplicateImage(image.id);
+                        }}
+                        className="p-1.5 rounded hover:bg-zinc-700 dark:hover:bg-zinc-700 transition-colors"
+                        title="Duplicate"
+                      >
+                        <Copy size={16} className="text-white" />
+                      </button>
+                      <div className="w-px h-4 bg-zinc-600 mx-1"></div>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleDeleteImage(image.id);
+                        }}
+                        className="p-1.5 rounded hover:bg-red-600 dark:hover:bg-red-600 transition-colors"
+                        title="Delete"
+                      >
+                        <Trash2 size={16} className="text-white" />
+                      </button>
+                    </>
+                  ) : (
+                    // Regular image/text toolbar
+                    <>
+                      {image.type !== 'text' && image.dataUri && (
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleEditImage(image.id);
+                          }}
+                          className="p-1.5 rounded hover:bg-zinc-700 dark:hover:bg-zinc-700 transition-colors"
+                          title="Edit"
+                        >
+                          <Edit2 size={16} className="text-white" />
+                        </button>
+                      )}
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleDuplicateImage(image.id);
+                        }}
+                        className="p-1.5 rounded hover:bg-zinc-700 dark:hover:bg-zinc-700 transition-colors"
+                        title="Duplicate"
+                      >
+                        <Copy size={16} className="text-white" />
+                      </button>
+                      <div className="w-px h-4 bg-zinc-600 mx-1"></div>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleDeleteImage(image.id);
+                        }}
+                        className="p-1.5 rounded hover:bg-red-600 dark:hover:bg-red-600 transition-colors"
+                        title="Delete"
+                      >
+                        <Trash2 size={16} className="text-white" />
+                      </button>
+                    </>
                   )}
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      handleDuplicateImage(image.id);
-                    }}
-                    className="p-1.5 rounded hover:bg-zinc-700 dark:hover:bg-zinc-700 transition-colors"
-                    title="Duplicate"
-                  >
-                    <Copy size={16} className="text-white" />
-                  </button>
-                  <div className="w-px h-4 bg-zinc-600 mx-1"></div>
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      handleDeleteImage(image.id);
-                    }}
-                    className="p-1.5 rounded hover:bg-red-600 dark:hover:bg-red-600 transition-colors"
-                    title="Delete"
-                  >
-                    <Trash2 size={16} className="text-white" />
-                  </button>
                 </div>
               )}
             </React.Fragment>
