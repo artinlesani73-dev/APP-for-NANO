@@ -866,6 +866,7 @@ function AppContent() {
                 <div className="h-full w-full">
                   <MixboardView
                     theme={theme}
+                    toggleTheme={toggleTheme}
                     currentSession={mixboardSession}
                     allSessions={mixboardSessions}
                     onSessionUpdate={handleMixboardSessionUpdate}
