@@ -126,6 +126,11 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
   const [isDirty, setIsDirty] = useState(false);
   const [autoSaveInterval, setAutoSaveInterval] = useState(5); // minutes
 
+  // Undo/Redo state
+  const [historyPast, setHistoryPast] = useState<CanvasImage[][]>([]);
+  const [historyFuture, setHistoryFuture] = useState<CanvasImage[][]>([]);
+  const isUndoRedoAction = useRef(false);
+
   const canvasRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const canvasEngineRef = useRef<CanvasEngine | null>(persistentCanvasEngine);
@@ -207,16 +212,48 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
     await saveCanvasToSession(canvasImagesRef.current);
   }, [currentSession, saveCanvasToSession]);
 
-  // Undo/Redo functionality - simplified to avoid infinite loops
-  const handleUndo = useCallback(() => {
-    // TODO: Implement proper undo functionality
-    console.log('Undo not yet implemented');
+  // Helper to push current state to history
+  const pushToHistory = useCallback((currentState: CanvasImage[]) => {
+    setHistoryPast(prev => {
+      const newPast = [...prev, currentState];
+      // Limit history to 50 states to prevent memory issues
+      if (newPast.length > 50) {
+        return newPast.slice(1);
+      }
+      return newPast;
+    });
+    // Clear future when new action is performed
+    setHistoryFuture([]);
   }, []);
 
+  // Undo/Redo functionality
+  const handleUndo = useCallback(() => {
+    if (historyPast.length === 0) return;
+
+    const previousState = historyPast[historyPast.length - 1];
+    const newPast = historyPast.slice(0, -1);
+
+    isUndoRedoAction.current = true;
+    setHistoryFuture(prev => [...prev, canvasImages]);
+    setHistoryPast(newPast);
+    setCanvasImages(previousState);
+
+    console.log('[Undo] Restored previous state');
+  }, [historyPast, canvasImages]);
+
   const handleRedo = useCallback(() => {
-    // TODO: Implement proper redo functionality
-    console.log('Redo not yet implemented');
-  }, []);
+    if (historyFuture.length === 0) return;
+
+    const nextState = historyFuture[historyFuture.length - 1];
+    const newFuture = historyFuture.slice(0, -1);
+
+    isUndoRedoAction.current = true;
+    setHistoryPast(prev => [...prev, canvasImages]);
+    setHistoryFuture(newFuture);
+    setCanvasImages(nextState);
+
+    console.log('[Redo] Restored next state');
+  }, [historyFuture, canvasImages]);
 
   // Helper function to get center of visible canvas area
   const getVisibleCanvasCenter = useCallback(() => {
@@ -252,14 +289,50 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
         });
 
         setCanvasImages(loadedImages);
+        // Reset history when loading a new session
+        setHistoryPast([]);
+        setHistoryFuture([]);
       } else if (currentSession) {
         console.log('[MixboardView] Session has no canvas images, starting with empty canvas');
         setCanvasImages([]);
+        setHistoryPast([]);
+        setHistoryFuture([]);
       }
     };
 
     loadCanvasImages();
   }, [currentSession?.session_id]);
+
+  // Track canvas changes for undo/redo (but exclude undo/redo actions themselves and generations)
+  useEffect(() => {
+    // Skip if this is an undo/redo action
+    if (isUndoRedoAction.current) {
+      isUndoRedoAction.current = false;
+      return;
+    }
+
+    // Skip if generating (generation will add its own history entry)
+    if (isGenerating) {
+      return;
+    }
+
+    // Skip on initial load or if canvas is empty and was empty
+    if (canvasImages.length === 0 && historyPast.length === 0) {
+      return;
+    }
+
+    // Debounce history updates to avoid too many entries for drag operations
+    const timeout = setTimeout(() => {
+      // Only push if there's actually a change
+      const lastState = historyPast[historyPast.length - 1];
+      if (JSON.stringify(lastState) !== JSON.stringify(canvasImages)) {
+        pushToHistory(canvasImages);
+        console.log('[History] State pushed to history, total states:', historyPast.length + 1);
+      }
+    }, 500); // 500ms debounce
+
+    return () => clearTimeout(timeout);
+  }, [canvasImages]); // Only depend on canvasImages
 
   // Migration: Generate thumbnails for existing images without thumbnails
   useEffect(() => {
@@ -1559,11 +1632,11 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
 
         {/* Main Content */}
         {currentSession ? (
-        <div className="flex-1 flex overflow-hidden">
+        <div className="flex-1 relative overflow-hidden">
           {/* Canvas Area */}
         <div
           ref={canvasRef}
-          className="flex-1 relative overflow-hidden cursor-crosshair canvas-background"
+          className="absolute inset-0 overflow-hidden cursor-crosshair canvas-background"
           style={{
             backgroundImage: theme === 'dark'
               ? 'radial-gradient(circle, #27272a 1px, transparent 1px)'
@@ -1881,155 +1954,163 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
           )}
 
           {/* Bottom-Center Toolbar */}
-          <div className="absolute bottom-4 left-1/2 -translate-x-1/2 flex items-center gap-2 bg-zinc-900/90 dark:bg-zinc-800/90 backdrop-blur-sm border border-zinc-700 dark:border-zinc-600 rounded-full shadow-xl px-4 py-2">
+          <div className="absolute bottom-4 left-1/2 -translate-x-1/2 flex items-center gap-2 bg-white/95 dark:bg-zinc-900/95 backdrop-blur-sm border border-zinc-300 dark:border-zinc-700 rounded-full shadow-xl px-4 py-2">
             <button
               onClick={handleUndo}
-              disabled={true}
-              className="p-2 rounded-lg hover:bg-zinc-700 dark:hover:bg-zinc-700 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
-              title="Undo (Coming Soon)"
+              disabled={historyPast.length === 0}
+              className="p-2 rounded-lg hover:bg-zinc-100 dark:hover:bg-zinc-800 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+              title={`Undo (${historyPast.length} actions)`}
             >
-              <Undo size={18} className="text-white" />
+              <Undo size={18} className="text-zinc-700 dark:text-zinc-300" />
             </button>
             <button
               onClick={handleRedo}
-              disabled={true}
-              className="p-2 rounded-lg hover:bg-zinc-700 dark:hover:bg-zinc-700 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
-              title="Redo (Coming Soon)"
+              disabled={historyFuture.length === 0}
+              className="p-2 rounded-lg hover:bg-zinc-100 dark:hover:bg-zinc-800 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+              title={`Redo (${historyFuture.length} actions)`}
             >
-              <Redo size={18} className="text-white" />
+              <Redo size={18} className="text-zinc-700 dark:text-zinc-300" />
             </button>
-            <div className="w-px h-6 bg-zinc-600"></div>
+            <div className="w-px h-6 bg-zinc-300 dark:bg-zinc-600"></div>
             <button
               onClick={() => setZoom(prev => Math.round((prev - 0.1) * 10) / 10)}
               disabled={zoom <= 0.1}
-              className="p-2 rounded-lg hover:bg-zinc-700 dark:hover:bg-zinc-700 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+              className="p-2 rounded-lg hover:bg-zinc-100 dark:hover:bg-zinc-800 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
               title="Zoom Out"
             >
-              <ZoomOut size={18} className="text-white" />
+              <ZoomOut size={18} className="text-zinc-700 dark:text-zinc-300" />
             </button>
-            <div className="px-3 py-1 min-w-[60px] text-center text-sm font-medium text-white">
+            <div className="px-3 py-1 min-w-[60px] text-center text-sm font-medium text-zinc-900 dark:text-zinc-100">
               {Math.round(zoom * 100)}%
             </div>
             <button
               onClick={() => setZoom(prev => Math.round((prev + 0.1) * 10) / 10)}
               disabled={zoom >= 3}
-              className="p-2 rounded-lg hover:bg-zinc-700 dark:hover:bg-zinc-700 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+              className="p-2 rounded-lg hover:bg-zinc-100 dark:hover:bg-zinc-800 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
               title="Zoom In"
             >
-              <ZoomIn size={18} className="text-white" />
+              <ZoomIn size={18} className="text-zinc-700 dark:text-zinc-300" />
             </button>
           </div>
 
           </div>
 
-          {/* Right Sidebar - Generation Controls */}
-          <div className="w-64 border-l border-zinc-200 dark:border-zinc-800 p-3 overflow-y-auto bg-zinc-50 dark:bg-zinc-900/50">
-            <h3 className="text-sm font-bold mb-2 text-zinc-900 dark:text-zinc-100">Generate</h3>
+          {/* Right Floating Panel - Generation Controls */}
+          <div className="absolute right-4 top-1/2 -translate-y-1/2 z-30 w-72 max-h-[80vh] overflow-y-auto bg-white dark:bg-zinc-900 border border-zinc-300 dark:border-zinc-700 rounded-lg shadow-xl">
+            <div className="p-4 space-y-3">
+              <h3 className="text-sm font-bold text-zinc-900 dark:text-zinc-100 flex items-center gap-2">
+                <Sparkles size={16} className="text-orange-500" />
+                Generate
+              </h3>
 
-            {/* Mode Toggle */}
-            <div className="flex gap-1 mb-2">
-              <button
-                onClick={() => setShowImageInput(false)}
-                className={`flex-1 flex items-center justify-center gap-1 py-1.5 px-2 rounded border transition-colors text-xs ${
-                  !showImageInput
-                    ? 'bg-orange-50 dark:bg-orange-950/30 border-orange-300 dark:border-orange-900 text-orange-700 dark:text-orange-400'
-                    : 'bg-white dark:bg-zinc-800 border-zinc-300 dark:border-zinc-700 text-zinc-700 dark:text-zinc-400'
-                }`}
-              >
-                <Type size={14} />
-                Text
-              </button>
-              <button
-                onClick={() => setShowImageInput(true)}
-                className={`flex-1 flex items-center justify-center gap-1 py-1.5 px-2 rounded border transition-colors text-xs ${
-                  showImageInput
-                    ? 'bg-orange-50 dark:bg-orange-950/30 border-orange-300 dark:border-orange-900 text-orange-700 dark:text-orange-400'
-                    : 'bg-white dark:bg-zinc-800 border-zinc-300 dark:border-zinc-700 text-zinc-700 dark:text-zinc-400'
-                }`}
-              >
-                <ImageIcon size={14} />
-                Image
-              </button>
-            </div>
-
-            {/* Prompt Input */}
-            <div className="mb-2">
-              <label className="block text-xs font-medium mb-1 text-zinc-700 dark:text-zinc-300">
-                Prompt
-              </label>
-              <textarea
-                value={prompt}
-                onChange={(e) => setPrompt(e.target.value)}
-                placeholder={selectedCount > 0 ? "Transform selected..." : "Describe image..."}
-                className="w-full h-20 px-2 py-1.5 text-xs border border-zinc-300 dark:border-zinc-700 rounded bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 placeholder-zinc-400 dark:placeholder-zinc-600 resize-none focus:outline-none focus:ring-1 focus:ring-orange-500"
-              />
-            </div>
-
-            {/* Selected Images Info */}
-            {selectedCount > 0 && (
-              <div className="mb-2 p-2 bg-orange-50 dark:bg-orange-950/30 border border-orange-200 dark:border-orange-900 rounded">
-                <p className="text-xs text-orange-700 dark:text-orange-400">
-                  {selectedCount} image{selectedCount > 1 ? 's' : ''} selected
-                </p>
+              {/* Mode Toggle */}
+              <div className="flex gap-2">
+                <button
+                  onClick={() => setShowImageInput(false)}
+                  className={`flex-1 flex items-center justify-center gap-1.5 py-2 px-3 rounded-lg border transition-colors text-xs font-medium ${
+                    !showImageInput
+                      ? 'bg-orange-50 dark:bg-orange-950/30 border-orange-300 dark:border-orange-900 text-orange-700 dark:text-orange-400'
+                      : 'bg-white dark:bg-zinc-800 border-zinc-300 dark:border-zinc-700 text-zinc-700 dark:text-zinc-400 hover:bg-zinc-50 dark:hover:bg-zinc-800'
+                  }`}
+                >
+                  <Type size={16} />
+                  Text
+                </button>
+                <button
+                  onClick={() => setShowImageInput(true)}
+                  className={`flex-1 flex items-center justify-center gap-1.5 py-2 px-3 rounded-lg border transition-colors text-xs font-medium ${
+                    showImageInput
+                      ? 'bg-orange-50 dark:bg-orange-950/30 border-orange-300 dark:border-orange-900 text-orange-700 dark:text-orange-400'
+                      : 'bg-white dark:bg-zinc-800 border-zinc-300 dark:border-zinc-700 text-zinc-700 dark:text-zinc-400 hover:bg-zinc-50 dark:hover:bg-zinc-800'
+                  }`}
+                >
+                  <ImageIcon size={16} />
+                  Image
+                </button>
               </div>
-            )}
 
-            {/* Model Selection */}
-            <div className="mb-2">
-              <label className="block text-xs font-medium mb-1 text-zinc-700 dark:text-zinc-300">
-                Model
-              </label>
-              <select
-                value={config.model}
-                onChange={(e) => setConfig(prev => ({ ...prev, model: e.target.value }))}
-                className="w-full px-2 py-1.5 text-xs border border-zinc-300 dark:border-zinc-700 rounded bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 focus:outline-none focus:ring-1 focus:ring-orange-500"
-              >
-                <option value="gemini-2.5-flash-image">Flash (Free, Fast)</option>
-                <option value="gemini-3-pro-image-preview">Pro (Paid, Higher Quality)</option>
-              </select>
-            </div>
-
-            {/* Aspect Ratio */}
-            <div className="mb-2">
-              <label className="block text-xs font-medium mb-1 text-zinc-700 dark:text-zinc-300">
-                Aspect Ratio
-              </label>
-              <div className="grid grid-cols-3 gap-1">
-                {['1:1', '16:9', '9:16', '3:4', '4:3'].map(ratio => (
-                  <button
-                    key={ratio}
-                    onClick={() => setConfig(prev => ({ ...prev, aspect_ratio: ratio }))}
-                    className={`py-1 px-1.5 rounded border transition-colors text-xs ${
-                      config.aspect_ratio === ratio
-                        ? 'bg-orange-50 dark:bg-orange-950/30 border-orange-300 dark:border-orange-900 text-orange-700 dark:text-orange-400'
-                        : 'bg-white dark:bg-zinc-800 border-zinc-300 dark:border-zinc-700 text-zinc-700 dark:text-zinc-400'
-                    }`}
-                  >
-                    {ratio}
-                  </button>
-                ))}
+              {/* Prompt Input */}
+              <div>
+                <label className="block text-xs font-semibold mb-1.5 text-zinc-700 dark:text-zinc-300">
+                  Prompt
+                </label>
+                <textarea
+                  value={prompt}
+                  onChange={(e) => setPrompt(e.target.value)}
+                  placeholder={selectedCount > 0 ? "Transform selected..." : "Describe image..."}
+                  className="w-full h-24 px-3 py-2 text-sm border border-zinc-300 dark:border-zinc-700 rounded-lg bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 placeholder-zinc-400 dark:placeholder-zinc-600 resize-none focus:outline-none focus:ring-2 focus:ring-orange-500"
+                />
               </div>
-            </div>
 
-            {/* Generate Button */}
-            <button
-              onClick={handleGenerate}
-              disabled={isGenerating}
-              className={`w-full py-2 rounded text-sm font-bold flex items-center justify-center gap-1.5 transition-all ${
-                isGenerating
-                  ? 'bg-zinc-200 dark:bg-zinc-800 text-zinc-400 dark:text-zinc-500 cursor-not-allowed'
-                  : 'bg-gradient-to-r from-orange-600 to-orange-500 hover:from-orange-500 hover:to-orange-400 text-white shadow-lg'
-              }`}
-            >
-              {isGenerating ? (
-                'Generating...'
-              ) : (
-                <>
-                  <Sparkles size={16} />
-                  Generate
-                </>
+              {/* Selected Images Info */}
+              {selectedCount > 0 && (
+                <div className="p-3 bg-orange-50 dark:bg-orange-950/30 border border-orange-200 dark:border-orange-900 rounded-lg">
+                  <p className="text-xs font-medium text-orange-700 dark:text-orange-400">
+                    {selectedCount} image{selectedCount > 1 ? 's' : ''} selected
+                  </p>
+                </div>
               )}
-            </button>
+
+              {/* Model Selection */}
+              <div>
+                <label className="block text-xs font-semibold mb-1.5 text-zinc-700 dark:text-zinc-300">
+                  Model
+                </label>
+                <select
+                  value={config.model}
+                  onChange={(e) => setConfig(prev => ({ ...prev, model: e.target.value }))}
+                  className="w-full px-3 py-2 text-sm border border-zinc-300 dark:border-zinc-700 rounded-lg bg-white dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 focus:outline-none focus:ring-2 focus:ring-orange-500"
+                >
+                  <option value="gemini-2.5-flash-image">Flash (Free, Fast)</option>
+                  <option value="gemini-3-pro-image-preview">Pro (Paid, Higher Quality)</option>
+                </select>
+              </div>
+
+              {/* Aspect Ratio */}
+              <div>
+                <label className="block text-xs font-semibold mb-1.5 text-zinc-700 dark:text-zinc-300">
+                  Aspect Ratio
+                </label>
+                <div className="grid grid-cols-3 gap-2">
+                  {['1:1', '16:9', '9:16', '3:4', '4:3'].map(ratio => (
+                    <button
+                      key={ratio}
+                      onClick={() => setConfig(prev => ({ ...prev, aspect_ratio: ratio }))}
+                      className={`py-2 px-2 rounded-lg border transition-colors text-xs font-medium ${
+                        config.aspect_ratio === ratio
+                          ? 'bg-orange-50 dark:bg-orange-950/30 border-orange-300 dark:border-orange-900 text-orange-700 dark:text-orange-400'
+                          : 'bg-white dark:bg-zinc-800 border-zinc-300 dark:border-zinc-700 text-zinc-700 dark:text-zinc-400 hover:bg-zinc-50 dark:hover:bg-zinc-800'
+                      }`}
+                    >
+                      {ratio}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Generate Button */}
+              <button
+                onClick={handleGenerate}
+                disabled={isGenerating}
+                className={`w-full py-3 rounded-lg text-sm font-bold flex items-center justify-center gap-2 transition-all ${
+                  isGenerating
+                    ? 'bg-zinc-200 dark:bg-zinc-800 text-zinc-400 dark:text-zinc-500 cursor-not-allowed'
+                    : 'bg-gradient-to-r from-orange-600 to-orange-500 hover:from-orange-500 hover:to-orange-400 text-white shadow-lg hover:shadow-xl'
+                }`}
+              >
+                {isGenerating ? (
+                  <>
+                    <div className="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent" />
+                    Generating...
+                  </>
+                ) : (
+                  <>
+                    <Sparkles size={18} />
+                    Generate
+                  </>
+                )}
+              </button>
+            </div>
           </div>
         </div>
         ) : (
