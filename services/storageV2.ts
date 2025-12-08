@@ -506,6 +506,7 @@ export const StorageServiceV2 = {
         try {
           // @ts-ignore
           const content = window.electron.loadSync(`sessions/${file}`);
+          if (!content) continue;
           const canvasState: CanvasStateData = JSON.parse(content);
 
           // Load generation count
@@ -514,8 +515,10 @@ export const StorageServiceV2 = {
           try {
             // @ts-ignore
             const genContent = window.electron.loadSync(`sessions/${generationFile}`);
-            const genData: GenerationsData = JSON.parse(genContent);
-            generationCount = genData.generations.length;
+            if (genContent) {
+              const genData: GenerationsData = JSON.parse(genContent);
+              generationCount = genData.generations.length;
+            }
           } catch (e) {
             // Ignore
           }
