@@ -12,6 +12,7 @@ import { LoggerService } from './services/logger';
 import { PreferencesService, type UserHistory, type UserSettings } from './services/preferencesService';
 import { Session, SessionGeneration, GenerationConfig, UploadedImagePayload, MixboardSession } from './types';
 import { Database, Key, ExternalLink, History, Network, Sparkles, Settings } from 'lucide-react';
+import { ViewSidebar } from './components/ViewSidebar';
 
 const HistoryPanel = lazy(() => import('./components/HistoryPanel').then(module => ({ default: module.HistoryPanel })));
 const GraphView = lazy(() => import('./components/GraphView'));
@@ -739,6 +740,26 @@ function AppContent() {
   return (
     <div className={`flex h-screen w-screen overflow-hidden font-sans selection:bg-blue-500/30 transition-colors duration-200 ${theme === 'dark' ? 'bg-black text-zinc-100' : 'bg-white text-zinc-900'}`}>
 
+      {/* LEFT SIDEBAR */}
+      <ViewSidebar
+        showGraphView={showGraphView}
+        showHistory={showHistory}
+        historyCount={historyItems.length}
+        onToggleGraphView={() => {
+          setShowGraphView(!showGraphView);
+          setShowHistory(false);
+        }}
+        onToggleHistory={() => {
+          setShowHistory(!showHistory);
+          setShowGraphView(false);
+        }}
+        onToggleMixboard={() => {
+          setShowGraphView(false);
+          setShowHistory(false);
+        }}
+        theme={theme}
+      />
+
       {/* MAIN WORKSPACE */}
       <div className="flex-1 flex flex-col min-w-0 bg-white dark:bg-black">
         
@@ -756,56 +777,6 @@ function AppContent() {
             </div>
 
             <div className="flex items-center gap-4" style={{ WebkitAppRegion: 'no-drag' } as any}>
-                {/* Mixboard (Main View) */}
-                <button
-                  onClick={() => {
-                    setShowGraphView(false);
-                    setShowHistory(false);
-                  }}
-                  className={`flex items-center gap-2 text-xs px-3 py-1.5 rounded border transition-colors font-medium ${
-                    !showGraphView && !showHistory
-                      ? 'bg-orange-50 dark:bg-orange-950/30 border-orange-300 dark:border-orange-900 text-orange-700 dark:text-orange-400'
-                      : 'bg-white dark:bg-zinc-800/50 border-zinc-300 dark:border-zinc-700 text-zinc-700 dark:text-zinc-400 hover:bg-zinc-50 dark:hover:bg-zinc-800'
-                  }`}
-                >
-                  <Sparkles size={12} />
-                  Mixboard
-                </button>
-
-                {/* Graph View Toggle */}
-                <button
-                  onClick={() => {
-                    setShowGraphView(!showGraphView);
-                    setShowHistory(false);
-                  }}
-                  className={`flex items-center gap-2 text-xs px-3 py-1.5 rounded border transition-colors font-medium ${
-                    showGraphView
-                      ? 'bg-purple-50 dark:bg-purple-950/30 border-purple-300 dark:border-purple-900 text-purple-700 dark:text-purple-400'
-                      : 'bg-white dark:bg-zinc-800/50 border-zinc-300 dark:border-zinc-700 text-zinc-700 dark:text-zinc-400 hover:bg-zinc-50 dark:hover:bg-zinc-800'
-                  }`}
-                >
-                  <Network size={12} />
-                  Graph View
-                </button>
-
-                {/* Gallery Toggle */}
-                {(
-                  <button
-                    onClick={() => {
-                      setShowHistory(!showHistory);
-                      setShowGraphView(false);
-                    }}
-                    className={`flex items-center gap-2 text-xs px-3 py-1.5 rounded border transition-colors font-medium ${
-                      showHistory
-                        ? 'bg-blue-50 dark:bg-blue-950/30 border-blue-300 dark:border-blue-900 text-blue-700 dark:text-blue-400'
-                        : 'bg-white dark:bg-zinc-800/50 border-zinc-300 dark:border-zinc-700 text-zinc-700 dark:text-zinc-400 hover:bg-zinc-50 dark:hover:bg-zinc-800'
-                    }`}
-                  >
-                    <History size={12} />
-                    Gallery ({historyItems.length})
-                  </button>
-                )}
-
                 {config.model === 'gemini-3-pro-image-preview' && (
                     <a
                       href="https://ai.google.dev/gemini-api/docs/billing"
