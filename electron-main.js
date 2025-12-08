@@ -328,11 +328,34 @@ const ensureUserCaches = () => {
   return userCacheHydrationPromise;
 };
 
-const registerDeferredIpcHandlers = () => {
-  if (ipcHandlersRegistered) return;
-  ipcHandlersRegistered = true;
-  loadDeferredModules();
+// Register critical IPC handlers that need to be available immediately on load
+const registerCriticalIpcHandlers = () => {
+  // User settings and history handlers (needed immediately on app load)
+  ipcMain.handle('user-settings:get', async () => {
+    await ensureUserCaches();
+    return cachedUserSettings;
+  });
 
+  ipcMain.handle('user-settings:save', async (_event, settings) => {
+    await ensureUserCaches();
+    const updated = await persistUserSettings(settings || {});
+    notifyCachesReady();
+    return updated;
+  });
+
+  ipcMain.handle('user-history:get', async () => {
+    await ensureUserCaches();
+    return cachedUserHistory;
+  });
+
+  ipcMain.handle('user-history:save', async (_event, history) => {
+    await ensureUserCaches();
+    const updated = await persistUserHistory(history || {});
+    notifyCachesReady();
+    return updated;
+  });
+
+  // Storage handlers (needed immediately for session loading)
   ipcMain.on('save-sync', (event, filename, content) => {
     try {
       const filePath = path.join(getDataPath(), `${filename}.json`);
@@ -370,25 +393,6 @@ const registerDeferredIpcHandlers = () => {
     }
   });
 
-  ipcMain.on('log-event', (event, entry) => {
-    try {
-      appendLog(entry);
-      event.returnValue = true;
-    } catch (e) {
-      console.error('Failed to write log entry', e);
-      event.returnValue = false;
-    }
-  });
-
-  ipcMain.handle('fetch-logs', async () => readLogs());
-
-  ipcMain.handle('check-for-updates', async () => {
-    logAutoUpdateEvent('check-for-updates');
-    const result = await autoUpdater.checkForUpdates();
-    logAutoUpdateEvent('check-for-updates-result', { versionInfo: result?.updateInfo });
-    return result;
-  });
-
   ipcMain.on('list-files-sync', (event, prefix) => {
     try {
       const dir = getDataPath();
@@ -407,28 +411,29 @@ const registerDeferredIpcHandlers = () => {
     }
   });
 
-  ipcMain.handle('user-settings:get', async () => {
-    await ensureUserCaches();
-    return cachedUserSettings;
+  ipcMain.on('log-event', (event, entry) => {
+    try {
+      appendLog(entry);
+      event.returnValue = true;
+    } catch (e) {
+      console.error('Failed to write log entry', e);
+      event.returnValue = false;
+    }
   });
 
-  ipcMain.handle('user-settings:save', async (_event, settings) => {
-    await ensureUserCaches();
-    const updated = await persistUserSettings(settings || {});
-    notifyCachesReady();
-    return updated;
-  });
+  ipcMain.handle('fetch-logs', async () => readLogs());
+};
 
-  ipcMain.handle('user-history:get', async () => {
-    await ensureUserCaches();
-    return cachedUserHistory;
-  });
+const registerDeferredIpcHandlers = () => {
+  if (ipcHandlersRegistered) return;
+  ipcHandlersRegistered = true;
+  loadDeferredModules();
 
-  ipcMain.handle('user-history:save', async (_event, history) => {
-    await ensureUserCaches();
-    const updated = await persistUserHistory(history || {});
-    notifyCachesReady();
-    return updated;
+  ipcMain.handle('check-for-updates', async () => {
+    logAutoUpdateEvent('check-for-updates');
+    const result = await autoUpdater.checkForUpdates();
+    logAutoUpdateEvent('check-for-updates-result', { versionInfo: result?.updateInfo });
+    return result;
   });
 
   autoUpdater.on('update-available', (info) => {
@@ -467,6 +472,7 @@ const registerDeferredIpcHandlers = () => {
 
 app.whenReady().then(() => {
   registerAppProtocol();
+  registerCriticalIpcHandlers(); // Register critical handlers before window creation
   createWindow();
 
   app.on('activate', () => {
