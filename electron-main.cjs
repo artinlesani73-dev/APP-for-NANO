@@ -315,6 +315,18 @@ ipcMain.handle('fetch-logs', async () => {
     return readLogs();
 });
 
+// Append-only log handler (for JSONL format in StorageV2)
+ipcMain.on('append-log', (event, line) => {
+    try {
+        const local = path.join(getUserDataDir(), 'logs.jsonl');
+        fs.appendFileSync(local, line, 'utf-8');
+        event.returnValue = true;
+    } catch (e) {
+        console.error('Failed to append log line', e);
+        event.returnValue = false;
+    }
+});
+
 ipcMain.handle('sync-user-data', async () => {
     return syncLocalToShared();
 });
