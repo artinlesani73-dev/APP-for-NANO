@@ -130,6 +130,7 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
   const [historyPast, setHistoryPast] = useState<CanvasImage[][]>([]);
   const [historyFuture, setHistoryFuture] = useState<CanvasImage[][]>([]);
   const isUndoRedoAction = useRef(false);
+  const lastPushedState = useRef<string | null>(null);
 
   const canvasRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -292,11 +293,13 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
         // Reset history when loading a new session
         setHistoryPast([]);
         setHistoryFuture([]);
+        lastPushedState.current = null;
       } else if (currentSession) {
         console.log('[MixboardView] Session has no canvas images, starting with empty canvas');
         setCanvasImages([]);
         setHistoryPast([]);
         setHistoryFuture([]);
+        lastPushedState.current = null;
       }
     };
 
@@ -311,28 +314,30 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
       return;
     }
 
-    // Skip if generating (generation will add its own history entry)
+    // Skip if generating
     if (isGenerating) {
       return;
     }
 
-    // Skip on initial load or if canvas is empty and was empty
-    if (canvasImages.length === 0 && historyPast.length === 0) {
+    // Skip on initial load when canvas is empty
+    if (canvasImages.length === 0 && !lastPushedState.current) {
       return;
     }
 
     // Debounce history updates to avoid too many entries for drag operations
     const timeout = setTimeout(() => {
-      // Only push if there's actually a change
-      const lastState = historyPast[historyPast.length - 1];
-      if (JSON.stringify(lastState) !== JSON.stringify(canvasImages)) {
+      const currentStateStr = JSON.stringify(canvasImages);
+
+      // Only push if there's actually a change from the last pushed state
+      if (lastPushedState.current !== currentStateStr) {
         pushToHistory(canvasImages);
-        console.log('[History] State pushed to history, total states:', historyPast.length + 1);
+        lastPushedState.current = currentStateStr;
+        console.log('[History] State pushed to history');
       }
     }, 500); // 500ms debounce
 
     return () => clearTimeout(timeout);
-  }, [canvasImages]); // Only depend on canvasImages
+  }, [canvasImages, isGenerating, pushToHistory]); // Don't include historyPast to avoid extra renders
 
   // Migration: Generate thumbnails for existing images without thumbnails
   useEffect(() => {
