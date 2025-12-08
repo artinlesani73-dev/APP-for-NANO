@@ -505,18 +505,18 @@ export const StorageServiceV2 = {
       for (const file of canvasFiles) {
         try {
           // @ts-ignore
-          const content = window.electron.loadSync(`sessions/${file}`);
+          const content: string | null = window.electron.loadSync(`sessions/${file}`);
           if (!content) continue;
-          const canvasState: CanvasStateData = JSON.parse(content);
+          const canvasState: CanvasStateData = JSON.parse(content as string);
 
           // Load generation count
           const generationFile = file.replace('_canvas.json', '_generations.json');
           let generationCount = 0;
           try {
             // @ts-ignore
-            const genContent = window.electron.loadSync(`sessions/${generationFile}`);
+            const genContent: string | null = window.electron.loadSync(`sessions/${generationFile}`);
             if (genContent) {
-              const genData: GenerationsData = JSON.parse(genContent);
+              const genData: GenerationsData = JSON.parse(genContent as string);
               generationCount = genData.generations.length;
             }
           } catch (e) {
