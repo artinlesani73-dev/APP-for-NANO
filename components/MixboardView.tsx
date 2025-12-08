@@ -874,10 +874,36 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
     
   };
 
+  // Helper to convert whiteboard to dataUri for editing
+  const whiteboardToDataUri = (board: CanvasImage): string => {
+    const canvas = document.createElement('canvas');
+    canvas.width = board.originalWidth || board.width;
+    canvas.height = board.originalHeight || board.height;
+    const ctx = canvas.getContext('2d');
+
+    if (ctx) {
+      ctx.fillStyle = board.backgroundColor || '#ffffff';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+    }
+
+    return canvas.toDataURL('image/png');
+  };
+
   // Inline toolbar handlers for selected items
   const handleEditImage = (imageId: string) => {
     const image = canvasImages.find(img => img.id === imageId);
-    if (image && image.dataUri) {
+    if (!image) return;
+
+    // Handle whiteboards - convert to dataUri for editing
+    if (image.type === 'board') {
+      const dataUri = whiteboardToDataUri(image);
+      setEditingImage({ ...image, dataUri });
+      setEditModalOpen(true);
+      return;
+    }
+
+    // Handle regular images
+    if (image.dataUri) {
       setEditingImage(image);
       setEditModalOpen(true);
     }
@@ -917,28 +943,54 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
         ? saveThumbnail(currentSession.session_id, editingImage.id, newThumbnail)
         : { thumbnailUri: newThumbnail };
 
-      // Update canvas image with new original and thumbnail
-      setCanvasImages(prev =>
-        prev.map(img =>
-          img.id === editingImage.id
-            ? { ...img, dataUri: editedDataUri, thumbnailUri: savedThumbnailUri, thumbnailPath }
-            : img
-        )
-      );
-      
-
-      console.log(`[Edit] Image updated:`, editingImage.id, `Thumbnail path: ${thumbnailPath || 'in-memory'}`);
+      // If editing a whiteboard, convert it to an image type but keep metadata
+      if (editingImage.type === 'board') {
+        setCanvasImages(prev =>
+          prev.map(img =>
+            img.id === editingImage.id
+              ? {
+                  ...img,
+                  type: 'image', // Convert board to image
+                  dataUri: editedDataUri,
+                  thumbnailUri: savedThumbnailUri,
+                  thumbnailPath,
+                  backgroundColor: undefined // Remove board-specific properties
+                }
+              : img
+          )
+        );
+        console.log(`[Edit] Whiteboard converted to image:`, editingImage.id);
+      } else {
+        // Update regular image with new original and thumbnail
+        setCanvasImages(prev =>
+          prev.map(img =>
+            img.id === editingImage.id
+              ? { ...img, dataUri: editedDataUri, thumbnailUri: savedThumbnailUri, thumbnailPath }
+              : img
+          )
+        );
+        console.log(`[Edit] Image updated:`, editingImage.id, `Thumbnail path: ${thumbnailPath || 'in-memory'}`);
+      }
     } catch (error) {
       console.error('Failed to generate thumbnail for edited image:', error);
       // Still update the image even if thumbnail generation fails
-      setCanvasImages(prev =>
-        prev.map(img =>
-          img.id === editingImage.id
-            ? { ...img, dataUri: editedDataUri }
-            : img
-        )
-      );
-      
+      if (editingImage.type === 'board') {
+        setCanvasImages(prev =>
+          prev.map(img =>
+            img.id === editingImage.id
+              ? { ...img, type: 'image', dataUri: editedDataUri, backgroundColor: undefined }
+              : img
+          )
+        );
+      } else {
+        setCanvasImages(prev =>
+          prev.map(img =>
+            img.id === editingImage.id
+              ? { ...img, dataUri: editedDataUri }
+              : img
+          )
+        );
+      }
     } finally {
       setIsGeneratingThumbnails(false);
       setEditingImage(null);
@@ -1769,15 +1821,10 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
                       <button
                         onClick={(e) => {
                           e.stopPropagation();
-                          const color = window.prompt('Enter background color (hex, rgb, or color name):', image.backgroundColor || '#ffffff');
-                          if (color) {
-                            setCanvasImages(prev => prev.map(img =>
-                              img.id === image.id ? { ...img, backgroundColor: color } : img
-                            ));
-                          }
+                          handleEditImage(image.id);
                         }}
                         className="p-1.5 rounded hover:bg-zinc-700 dark:hover:bg-zinc-700 transition-colors"
-                        title="Edit Color"
+                        title="Edit Whiteboard"
                       >
                         <Edit2 size={16} className="text-white" />
                       </button>
