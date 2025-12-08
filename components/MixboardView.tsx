@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { Sparkles, Image as ImageIcon, Type, Trash2, ZoomIn, ZoomOut, Move, Download, Edit2, Check, X, LayoutTemplate, Bold, Italic, Save, Upload, Settings, Folder, Undo, Redo, ChevronDown, Copy, FileText, Square } from 'lucide-react';
 import { GeminiService } from '../services/geminiService';
-import { StorageService } from '../services/newStorageService';
+import { StorageServiceV2 } from '../services/storageV2';
 import { GenerationConfig, CanvasImage, MixboardSession, MixboardGeneration, StoredImageMeta } from '../types';
 import { ImageEditModal } from './ImageEditModal';
 import { ProjectsPage } from './ProjectsPage';
@@ -188,7 +188,7 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
         updated_at: new Date().toISOString()
       };
 
-      await StorageService.saveSessionAsync(updatedSession as any);
+      StorageServiceV2.saveSession(updatedSession);
       onSessionUpdate(updatedSession);
       isDirtyRef.current = false;
       setIsDirty(false);
@@ -434,7 +434,7 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
           canvas_images: imagesToSave,
           updated_at: new Date().toISOString()
         };
-        StorageService.saveSession(updatedSession as any);
+        StorageServiceV2.saveSession(updatedSession);
       }
     };
   }, [currentSession]); // Only depend on currentSession, not canvasImages or isDirty
@@ -568,8 +568,13 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
             size_bytes: selectedImg.dataUri.length
           });
         } else {
-          const meta = StorageService.saveImage(selectedImg.dataUri, 'reference');
-          inputImageMetas.push(meta);
+          const { hash, entry } = StorageServiceV2.registerImage(selectedImg.dataUri, undefined, 'reference');
+          inputImageMetas.push({
+            id: entry.id,
+            filename: entry.file_path.split('/').pop() || '',
+            hash,
+            size_bytes: entry.size_bytes
+          });
         }
       }
 
@@ -616,7 +621,13 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
         const imageDataUri = `data:image/png;base64,${output.images[0]}`;
 
         // Save output image to storage
-        const outputImageMeta = StorageService.saveImage(imageDataUri, 'output');
+        const { hash, entry } = StorageServiceV2.registerImage(imageDataUri, undefined, 'output');
+        const outputImageMeta: StoredImageMeta = {
+          id: entry.id,
+          filename: entry.file_path.split('/').pop() || '',
+          hash,
+          size_bytes: entry.size_bytes
+        };
 
         // Calculate duration
         const duration = Date.now() - startTime;
@@ -679,7 +690,7 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
               };
 
               // Persist session
-              StorageService.saveSession(updatedSession as any);
+              StorageServiceV2.saveSession(updatedSession);
               onSessionUpdate(updatedSession);
 
               return updatedCanvasImages;
@@ -719,7 +730,7 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
                 updated_at: new Date().toISOString()
               };
 
-              StorageService.saveSession(updatedSession as any);
+              StorageServiceV2.saveSession(updatedSession);
               onSessionUpdate(updatedSession);
 
               return updatedCanvasImages;
@@ -784,7 +795,7 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
           };
 
           // Persist session
-          StorageService.saveSession(updatedSession as any);
+          StorageServiceV2.saveSession(updatedSession);
           onSessionUpdate(updatedSession);
           setCurrentGeneration(null);
         }
@@ -1488,7 +1499,7 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
           onSelectSession={onSelectSession}
           onClose={() => setShowProjectsPage(false)}
           onDeleteSession={(sessionId) => {
-            StorageService.deleteSession(sessionId);
+            StorageServiceV2.deleteSession(sessionId);
             window.location.reload();
           }}
         />
@@ -1517,7 +1528,7 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
                   autoFocus
                   onKeyDown={(e) => {
                     if (e.key === 'Enter' && currentSession) {
-                      StorageService.renameSession(currentSession.session_id, newSessionTitle);
+                      StorageServiceV2.renameSession(currentSession.session_id, newSessionTitle);
                       const updatedSession = { ...currentSession, title: newSessionTitle };
                       onSessionUpdate(updatedSession as MixboardSession);
                       setEditingSessionTitle(false);
@@ -1529,7 +1540,7 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
                 <button
                   onClick={() => {
                     if (currentSession) {
-                      StorageService.renameSession(currentSession.session_id, newSessionTitle);
+                      StorageServiceV2.renameSession(currentSession.session_id, newSessionTitle);
                       const updatedSession = { ...currentSession, title: newSessionTitle };
                       onSessionUpdate(updatedSession as MixboardSession);
                       setEditingSessionTitle(false);

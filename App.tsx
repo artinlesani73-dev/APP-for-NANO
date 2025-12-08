@@ -7,6 +7,7 @@ import type { HistoryGalleryItem } from './components/HistoryPanel';
 import { LoginForm } from './components/LoginForm';
 import { UserProvider, useUser } from './components/UserContext';
 import { StorageService } from './services/newStorageService';
+import { StorageServiceV2 } from './services/storageV2';
 import { GeminiService } from './services/geminiService';
 import { LoggerService } from './services/logger';
 import { PreferencesService, type UserHistory, type UserSettings } from './services/preferencesService';
@@ -354,17 +355,11 @@ function AppContent() {
   };
 
   const handleCreateMixboardSession = (): MixboardSession => {
-    const newSession: MixboardSession = {
-      session_id: `mixboard-${Date.now()}`,
-      title: `Mixboard ${new Date().toLocaleString()}`,
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-      generations: [],
-      canvas_images: [],
-      user: currentUser || undefined
-    };
+    const newSession = StorageServiceV2.createSession(
+      `Mixboard ${new Date().toLocaleString()}`,
+      currentUser || undefined
+    );
 
-    StorageService.saveSession(newSession as any);
     setMixboardSessions(prev => [...prev, newSession]);
     setCurrentMixboardSessionId(newSession.session_id);
 
@@ -382,17 +377,18 @@ function AppContent() {
   };
 
   const loadMixboardSessions = () => {
-    const allSessions = StorageService.getSessions();
-
-    // Filter for Mixboard sessions (those with canvas_images property)
-    const mixboardSessions = allSessions.filter(s =>
-      'canvas_images' in s
-    ) as MixboardSession[];
+    // Get all session metadata from V2 storage
+    const allMetadata = StorageServiceV2.listSessions();
 
     // Filter by current user
-    const userMixboardSessions = currentUser
-      ? mixboardSessions.filter(s => s.user?.id === currentUser.id)
+    const userMetadata = currentUser
+      ? allMetadata.filter(m => m.user?.id === currentUser.id)
       : [];
+
+    // Load full session data for each
+    const userMixboardSessions = userMetadata
+      .map(meta => StorageServiceV2.loadSession(meta.session_id))
+      .filter((s): s is MixboardSession => s !== null);
 
     setMixboardSessions(userMixboardSessions);
     console.log('[App] Loaded Mixboard sessions:', userMixboardSessions.length);
