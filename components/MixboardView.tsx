@@ -2006,7 +2006,7 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
           )}
 
           {/* Bottom-Center Toolbar */}
-          <div className="absolute bottom-4 left-1/2 -translate-x-1/2 flex items-center gap-2 bg-white/95 dark:bg-zinc-900/95 backdrop-blur-sm border border-zinc-300 dark:border-zinc-700 rounded-full shadow-xl px-4 py-2">
+          <div className="absolute bottom-4 left-1/2 -translate-x-1/2 flex items-center gap-2 bg-white/95 dark:bg-zinc-900/95 backdrop-blur-sm border border-zinc-300 dark:border-zinc-700 rounded-lg shadow-xl px-4 py-2">
             <button
               onClick={handleUndo}
               disabled={historyPast.length === 0}
