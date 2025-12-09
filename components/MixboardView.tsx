@@ -565,7 +565,8 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
           inputImageMetas.push({
             id: selectedImg.imageMetaId,
             filename: `input_${selectedImg.imageMetaId}.png`,
-            size_bytes: selectedImg.dataUri.length
+            size_bytes: selectedImg.dataUri.length,
+            thumbnailPath: selectedImg.thumbnailPath
           });
         } else {
           const { hash, entry } = StorageServiceV2.registerImage(selectedImg.dataUri, undefined, 'reference');
@@ -573,7 +574,8 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
             id: hash,  // Use content hash as ID (not entry.id which is a UUID)
             filename: entry.file_path.split('/').pop() || '',
             hash,
-            size_bytes: entry.size_bytes
+            size_bytes: entry.size_bytes,
+            thumbnailPath: selectedImg.thumbnailPath
           });
         }
       }
