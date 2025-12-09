@@ -672,5 +672,12 @@ export const StorageServiceV2 = {
       console.error('[StorageV2] Failed to load thumbnail:', err);
       return null;
     }
+  },
+
+  /**
+   * Check if running in Electron environment
+   */
+  isElectron: (): boolean => {
+    return isElectron();
   }
 };

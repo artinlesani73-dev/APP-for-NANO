@@ -31,8 +31,6 @@ const DEFAULT_CONFIG: GenerationConfig = {
 
 function AppContent() {
   // --- STATE ---
-  const [sessions, setSessions] = useState<Session[]>([]);
-  const [currentSessionId, setCurrentSessionId] = useState<string | null>(null);
   const { currentUser, setCurrentUser, logout: userLogout } = useUser();
 
   // Active Generation Inputs
@@ -67,7 +65,6 @@ function AppContent() {
   const [theme, setTheme] = useState<'dark' | 'light'>('dark');
   const [preferencesReady, setPreferencesReady] = useState(false);
   const [userHistory, setUserHistory] = useState<UserHistory>(PreferencesService.defaultsHistory);
-  const [hasHydratedSessions, setHasHydratedSessions] = useState(false);
 
   const historyItems = useMemo<HistoryGalleryItem[]>(() => {
     if (!Array.isArray(mixboardSessions) || mixboardSessions.length === 0) {
@@ -111,9 +108,6 @@ function AppContent() {
       .flat()
       .sort((a, b) => new Date(b.generation.timestamp).getTime() - new Date(a.generation.timestamp).getTime());
   }, [mixboardSessions]);
-
-  // Get current session
-  const currentSession = sessions.find(s => s.session_id === currentSessionId) || null;
 
   // --- EFFECTS ---
   useEffect(() => {
@@ -186,121 +180,13 @@ function AppContent() {
   useEffect(() => {
     if (!preferencesReady) return;
     PreferencesService.saveHistory({
-      lastSessionId: currentSessionId,
+      lastSessionId: null,
       lastMixboardSessionId: currentMixboardSessionId
     })
       .then(setUserHistory)
       .catch((err) => console.warn('Failed to persist user history', err));
-  }, [preferencesReady, currentSessionId, currentMixboardSessionId]);
+  }, [preferencesReady, currentMixboardSessionId]);
 
-  // Define handlers before they're used in callbacks
-  // Note: Using regular functions (not useCallback) since they reference
-  // loadGenerationIntoView and resetInputs which are also regular functions
-  const handleSelectSession = (id: string) => {
-    setCurrentSessionId(id);
-    const session = StorageService.loadSession(id);
-    if (!session) return;
-
-    // If the session has generations, load the most recent one
-    if (session.generations.length > 0) {
-      const lastGen = session.generations[session.generations.length - 1];
-      loadGenerationIntoView(lastGen, { includeInputs: false });
-    } else {
-        resetInputs();
-    }
-  };
-
-  const handleNewSession = () => {
-    const newSession = StorageService.createSession("New Session", currentUser || undefined);
-    setSessions(prev => [newSession, ...prev]);
-    setCurrentSessionId(newSession.session_id);
-    resetInputs();
-    LoggerService.logAction('Created new session', {
-      sessionId: newSession.session_id,
-      user: currentUser?.displayName
-    });
-  };
-
-  const hydrateSessions = useCallback(async () => {
-    if (!currentUser || hasHydratedSessions) return;
-
-    setHasHydratedSessions(true);
-
-    try {
-      await StorageService.syncUserData?.();
-    } catch (err) {
-      console.error('Failed to sync user data to shared storage', err);
-    }
-
-    const allSessions = StorageService.getSessions();
-
-    // Filter sessions to only show the current user's sessions
-    const userSessions = currentUser
-      ? allSessions.filter(s => s.user?.id === currentUser.id)
-      : [];
-
-    setSessions(userSessions);
-
-    if (userSessions.length > 0) {
-      const preferredSessionId = userHistory.lastSessionId && userSessions.find(
-        (session) => session.session_id === userHistory.lastSessionId
-      )?.session_id;
-
-      const nextSessionId = preferredSessionId || userSessions[0].session_id;
-      // Only select session if it's different from current to prevent infinite loop
-      if (currentSessionId !== nextSessionId) {
-        handleSelectSession(nextSessionId);
-      }
-    } else if (currentSessionId !== null) {
-      // Only create new session if we don't already have one
-      handleNewSession();
-    }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentUser, currentSessionId, hasHydratedSessions, userHistory.lastSessionId]);
-
-  useEffect(() => {
-    if (!currentUser) {
-      setSessions([]);
-      setCurrentSessionId(null);
-      setHasHydratedSessions(false);
-      return;
-    }
-
-    const preferredSessionId = userHistory.lastSessionId;
-    if (preferredSessionId) {
-      const preferredSession = StorageService.loadSession(preferredSessionId);
-      if (preferredSession && preferredSession.user?.id === currentUser.id) {
-        setSessions([preferredSession]);
-        // Only select if not already selected to prevent infinite loop
-        if (currentSessionId !== preferredSession.session_id) {
-          handleSelectSession(preferredSession.session_id);
-        }
-      }
-    }
-
-    if (!preferredSessionId && currentSessionId === null) {
-      handleNewSession();
-    }
-
-    const idleHandle = typeof window !== 'undefined' && 'requestIdleCallback' in window
-      ? (window as any).requestIdleCallback(() => hydrateSessions())
-      : setTimeout(() => hydrateSessions(), 700);
-
-    return () => {
-      if (typeof window !== 'undefined' && 'cancelIdleCallback' in window && typeof idleHandle === 'number') {
-        (window as any).cancelIdleCallback(idleHandle);
-      } else {
-        clearTimeout(idleHandle as any);
-      }
-    };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentUser, currentSessionId, hydrateSessions, userHistory.lastSessionId]);
-
-  useEffect(() => {
-    if ((showHistory || showGraphView) && !hasHydratedSessions) {
-      hydrateSessions();
-    }
-  }, [hasHydratedSessions, hydrateSessions, showGraphView, showHistory]);
 
   // --- HANDLERS ---
   const handleLogin = (user: { displayName: string; id: string }, persist = true) => {
@@ -412,43 +298,6 @@ function AppContent() {
     }
   }, [currentUser]);
 
-  const handleRenameSession = (id: string, newTitle: string) => {
-    StorageService.renameSession(id, newTitle);
-    // Reload and filter sessions for current user
-    const allSessions = StorageService.getSessions();
-    const userSessions = currentUser
-      ? allSessions.filter(s => s.user?.id === currentUser.id)
-      : [];
-    setSessions(userSessions);
-  };
-
-  const handleDeleteSession = (id: string) => {
-    const session = sessions.find(s => s.session_id === id);
-    if (!session) return;
-
-    // Only allow deletion of empty sessions
-    if (session.generations.length > 0) {
-      alert('Cannot delete session with generations. Sessions with history are preserved.');
-      return;
-    }
-
-    StorageService.deleteSession(id);
-    // Reload and filter sessions for current user
-    const allSessions = StorageService.getSessions();
-    const userSessions = currentUser
-      ? allSessions.filter(s => s.user?.id === currentUser.id)
-      : [];
-    setSessions(userSessions);
-
-    // If we deleted the current session, switch to another one
-    if (currentSessionId === id) {
-      if (userSessions.length > 0) {
-        handleSelectSession(userSessions[0].session_id);
-      } else {
-        handleNewSession();
-      }
-    }
-  };
 
   const handleEditControlImage = (index: number) => {
     setEditingControlIndex(index);
@@ -484,63 +333,6 @@ function AppContent() {
 
       setControlImagesData(prev => [...prev, payload]);
     }
-  };
-
-  const handleSelectGeneration = (sessionId: string, gen: SessionGeneration) => {
-    const switchingSession = sessionId !== currentSessionId;
-
-    if (switchingSession) {
-      setCurrentSessionId(sessionId);
-    }
-
-    loadGenerationIntoView(gen, { includeInputs: !switchingSession });
-  };
-
-  const loadGenerationIntoView = (gen: SessionGeneration, options: { includeInputs?: boolean } = {}) => {
-    const { includeInputs = true } = options;
-    setPrompt(gen.prompt);
-    setConfig(gen.parameters);
-    setCurrentGeneration(gen);
-
-    if (includeInputs) {
-      // Load control images
-      if (gen.control_images && gen.control_images.length > 0) {
-        const imagesData = gen.control_images
-          .map(img => StorageService.loadImage('control', img.id, img.filename))
-          .filter(data => data !== null)
-          .map(data => ({ data })) as UploadedImagePayload[];
-        setControlImagesData(imagesData);
-      } else {
-        setControlImagesData([]);
-      }
-
-      // Load reference images
-      if (gen.reference_images && gen.reference_images.length > 0) {
-        const imagesData = gen.reference_images
-          .map(img => StorageService.loadImage('reference', img.id, img.filename))
-          .filter(data => data !== null)
-          .map(data => ({ data })) as UploadedImagePayload[];
-        setReferenceImagesData(imagesData);
-      } else {
-        setReferenceImagesData([]);
-      }
-    } else {
-      setControlImagesData([]);
-      setReferenceImagesData([]);
-    }
-
-    // Load output image(s)
-    const outputs = gen.output_images || (gen.output_image ? [gen.output_image] : []);
-    if (outputs.length > 0) {
-      const imageData = outputs
-        .map(img => StorageService.loadImage('output', img.id, img.filename))
-        .filter(data => data !== null) as string[];
-      setOutputImagesData(imageData);
-    } else {
-      setOutputImagesData([]);
-    }
-
-    setOutputTexts(gen.output_texts || []);
   };
 
   const resetInputs = () => {
@@ -593,14 +385,6 @@ function AppContent() {
     return StorageServiceV2.loadImageByHash(id);
   };
 
-  const handleExportImage = (filename: string) => {
-    const success = StorageService.exportImage(filename);
-    if (success) {
-      alert('Image exported successfully!');
-    } else {
-      alert('Failed to export image');
-    }
-  };
 
   const handleConnectApiKey = async () => {
       try {
@@ -622,121 +406,6 @@ function AppContent() {
       setApiKeyConnected(isConnected);
   };
 
-  const handleGenerate = async () => {
-    if (!currentSessionId || !prompt) return;
-    if (!currentUser) return;
-
-    LoggerService.logAction('Generation started', {
-      sessionId: currentSessionId,
-      model: config.model,
-      promptLength: prompt.length
-    });
-
-    // 1. Ensure API Key ONLY if model requires it (Pro models)
-    if (config.model === 'gemini-3-pro-image-preview' && !apiKeyConnected) {
-        await handleConnectApiKey();
-        // Check again after flow
-        const isConnected = await GeminiService.checkApiKey();
-        if (!isConnected) return;
-        setApiKeyConnected(true);
-    }
-
-    setIsGenerating(true);
-    setCurrentGeneration(null);
-    setOutputImagesData([]);
-    setOutputTexts([]);
-
-    // 2. Create Generation Record
-    const gen = StorageService.createGeneration(
-        currentSessionId,
-        prompt,
-        config,
-        controlImagesData.length > 0 ? controlImagesData : undefined,
-        referenceImagesData.length > 0 ? referenceImagesData : undefined
-    );
-    setCurrentGeneration(gen);
-
-    const startTime = Date.now();
-
-    try {
-        // 3. API Call (send all control/reference images when provided)
-        const output = await GeminiService.generateImage(
-            prompt,
-            config,
-            controlImagesData.length > 0 ? controlImagesData.map(img => img.data) : undefined,
-            referenceImagesData.length > 0 ? referenceImagesData.map(img => img.data) : undefined,
-            currentUser.displayName
-        );
-
-        const duration = Date.now() - startTime;
-
-        // 4. Complete Generation and Save Output
-        const outputDataUris = output.images.map(img => `data:image/png;base64,${img}`);
-        StorageService.completeGeneration(
-          currentSessionId,
-          gen.generation_id,
-          outputDataUris,
-          duration,
-          output.texts
-        );
-
-        // 5. Reload session and update UI
-        const updatedSession = StorageService.loadSession(currentSessionId);
-        if (updatedSession) {
-          const completedGen = updatedSession.generations.find(g => g.generation_id === gen.generation_id);
-          if (completedGen) {
-            setCurrentGeneration(completedGen);
-            const outputs = completedGen.output_images || (completedGen.output_image ? [completedGen.output_image] : []);
-            if (outputs.length > 0) {
-              const outputData = outputs
-                .map(img => StorageService.loadImage('output', img.id, img.filename))
-                .filter(data => data !== null) as string[];
-              setOutputImagesData(outputData);
-            }
-            setOutputTexts(completedGen.output_texts || []);
-          }
-        }
-
-        // Update sessions list to show new activity
-        setSessions(StorageService.getSessions());
-
-        LoggerService.logAction('Generation completed', {
-          sessionId: currentSessionId,
-          generationId: gen.generation_id,
-          durationMs: duration
-        });
-
-    } catch (error: any) {
-        console.error("Generation failed:", error);
-
-        const errorMessage = error.message || error.toString();
-
-        if (errorMessage.includes("Requested entity was not found")) {
-            setApiKeyConnected(false);
-            alert("The selected API Key is no longer valid or the project was not found. Please select a valid key.");
-            if (config.model === 'gemini-3-pro-image-preview') {
-                 await handleConnectApiKey();
-            }
-        }
-
-        StorageService.failGeneration(currentSessionId, gen.generation_id, errorMessage);
-
-        LoggerService.logError('Generation failed', {
-          sessionId: currentSessionId,
-          generationId: gen.generation_id,
-          error: errorMessage
-        });
-
-        // Reload generation with error
-        const updatedSession = StorageService.loadSession(currentSessionId);
-        if (updatedSession) {
-          const failedGen = updatedSession.generations.find(g => g.generation_id === gen.generation_id);
-          if (failedGen) setCurrentGeneration(failedGen);
-        }
-    } finally {
-        setIsGenerating(false);
-    }
-  };
 
   if (!currentUser) {
     return (
@@ -781,7 +450,7 @@ function AppContent() {
                 <Database size={16} />
                 <span className="text-sm font-medium tracking-wide">AREA49 - NANO BANANA UI</span>
                 <span className="text-xs bg-zinc-200 dark:bg-zinc-800 px-2 py-0.5 rounded text-zinc-600 dark:text-zinc-500 border border-zinc-300 dark:border-zinc-700">
-                  {StorageService.isElectron() ? "DESKTOP" : "WEB PREVIEW"}
+                  {StorageServiceV2.isElectron() ? "DESKTOP" : "WEB PREVIEW"}
                 </span>
             </div>
 
@@ -836,9 +505,9 @@ function AppContent() {
                 <div className="max-w-7xl mx-auto h-full min-h-[calc(100vh-6rem)]">
                   <HistoryPanel
                     items={historyItems}
-                    onSelectGeneration={handleSelectGeneration}
-                    selectedGenerationId={currentGeneration?.generation_id}
-                    onExportImage={handleExportImage}
+                    onSelectGeneration={() => {}}
+                    selectedGenerationId={undefined}
+                    onExportImage={() => {}}
                     loadImage={loadImage}
                   />
                 </div>
