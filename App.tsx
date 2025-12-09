@@ -71,9 +71,15 @@ function AppContent() {
   const [hasHydratedSessions, setHasHydratedSessions] = useState(false);
 
   const historyItems = useMemo<HistoryGalleryItem[]>(() => {
+    if (!sessions || !Array.isArray(sessions)) {
+      return [];
+    }
     return sessions
-      .flatMap(session =>
-        session.generations.flatMap<HistoryGalleryItem>((generation) => {
+      .flatMap(session => {
+        if (!session || !session.generations || !Array.isArray(session.generations)) {
+          return [];
+        }
+        return session.generations.flatMap<HistoryGalleryItem>((generation) => {
           const outputs = generation.output_images || (generation.output_image ? [generation.output_image] : []);
           const texts = generation.output_texts || [];
 
@@ -100,8 +106,9 @@ function AppContent() {
           }));
 
           return imageItems;
-        })
-      )
+        });
+      })
+      .flat()
       .sort((a, b) => new Date(b.generation.timestamp).getTime() - new Date(a.generation.timestamp).getTime());
   }, [sessions]);
 
