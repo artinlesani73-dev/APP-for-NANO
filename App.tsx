@@ -587,17 +587,10 @@ function AppContent() {
     }
   };
 
-  // Unified loadImage function that works with both legacy and Storage V2
+  // Load image using Storage V2 hash-based system
   const loadImage = (role: 'control' | 'reference' | 'output', id: string, filename: string): string | null => {
-    // First try to load from Storage V2 using hash (for Mixboard sessions)
-    // The 'id' might be a hash in new format
-    const v2Image = StorageServiceV2.loadImageByHash(id);
-    if (v2Image) {
-      return v2Image;
-    }
-
-    // Fall back to legacy storage
-    return StorageService.loadImage(role, id, filename);
+    // Load from Storage V2 using hash (id is the hash)
+    return StorageServiceV2.loadImageByHash(id);
   };
 
   const handleExportImage = (filename: string) => {
@@ -834,7 +827,7 @@ function AppContent() {
               {showGraphView ? (
                 <div className="h-full w-full">
                   <GraphView
-                    sessions={[...sessions, ...mixboardSessions]}
+                    sessions={mixboardSessions}
                     theme={theme}
                     loadImage={loadImage}
                   />
