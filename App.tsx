@@ -233,32 +233,19 @@ function AppContent() {
   };
 
   const loadMixboardSessions = () => {
-    console.log('[App] Loading Mixboard sessions...');
-    console.log('[App] Current user:', currentUser);
-
     // Get all session metadata from V2 storage
     const allMetadata = StorageServiceV2.listSessions();
-    console.log('[App] Total sessions found:', allMetadata.length);
-    console.log('[App] All session metadata:', allMetadata);
 
     // Filter by current user
     const userMetadata = currentUser
       ? allMetadata.filter(m => m.user?.id === currentUser.id)
       : [];
-    console.log('[App] User sessions after filter:', userMetadata.length);
-    console.log('[App] User metadata:', userMetadata);
 
     // Load full session data for each
     const userMixboardSessions = userMetadata
-      .map(meta => {
-        console.log('[App] Loading session:', meta.session_id);
-        const session = StorageServiceV2.loadSession(meta.session_id);
-        console.log('[App] Loaded session:', session?.session_id, 'Generations:', session?.generations?.length);
-        return session;
-      })
+      .map(meta => StorageServiceV2.loadSession(meta.session_id))
       .filter((s): s is MixboardSession => s !== null);
 
-    console.log('[App] Final loaded sessions:', userMixboardSessions.length);
     setMixboardSessions(userMixboardSessions);
   };
 
@@ -284,11 +271,7 @@ function AppContent() {
 
   // Load image using Storage V2 hash-based system
   const loadImage = (role: 'control' | 'reference' | 'output', id: string, filename: string): string | null => {
-    console.log('[App.loadImage] Loading:', { role, id, filename });
-    // Load from Storage V2 using hash (id is the hash)
-    const result = StorageServiceV2.loadImageByHash(id);
-    console.log('[App.loadImage] Result:', result ? 'Found' : 'NULL');
-    return result;
+    return StorageServiceV2.loadImageByHash(id);
   };
 
 
