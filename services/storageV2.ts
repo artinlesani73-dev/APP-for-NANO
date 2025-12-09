@@ -270,6 +270,26 @@ export const StorageServiceV2 = {
     }
   },
 
+  /**
+   * Load thumbnail by path
+   * Used for History and Graph views to display lightweight thumbnails
+   */
+  loadThumbnailByPath: (thumbnailPath: string): string | null => {
+    if (!isElectron()) return null;
+    if (!thumbnailPath) return null;
+
+    try {
+      // thumbnailPath format: "thumbnails/{session_id}/{imageId}.jpg"
+      // @ts-ignore
+      const base64 = window.electron.loadSync(thumbnailPath);
+      if (!base64) return null;
+
+      return `data:image/jpeg;base64,${base64}`;
+    } catch (err) {
+      return null;
+    }
+  },
+
   // --------------------------------------------------------------------------
   // SESSION MANAGEMENT
   // --------------------------------------------------------------------------

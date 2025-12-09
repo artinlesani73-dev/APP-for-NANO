@@ -622,25 +622,6 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
 
         // Save output image to storage
         const { hash, entry } = StorageServiceV2.registerImage(imageDataUri, undefined, 'output');
-        const outputImageMeta: StoredImageMeta = {
-          id: hash,  // Use content hash as ID (not entry.id which is a UUID)
-          filename: entry.file_path.split('/').pop() || '',
-          hash,
-          size_bytes: entry.size_bytes
-        };
-
-        // Calculate duration
-        const duration = Date.now() - startTime;
-
-        // Complete generation record
-        const completedGeneration: MixboardGeneration = {
-          ...newGeneration,
-          status: 'completed',
-          input_images: inputImageMetas,
-          output_images: [outputImageMeta],
-          output_texts: output.texts,
-          generation_time_ms: duration
-        };
 
         // Add generated image to canvas
         const img = new Image();
@@ -656,6 +637,28 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
             const { thumbnailUri: savedThumbnailUri, thumbnailPath } = currentSession
               ? saveThumbnail(currentSession.session_id, imageId, thumbnailUri)
               : { thumbnailUri };
+
+            // Create output image metadata with thumbnail path
+            const outputImageMeta: StoredImageMeta = {
+              id: hash,  // Use content hash as ID (not entry.id which is a UUID)
+              filename: entry.file_path.split('/').pop() || '',
+              hash,
+              size_bytes: entry.size_bytes,
+              thumbnailPath  // Include thumbnail path for history/graph display
+            };
+
+            // Calculate duration
+            const duration = Date.now() - startTime;
+
+            // Complete generation record
+            const completedGeneration: MixboardGeneration = {
+              ...newGeneration,
+              status: 'completed',
+              input_images: inputImageMetas,
+              output_images: [outputImageMeta],
+              output_texts: output.texts,
+              generation_time_ms: duration
+            };
 
             // Place image at center of visible canvas
             const center = getVisibleCanvasCenter();

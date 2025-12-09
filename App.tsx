@@ -270,7 +270,14 @@ function AppContent() {
 
 
   // Load image using Storage V2 hash-based system
-  const loadImage = (role: 'control' | 'reference' | 'output', id: string, filename: string): string | null => {
+  const loadImage = (role: 'control' | 'reference' | 'output', id: string, filename: string, thumbnailPath?: string): string | null => {
+    // Try loading thumbnail first for better performance in History/Graph views
+    if (thumbnailPath) {
+      const thumbnail = StorageServiceV2.loadThumbnailByPath(thumbnailPath);
+      if (thumbnail) return thumbnail;
+    }
+
+    // Fall back to full-size image
     return StorageServiceV2.loadImageByHash(id);
   };
 

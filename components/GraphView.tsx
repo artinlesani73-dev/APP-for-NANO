@@ -6,7 +6,7 @@ import { StorageService } from '../services/newStorageService';
 interface GraphViewProps {
   sessions: (Session | MixboardSession)[];
   theme: 'dark' | 'light';
-  loadImage: (role: 'control' | 'reference' | 'output', id: string, filename: string) => string | null;
+  loadImage: (role: 'control' | 'reference' | 'output', id: string, filename: string, thumbnailPath?: string) => string | null;
   onGenerateFromNode?: (prompt: string, config: GenerationConfig, controlImages?: string[], referenceImages?: string[]) => Promise<void>;
   isMixboardMode?: boolean;  // NEW: Flag for Mixboard rendering
 }
@@ -227,9 +227,9 @@ const GraphView: React.FC<GraphViewProps> = ({ sessions, theme, loadImage, onGen
             imageNodeId = `image-${img.id}`;
             imageGroups.set(imageKey, imageNodeId);
             // Try loading as different roles (storage may have it as any role)
-            const imageData = loadImage('output', img.id, img.filename) ||
-                            loadImage('reference', img.id, img.filename) ||
-                            loadImage('control', img.id, img.filename);
+            const imageData = loadImage('output', img.id, img.filename, img.thumbnailPath) ||
+                            loadImage('reference', img.id, img.filename, img.thumbnailPath) ||
+                            loadImage('control', img.id, img.filename, img.thumbnailPath);
 
             imageInfo = {
               nodeId: imageNodeId,
@@ -259,7 +259,7 @@ const GraphView: React.FC<GraphViewProps> = ({ sessions, theme, loadImage, onGen
           if (!imageInfo) {
             imageNodeId = `image-${img.id}`;
             imageGroups.set(imageKey, imageNodeId);
-            const imageData = loadImage('control', img.id, img.filename);
+            const imageData = loadImage('control', img.id, img.filename, img.thumbnailPath);
 
             imageInfo = {
               nodeId: imageNodeId,
@@ -287,7 +287,7 @@ const GraphView: React.FC<GraphViewProps> = ({ sessions, theme, loadImage, onGen
           if (!imageInfo) {
             imageNodeId = `image-${img.id}`;
             imageGroups.set(imageKey, imageNodeId);
-            const imageData = loadImage('reference', img.id, img.filename);
+            const imageData = loadImage('reference', img.id, img.filename, img.thumbnailPath);
 
             imageInfo = {
               nodeId: imageNodeId,
@@ -382,7 +382,7 @@ const GraphView: React.FC<GraphViewProps> = ({ sessions, theme, loadImage, onGen
           // First time seeing this image
           imageNodeId = `image-${img.id}`;
           imageGroups.set(imageKey, imageNodeId);
-          const imageData = loadImage('output', img.id, img.filename);
+          const imageData = loadImage('output', img.id, img.filename, img.thumbnailPath);
 
           imageInfo = {
             nodeId: imageNodeId,
