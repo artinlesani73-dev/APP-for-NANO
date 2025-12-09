@@ -834,7 +834,7 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
             updated_at: new Date().toISOString()
           };
 
-      StorageService.saveSession(updatedSession as any);
+      StorageServiceV2.saveSession(updatedSession);
       onSessionUpdate(updatedSession);
 
       setCurrentGeneration(showImageInput ? failedGeneration : null);
