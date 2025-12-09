@@ -628,121 +628,92 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
         img.onload = async () => {
           // Generate thumbnail for the output image
           setIsGeneratingThumbnails(true);
+
+          let thumbnailPath: string | undefined;
+          let savedThumbnailUri: string | undefined;
+          let imageId = `img-${Date.now()}`;
+
           try {
             const { generateThumbnail, saveThumbnail } = await import('../utils/imageUtils');
             const thumbnailUri = await generateThumbnail(imageDataUri, 384, 0.90);
-            const imageId = `img-${Date.now()}`;
 
             // Save thumbnail to disk (Electron) or keep in memory (web)
-            const { thumbnailUri: savedThumbnailUri, thumbnailPath } = currentSession
+            const result = currentSession
               ? saveThumbnail(currentSession.session_id, imageId, thumbnailUri)
               : { thumbnailUri };
 
-            // Create output image metadata with thumbnail path
-            const outputImageMeta: StoredImageMeta = {
-              id: hash,  // Use content hash as ID (not entry.id which is a UUID)
-              filename: entry.file_path.split('/').pop() || '',
-              hash,
-              size_bytes: entry.size_bytes,
-              thumbnailPath  // Include thumbnail path for history/graph display
-            };
+            savedThumbnailUri = result.thumbnailUri;
+            thumbnailPath = result.thumbnailPath;
 
-            // Calculate duration
-            const duration = Date.now() - startTime;
-
-            // Complete generation record
-            const completedGeneration: MixboardGeneration = {
-              ...newGeneration,
-              status: 'completed',
-              input_images: inputImageMetas,
-              output_images: [outputImageMeta],
-              output_texts: output.texts,
-              generation_time_ms: duration
-            };
-
-            // Place image at center of visible canvas
-            const center = getVisibleCanvasCenter();
-            const imageWidth = 300;
-            const imageHeight = (imageWidth * img.height) / img.width;
-
-            const newCanvasImage: CanvasImage = {
-              id: imageId,
-              dataUri: imageDataUri,
-              thumbnailUri: savedThumbnailUri,
-              thumbnailPath,
-              x: center.x - imageWidth / 2,
-              y: center.y - imageHeight / 2,
-              width: imageWidth,
-              height: imageHeight,
-              selected: false,
-              originalWidth: img.width,
-              originalHeight: img.height,
-              generationId: generationId,
-              imageMetaId: outputImageMeta.id
-            };
-
-            setCanvasImages(prev => {
-              const updatedCanvasImages = [...prev, newCanvasImage];
-
-              // Update session with new generation and canvas state
-              const updatedSession: MixboardSession = {
-                ...currentSession,
-                generations: [...existingGenerations, completedGeneration],
-                canvas_images: updatedCanvasImages,
-                updated_at: new Date().toISOString()
-              };
-
-              // Persist session
-              StorageServiceV2.saveSession(updatedSession);
-              onSessionUpdate(updatedSession);
-
-              return updatedCanvasImages;
-            });
-
-            setCurrentGeneration(completedGeneration);
-            console.log(`[Generation] Output image added:`, imageId, `Thumbnail path: ${thumbnailPath || 'in-memory'}`);
+            console.log(`[Generation] Thumbnail generated:`, imageId, `Path: ${thumbnailPath || 'in-memory'}`);
           } catch (error) {
             console.error('Failed to generate thumbnail for output image:', error);
-            // Still add image without thumbnail as fallback
-            // Place image at center of visible canvas
-            const center = getVisibleCanvasCenter();
-            const imageWidth = 300;
-            const imageHeight = (imageWidth * img.height) / img.width;
+            // Continue without thumbnail
+          }
 
-            const newCanvasImage: CanvasImage = {
-              id: `img-${Date.now()}`,
-              dataUri: imageDataUri,
-              x: center.x - imageWidth / 2,
-              y: center.y - imageHeight / 2,
-              width: imageWidth,
-              height: imageHeight,
-              selected: false,
-              originalWidth: img.width,
-              originalHeight: img.height,
-              generationId: generationId,
-              imageMetaId: outputImageMeta.id
+          // Create output image metadata with thumbnail path (if available)
+          const outputImageMeta: StoredImageMeta = {
+            id: hash,  // Use content hash as ID (not entry.id which is a UUID)
+            filename: entry.file_path.split('/').pop() || '',
+            hash,
+            size_bytes: entry.size_bytes,
+            thumbnailPath  // Include thumbnail path for history/graph display (undefined if failed)
+          };
+
+          // Calculate duration
+          const duration = Date.now() - startTime;
+
+          // Complete generation record
+          const completedGeneration: MixboardGeneration = {
+            ...newGeneration,
+            status: 'completed',
+            input_images: inputImageMetas,
+            output_images: [outputImageMeta],
+            output_texts: output.texts,
+            generation_time_ms: duration
+          };
+
+          // Place image at center of visible canvas
+          const center = getVisibleCanvasCenter();
+          const imageWidth = 300;
+          const imageHeight = (imageWidth * img.height) / img.width;
+
+          const newCanvasImage: CanvasImage = {
+            id: imageId,
+            dataUri: imageDataUri,
+            thumbnailUri: savedThumbnailUri,
+            thumbnailPath,
+            x: center.x - imageWidth / 2,
+            y: center.y - imageHeight / 2,
+            width: imageWidth,
+            height: imageHeight,
+            selected: false,
+            originalWidth: img.width,
+            originalHeight: img.height,
+            generationId: generationId,
+            imageMetaId: outputImageMeta.id
+          };
+
+          setCanvasImages(prev => {
+            const updatedCanvasImages = [...prev, newCanvasImage];
+
+            // Update session with new generation and canvas state
+            const updatedSession: MixboardSession = {
+              ...currentSession,
+              generations: [...existingGenerations, completedGeneration],
+              canvas_images: updatedCanvasImages,
+              updated_at: new Date().toISOString()
             };
 
-            setCanvasImages(prev => {
-              const updatedCanvasImages = [...prev, newCanvasImage];
+            // Persist session
+            StorageServiceV2.saveSession(updatedSession);
+            onSessionUpdate(updatedSession);
 
-              const updatedSession: MixboardSession = {
-                ...currentSession,
-                generations: [...existingGenerations, completedGeneration],
-                canvas_images: updatedCanvasImages,
-                updated_at: new Date().toISOString()
-              };
+            return updatedCanvasImages;
+          });
 
-              StorageServiceV2.saveSession(updatedSession);
-              onSessionUpdate(updatedSession);
-
-              return updatedCanvasImages;
-            });
-
-            setCurrentGeneration(completedGeneration);
-          } finally {
-            setIsGeneratingThumbnails(false);
-          }
+          setCurrentGeneration(completedGeneration);
+          setIsGeneratingThumbnails(false);
         };
         img.src = imageDataUri;
       }
