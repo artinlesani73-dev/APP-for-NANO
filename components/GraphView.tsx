@@ -150,9 +150,11 @@ const GraphView: React.FC<GraphViewProps> = ({ sessions, theme, loadImage, onGen
     // Collect all generations (support both legacy and Mixboard formats)
     const allGenerations: Array<{ session: Session | MixboardSession; generation: SessionGeneration | MixboardGeneration }> = [];
     filteredSessions.forEach(session => {
-      session.generations.forEach(generation => {
-        allGenerations.push({ session, generation });
-      });
+      if (session && session.generations && Array.isArray(session.generations)) {
+        session.generations.forEach(generation => {
+          allGenerations.push({ session, generation });
+        });
+      }
     });
 
     if (allGenerations.length === 0) {
@@ -1011,7 +1013,7 @@ const GraphView: React.FC<GraphViewProps> = ({ sessions, theme, loadImage, onGen
                     value={session.session_id}
                     style={{ backgroundColor: isDark ? '#0d0b14' : '#ffffff', color: isDark ? '#e5e7eb' : '#1f2937' }}
                   >
-                    {session.title} ({session.generations.length})
+                    {session.title} ({session.generations?.length || 0})
                   </option>
                 ))}
               </select>
