@@ -190,6 +190,11 @@ export function saveThumbnail(
 export function loadThumbnail(thumbnailPath?: string): string | null {
   if (!thumbnailPath) return null;
 
+  // If the stored value is already a data URI (legacy sessions), return it directly
+  if (thumbnailPath.startsWith('data:image/')) {
+    return thumbnailPath;
+  }
+
   // Check if running in Electron
   const isElectron = typeof window !== 'undefined' && (window as any).electron;
 
