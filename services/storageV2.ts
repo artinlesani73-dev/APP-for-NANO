@@ -279,12 +279,11 @@ export const StorageServiceV2 = {
     if (!thumbnailPath) return null;
 
     try {
-      // thumbnailPath format: "thumbnails/{session_id}/{imageId}.jpg"
+      // thumbnailPath format: "thumbnails/{session_id}/{imageId}.png"
+      // Use loadThumbnailSync which returns a properly formatted data URI
       // @ts-ignore
-      const base64 = window.electron.loadSync(thumbnailPath);
-      if (!base64) return null;
-
-      return `data:image/jpeg;base64,${base64}`;
+      const thumbnailUri = window.electron.loadThumbnailSync(thumbnailPath);
+      return thumbnailUri || null;
     } catch (err) {
       return null;
     }
