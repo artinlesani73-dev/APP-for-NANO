@@ -253,21 +253,34 @@ export const StorageServiceV2 = {
    * Load image data URI by hash
    */
   loadImageByHash: (hash: string): string | null => {
+    console.log('[StorageV2.loadImageByHash] Loading hash:', hash);
     const entry = StorageServiceV2.getImageByHash(hash);
-    if (!entry) return null;
+    if (!entry) {
+      console.warn('[StorageV2.loadImageByHash] No registry entry for hash:', hash);
+      return null;
+    }
+    console.log('[StorageV2.loadImageByHash] Registry entry:', entry);
 
     try {
       // Extract filename from path
       const filename = entry.file_path.split('/').pop();
-      if (!filename) return null;
+      if (!filename) {
+        console.warn('[StorageV2.loadImageByHash] No filename in path:', entry.file_path);
+        return null;
+      }
+      console.log('[StorageV2.loadImageByHash] Loading file:', filename);
 
       // @ts-ignore
       const base64 = window.electron.loadImageSync('images', filename);
-      if (!base64) return null;
+      if (!base64) {
+        console.warn('[StorageV2.loadImageByHash] No base64 data returned for:', filename);
+        return null;
+      }
 
+      console.log('[StorageV2.loadImageByHash] Successfully loaded, length:', base64.length);
       return `data:${entry.mime_type};base64,${base64}`;
     } catch (err) {
-      console.error('[StorageV2] Failed to load image:', hash, err);
+      console.error('[StorageV2.loadImageByHash] Error:', hash, err);
       return null;
     }
   },

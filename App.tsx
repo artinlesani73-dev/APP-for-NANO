@@ -284,8 +284,11 @@ function AppContent() {
 
   // Load image using Storage V2 hash-based system
   const loadImage = (role: 'control' | 'reference' | 'output', id: string, filename: string): string | null => {
+    console.log('[App.loadImage] Loading:', { role, id, filename });
     // Load from Storage V2 using hash (id is the hash)
-    return StorageServiceV2.loadImageByHash(id);
+    const result = StorageServiceV2.loadImageByHash(id);
+    console.log('[App.loadImage] Result:', result ? 'Found' : 'NULL');
+    return result;
   };
 
 
