@@ -515,7 +515,10 @@ export const StorageServiceV2 = {
       console.log('[StorageV2.listSessions] Raw files:', files);
 
       // Filter for canvas files only (one per session)
-      const canvasFiles = files.filter(f => f.endsWith('_canvas.json'));
+      // Handle both correct (_canvas.json) and old double-extension (_canvas.json.json) files
+      const canvasFiles = files.filter(f =>
+        f.endsWith('_canvas.json') || f.endsWith('_canvas.json.json')
+      );
       console.log('[StorageV2.listSessions] Canvas files:', canvasFiles);
 
       const metadata: SessionMetadata[] = [];
@@ -533,7 +536,10 @@ export const StorageServiceV2 = {
           console.log('[StorageV2.listSessions] Loaded session:', canvasState.session_id, 'User:', canvasState.user);
 
           // Load generation count
-          const generationFile = file.replace('_canvas.json', '_generations.json');
+          // Handle both old double-extension and new correct filenames
+          const generationFile = file.includes('.json.json')
+            ? file.replace('_canvas.json.json', '_generations.json.json')
+            : file.replace('_canvas.json', '_generations.json');
           let generationCount = 0;
           try {
             // @ts-ignore

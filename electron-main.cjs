@@ -240,7 +240,9 @@ const logAutoUpdateEvent = (event, details) => {
 // IPC Handlers for synchronous file operations
 ipcMain.on('save-sync', (event, filename, content) => {
     try {
-        writeFileBoth(`${filename}.json`, content, 'utf-8');
+        // Don't add .json if filename already has it
+        const finalFilename = filename.endsWith('.json') ? filename : `${filename}.json`;
+        writeFileBoth(finalFilename, content, 'utf-8');
         event.returnValue = true;
     } catch (e) {
         console.error("Save failed", e);
@@ -250,7 +252,9 @@ ipcMain.on('save-sync', (event, filename, content) => {
 
 ipcMain.on('load-sync', (event, filename) => {
     try {
-        const filePath = path.join(getDataPath(), `${filename}.json`);
+        // Don't add .json if filename already has it
+        const finalFilename = filename.endsWith('.json') ? filename : `${filename}.json`;
+        const filePath = path.join(getDataPath(), finalFilename);
         if (fs.existsSync(filePath)) {
             const content = fs.readFileSync(filePath, 'utf-8');
             event.returnValue = content;
