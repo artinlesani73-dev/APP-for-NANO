@@ -1,8 +1,4 @@
-import React, { lazy, Suspense, useState, useEffect, useMemo, useCallback } from 'react';
-import { PromptPanel } from './components/PromptPanel';
-import { MultiImageUploadPanel } from './components/MultiImageUploadPanel';
-import { ParametersPanel } from './components/ParametersPanel';
-import { ResultPanel } from './components/ResultPanel';
+import React, { lazy, Suspense, useState, useEffect, useMemo } from 'react';
 import type { HistoryGalleryItem } from './components/HistoryPanel';
 import { LoginForm } from './components/LoginForm';
 import { UserProvider, useUser } from './components/UserContext';
@@ -10,45 +6,18 @@ import { StorageServiceV2 } from './services/storageV2';
 import { GeminiService } from './services/geminiService';
 import { LoggerService } from './services/logger';
 import { PreferencesService, type UserHistory, type UserSettings } from './services/preferencesService';
-import { Session, SessionGeneration, GenerationConfig, UploadedImagePayload, MixboardSession } from './types';
-import { Database, Key, ExternalLink, History, Network, Sparkles, Settings } from 'lucide-react';
+import { MixboardSession } from './types';
+import { Database, Key } from 'lucide-react';
 import { ViewSidebar } from './components/ViewSidebar';
 
 const HistoryPanel = lazy(() => import('./components/HistoryPanel').then(module => ({ default: module.HistoryPanel })));
 const GraphView = lazy(() => import('./components/GraphView'));
 const MixboardView = lazy(() => import('./components/MixboardView').then(module => ({ default: module.MixboardView })));
 const SettingsModal = lazy(() => import('./components/SettingsModal').then(module => ({ default: module.SettingsModal })));
-const ImageEditModal = lazy(() => import('./components/ImageEditModal').then(module => ({ default: module.ImageEditModal })));
-
-const DEFAULT_CONFIG: GenerationConfig = {
-  temperature: 0.7,
-  top_p: 0.95,
-  aspect_ratio: '1:1',
-  image_size: '1K',
-  safety_filter: 'medium',
-  model: 'gemini-2.5-flash-image'
-};
 
 function AppContent() {
   // --- STATE ---
   const { currentUser, setCurrentUser, logout: userLogout } = useUser();
-
-  // Active Generation Inputs
-  const [prompt, setPrompt] = useState<string>('');
-  const [controlImagesData, setControlImagesData] = useState<UploadedImagePayload[]>([]);
-  const [referenceImagesData, setReferenceImagesData] = useState<UploadedImagePayload[]>([]);
-  const [editingControlIndex, setEditingControlIndex] = useState<number | null>(null);
-  const [config, setConfig] = useState<GenerationConfig>(DEFAULT_CONFIG);
-
-  // Output State
-  const [isGenerating, setIsGenerating] = useState(false);
-  const [currentGeneration, setCurrentGeneration] = useState<SessionGeneration | null>(null);
-  const [outputImagesData, setOutputImagesData] = useState<string[]>([]);
-  const [outputTexts, setOutputTexts] = useState<string[]>([]);
-
-  const editingControlImage = editingControlIndex !== null
-    ? controlImagesData[editingControlIndex]?.data ?? null
-    : null;
 
   // API Key State
   const [apiKeyConnected, setApiKeyConnected] = useState(false);
@@ -147,12 +116,6 @@ function AppContent() {
       isCancelled = true;
     };
   }, []);
-
-  useEffect(() => {
-    if (editingControlIndex !== null && editingControlIndex >= controlImagesData.length) {
-      setEditingControlIndex(null);
-    }
-  }, [controlImagesData.length, editingControlIndex]);
 
   useEffect(() => {
     LoggerService.setCurrentUser(currentUser);
@@ -299,85 +262,6 @@ function AppContent() {
   }, [currentUser]);
 
 
-  const handleEditControlImage = (index: number) => {
-    setEditingControlIndex(index);
-  };
-
-  const handleSaveEditedControl = (dataUri: string) => {
-    setControlImagesData(prev =>
-      prev.map((item, idx) => (idx === editingControlIndex ? { ...item, data: dataUri } : item))
-    );
-    setEditingControlIndex(null);
-  };
-
-  const handleCreateBlankControlImage = () => {
-    // Create a blank white canvas (1024x1024)
-    const canvas = document.createElement('canvas');
-    canvas.width = 1024;
-    canvas.height = 1024;
-    const ctx = canvas.getContext('2d');
-
-    if (ctx) {
-      // Fill with white
-      ctx.fillStyle = '#FFFFFF';
-      ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-      // Convert to base64 data URI
-      const dataUri = canvas.toDataURL('image/png');
-
-      const payload: UploadedImagePayload = {
-        data: dataUri,
-        original_name: 'blank_canvas.png',
-        size_bytes: dataUri.length
-      };
-
-      setControlImagesData(prev => [...prev, payload]);
-    }
-  };
-
-  const resetInputs = () => {
-    setPrompt("");
-    setControlImagesData([]);
-    setReferenceImagesData([]);
-    setConfig(DEFAULT_CONFIG);
-    setCurrentGeneration(null);
-    setOutputImagesData([]);
-    setOutputTexts([]);
-  };
-
-  const handleImageUpload = async (file: File, role: 'control' | 'reference') => {
-    const reader = new FileReader();
-    reader.onload = (e) => {
-        const base64 = e.target?.result as string;
-        const payload: UploadedImagePayload = {
-          data: base64,
-          original_name: file.name,
-          size_bytes: file.size
-        };
-        if (role === 'control') {
-          setControlImagesData(prev => [...prev, payload]);
-        } else {
-          setReferenceImagesData(prev => [...prev, payload]);
-        }
-    };
-    reader.readAsDataURL(file);
-  };
-
-  const handleGalleryImageDrop = (payload: UploadedImagePayload, role: 'control' | 'reference') => {
-    if (role === 'control') {
-      setControlImagesData(prev => [...prev, payload]);
-    } else {
-      setReferenceImagesData(prev => [...prev, payload]);
-    }
-  };
-
-  const handleImageRemove = (index: number, role: 'control' | 'reference') => {
-    if (role === 'control') {
-      setControlImagesData(prev => prev.filter((_, i) => i !== index));
-    } else {
-      setReferenceImagesData(prev => prev.filter((_, i) => i !== index));
-    }
-  };
 
   // Load image using Storage V2 hash-based system
   const loadImage = (role: 'control' | 'reference' | 'output', id: string, filename: string): string | null => {
@@ -455,30 +339,14 @@ function AppContent() {
             </div>
 
             <div className="flex items-center gap-4" style={{ WebkitAppRegion: 'no-drag' } as any}>
-                {config.model === 'gemini-3-pro-image-preview' && (
-                    <a
-                      href="https://ai.google.dev/gemini-api/docs/billing"
-                      target="_blank"
-                      rel="noreferrer"
-                      className="hidden md:flex items-center gap-1 text-[10px] text-zinc-500 hover:text-blue-500 transition-colors"
-                    >
-                      <ExternalLink size={10} />
-                      Billing Requirements (Pro Model)
-                    </a>
-                )}
-
                 {!apiKeyConnected && (
-                    <button 
+                    <button
                         onClick={handleConnectApiKey}
-                        className={`flex items-center gap-2 text-xs px-3 py-1.5 rounded border transition-colors font-medium ${
-                            config.model === 'gemini-3-pro-image-preview'
-                                ? 'text-yellow-700 dark:text-yellow-500 bg-yellow-50 dark:bg-yellow-950/30 border-yellow-300 dark:border-yellow-900'
-                                : 'text-zinc-700 dark:text-zinc-400 bg-white dark:bg-zinc-800/50 border-zinc-300 dark:border-zinc-700 shadow-sm'
-                        }`}
-                        title={config.model === 'gemini-3-pro-image-preview' ? "Required for Pro Model" : "Optional for Flash Model"}
+                        className="flex items-center gap-2 text-xs px-3 py-1.5 rounded border transition-colors font-medium text-zinc-700 dark:text-zinc-400 bg-white dark:bg-zinc-800/50 border-zinc-300 dark:border-zinc-700 shadow-sm"
+                        title="Connect Google AI Studio"
                     >
                         <Key size={12} />
-                        {config.model === 'gemini-3-pro-image-preview' ? "Connect Google AI Studio (Required)" : "Connect Google AI Studio"}
+                        Connect Google AI Studio
                     </button>
                 )}
                 {apiKeyConnected && (
@@ -528,15 +396,6 @@ function AppContent() {
             </Suspense>
           </div>
       </div>
-
-      <Suspense fallback={null}>
-        <ImageEditModal
-          isOpen={editingControlIndex !== null}
-          image={editingControlImage}
-          onClose={() => setEditingControlIndex(null)}
-          onSave={handleSaveEditedControl}
-        />
-      </Suspense>
 
       <Suspense fallback={null}>
         <SettingsModal
