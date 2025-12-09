@@ -261,6 +261,13 @@ function AppContent() {
     }
   }, [currentUser]);
 
+  // Reload sessions when switching to History or Graph view to ensure fresh data
+  useEffect(() => {
+    if ((showHistory || showGraphView) && currentUser) {
+      loadMixboardSessions();
+    }
+  }, [showHistory, showGraphView]);
+
 
 
   // Load image using Storage V2 hash-based system

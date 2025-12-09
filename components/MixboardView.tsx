@@ -1656,6 +1656,7 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
           <button
             onClick={() => {
               if (currentSession) {
+                StorageServiceV2.saveSession(currentSession);
                 onSessionUpdate(currentSession);
                 // Show a brief success indicator
                 const btn = document.activeElement as HTMLElement;
