@@ -287,13 +287,34 @@ export const StorageServiceV2 = {
       return thumbnailPath;
     }
 
-    try {
-      // thumbnailPath format: "thumbnails/{session_id}/{imageId}.jpg"
-      // @ts-ignore
-      const thumbnailUri = window.electron.loadThumbnailSync(thumbnailPath);
-      if (!thumbnailUri) return null;
+    // Some sessions ended up storing only the relative folder path (e.g.
+    // "mixboard-123/img-456.jpg") or even just the filename. Try the provided
+    // value first, then common fallbacks so Graph view can reuse the saved
+    // on-disk thumbnails instead of attempting to treat the value like base64.
+    const candidatePaths = [thumbnailPath];
+    const hasThumbnailsPrefix = thumbnailPath.startsWith('thumbnails/');
+    const hasExtension = /\.[a-zA-Z0-9]+$/.test(thumbnailPath);
 
-      return thumbnailUri;
+    if (!hasThumbnailsPrefix) {
+      candidatePaths.push(`thumbnails/${thumbnailPath}`);
+    }
+
+    if (!hasExtension) {
+      candidatePaths.push(`${thumbnailPath}.jpg`);
+      if (!hasThumbnailsPrefix) {
+        candidatePaths.push(`thumbnails/${thumbnailPath}.jpg`);
+      }
+    }
+
+    try {
+      for (const candidate of candidatePaths) {
+        // @ts-ignore
+        const thumbnailUri = window.electron.loadThumbnailSync(candidate);
+        if (thumbnailUri) {
+          return thumbnailUri;
+        }
+      }
+      return null;
     } catch (err) {
       return null;
     }
@@ -713,13 +734,32 @@ export const StorageServiceV2 = {
       return thumbnailPath;
     }
 
-    try {
-      // @ts-ignore
-      const base64 = window.electron.loadThumbnailSync(thumbnailPath);
-      if (!base64) return null;
+    // Try provided path first, then common fallbacks to cover cases where only
+    // the filename or session subfolder was persisted.
+    const candidatePaths = [thumbnailPath];
+    const hasThumbnailsPrefix = thumbnailPath.startsWith('thumbnails/');
+    const hasExtension = /\.[a-zA-Z0-9]+$/.test(thumbnailPath);
 
-      // Electron returns a full data URI already
-      return base64;
+    if (!hasThumbnailsPrefix) {
+      candidatePaths.push(`thumbnails/${thumbnailPath}`);
+    }
+
+    if (!hasExtension) {
+      candidatePaths.push(`${thumbnailPath}.jpg`);
+      if (!hasThumbnailsPrefix) {
+        candidatePaths.push(`thumbnails/${thumbnailPath}.jpg`);
+      }
+    }
+
+    try {
+      for (const candidate of candidatePaths) {
+        // @ts-ignore
+        const base64 = window.electron.loadThumbnailSync(candidate);
+        if (base64) {
+          return base64; // Electron already returns a full data URI
+        }
+      }
+      return null;
     } catch (err) {
       console.error('[StorageV2] Failed to load thumbnail:', err);
       return null;

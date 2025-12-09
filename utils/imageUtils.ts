@@ -203,11 +203,27 @@ export function loadThumbnail(thumbnailPath?: string): string | null {
   const isElectron = typeof window !== 'undefined' && (window as any).electron;
 
   if (isElectron && (window as any).electron.loadThumbnailSync) {
+    const hasThumbnailsPrefix = thumbnailPath.startsWith('thumbnails/');
+    const hasExtension = /\.[a-zA-Z0-9]+$/.test(thumbnailPath);
+
+    const candidatePaths = [thumbnailPath];
+    if (!hasThumbnailsPrefix) {
+      candidatePaths.push(`thumbnails/${thumbnailPath}`);
+    }
+    if (!hasExtension) {
+      candidatePaths.push(`${thumbnailPath}.jpg`);
+      if (!hasThumbnailsPrefix) {
+        candidatePaths.push(`thumbnails/${thumbnailPath}.jpg`);
+      }
+    }
+
     try {
-      const thumbnailUri = (window as any).electron.loadThumbnailSync(thumbnailPath);
-      if (thumbnailUri) {
-        console.log(`[Thumbnail] Loaded from disk: ${thumbnailPath}`);
-        return thumbnailUri;
+      for (const candidate of candidatePaths) {
+        const thumbnailUri = (window as any).electron.loadThumbnailSync(candidate);
+        if (thumbnailUri) {
+          console.log(`[Thumbnail] Loaded from disk: ${candidate}`);
+          return thumbnailUri;
+        }
       }
     } catch (error) {
       console.error('Error loading thumbnail:', error);
