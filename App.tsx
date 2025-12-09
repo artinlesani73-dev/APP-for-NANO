@@ -71,10 +71,17 @@ function AppContent() {
   const [hasHydratedSessions, setHasHydratedSessions] = useState(false);
 
   const historyItems = useMemo<HistoryGalleryItem[]>(() => {
-    if (!sessions || !Array.isArray(sessions)) {
+    // Combine legacy sessions and Mixboard sessions
+    const allSessions = [
+      ...(Array.isArray(sessions) ? sessions : []),
+      ...(Array.isArray(mixboardSessions) ? mixboardSessions : [])
+    ];
+
+    if (allSessions.length === 0) {
       return [];
     }
-    return sessions
+
+    return allSessions
       .flatMap(session => {
         if (!session || !session.generations || !Array.isArray(session.generations)) {
           return [];
@@ -110,7 +117,7 @@ function AppContent() {
       })
       .flat()
       .sort((a, b) => new Date(b.generation.timestamp).getTime() - new Date(a.generation.timestamp).getTime());
-  }, [sessions]);
+  }, [sessions, mixboardSessions]);
 
   // Get current session
   const currentSession = sessions.find(s => s.session_id === currentSessionId) || null;
@@ -587,6 +594,19 @@ function AppContent() {
     }
   };
 
+  // Unified loadImage function that works with both legacy and Storage V2
+  const loadImage = (role: 'control' | 'reference' | 'output', id: string, filename: string): string | null => {
+    // First try to load from Storage V2 using hash (for Mixboard sessions)
+    // The 'id' might be a hash in new format
+    const v2Image = StorageServiceV2.loadImageByHash(id);
+    if (v2Image) {
+      return v2Image;
+    }
+
+    // Fall back to legacy storage
+    return StorageService.loadImage(role, id, filename);
+  };
+
   const handleExportImage = (filename: string) => {
     const success = StorageService.exportImage(filename);
     if (success) {
@@ -821,9 +841,9 @@ function AppContent() {
               {showGraphView ? (
                 <div className="h-full w-full">
                   <GraphView
-                    sessions={sessions}
+                    sessions={[...sessions, ...mixboardSessions]}
                     theme={theme}
-                    loadImage={(role, id, filename) => StorageService.loadImage(role, id, filename)}
+                    loadImage={loadImage}
                   />
                 </div>
               ) : showHistory ? (
@@ -833,7 +853,7 @@ function AppContent() {
                     onSelectGeneration={handleSelectGeneration}
                     selectedGenerationId={currentGeneration?.generation_id}
                     onExportImage={handleExportImage}
-                    loadImage={(role, id, filename) => StorageService.loadImage(role, id, filename)}
+                    loadImage={loadImage}
                   />
                 </div>
               ) : (

@@ -1654,6 +1654,25 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
         {/* Left-Side Vertical Toolbar - Unified */}
         <div className="absolute left-4 top-1/2 -translate-y-1/2 z-30 bg-white dark:bg-zinc-900 border border-zinc-300 dark:border-zinc-700 rounded-lg shadow-lg flex flex-col">
           <button
+            onClick={() => {
+              if (currentSession) {
+                onSessionUpdate(currentSession);
+                // Show a brief success indicator
+                const btn = document.activeElement as HTMLElement;
+                if (btn) {
+                  btn.style.backgroundColor = theme === 'dark' ? '#16a34a' : '#22c55e';
+                  setTimeout(() => {
+                    btn.style.backgroundColor = '';
+                  }, 300);
+                }
+              }
+            }}
+            className="p-2 hover:bg-zinc-50 dark:hover:bg-zinc-800 transition-colors border-b border-zinc-200 dark:border-zinc-700"
+            title="Save Session"
+          >
+            <Save size={20} className="text-zinc-600 dark:text-zinc-400" />
+          </button>
+          <button
             className="p-2 hover:bg-zinc-50 dark:hover:bg-zinc-800 transition-colors"
             title="Templates (Coming Soon)"
           >
