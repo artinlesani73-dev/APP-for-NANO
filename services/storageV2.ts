@@ -191,6 +191,7 @@ export const StorageServiceV2 = {
   /**
    * Register an image in the global registry (with deduplication)
    * Returns the hash that should be used to reference this image
+   * Note: role 'control' and 'reference' both result in 'input_' prefix
    */
   registerImage: (dataUri: string, originalName?: string, role: 'control' | 'reference' | 'output' = 'reference'): { hash: string; entry: ImageRegistryEntry } => {
     const registry = StorageServiceV2.loadImageRegistry();
@@ -207,7 +208,9 @@ export const StorageServiceV2 = {
     // Create new entry
     const id = generateUUID();
     const timestamp = Date.now();
-    const filename = `${role}_${timestamp}_${id}.png`;
+    // Use 'input' prefix for all non-output images (control/reference → input)
+    const filePrefix = role === 'output' ? 'output' : 'input';
+    const filename = `${filePrefix}_${timestamp}_${id}.png`;
     const filePath = `images/${filename}`;
 
     // Get image dimensions

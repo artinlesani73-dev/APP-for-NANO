@@ -27,7 +27,7 @@ Storage V2 redesigns the data persistence layer with separated concerns and bett
 │   ├── mixboard-1234567891_generations.json
 │   └── mixboard-1234567891_canvas.json
 ├── images/
-│   ├── reference_1733664000000_abc123.png
+│   ├── input_1733664000000_abc123.png
 │   ├── output_1733664100000_def456.png
 │   └── ...
 ├── thumbnails/
@@ -62,7 +62,7 @@ Storage V2 redesigns the data persistence layer with separated concerns and bett
       "width": 1024,
       "height": 768,
       "mime_type": "image/png",
-      "file_path": "images/reference_1733664000000_abc123.png"
+      "file_path": "images/input_1733664000000_abc123.png"
     }
   }
 }
@@ -94,7 +94,7 @@ Storage V2 redesigns the data persistence layer with separated concerns and bett
       "input_images": [
         {
           "id": "abc123hash",
-          "filename": "reference_1733664000000_abc123.png",
+          "filename": "input_1733664000000_abc123.png",
           "hash": "abc123hash",
           "size_bytes": 123456
         }
