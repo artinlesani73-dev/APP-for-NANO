@@ -276,18 +276,37 @@ ipcMain.on('delete-sync', (event, filename) => {
 
 ipcMain.on('list-files-sync', (event, prefix) => {
     try {
-        const dir = getDataPath();
-        const files = fs.readdirSync(dir);
-        const results = [];
+        const dataDir = getDataPath();
 
-        files.forEach(file => {
-            if (file.startsWith(prefix) && file.endsWith('.json')) {
-                const content = fs.readFileSync(path.join(dir, file), 'utf-8');
-                results.push({ key: file.replace('.json', ''), content });
+        // If prefix ends with '/', it's a directory path - list files in that directory
+        if (prefix.endsWith('/')) {
+            const targetDir = path.join(dataDir, prefix);
+
+            // Ensure directory exists
+            if (!fs.existsSync(targetDir)) {
+                console.log('[list-files-sync] Directory does not exist:', targetDir);
+                event.returnValue = [];
+                return;
             }
-        });
-        event.returnValue = results;
+
+            const files = fs.readdirSync(targetDir);
+            console.log('[list-files-sync] Files in', prefix, ':', files.length);
+            event.returnValue = files;
+        } else {
+            // Legacy behavior: filter by prefix in root directory
+            const files = fs.readdirSync(dataDir);
+            const results = [];
+
+            files.forEach(file => {
+                if (file.startsWith(prefix) && file.endsWith('.json')) {
+                    const content = fs.readFileSync(path.join(dataDir, file), 'utf-8');
+                    results.push({ key: file.replace('.json', ''), content });
+                }
+            });
+            event.returnValue = results;
+        }
     } catch (e) {
+        console.error('[list-files-sync] Error:', e);
         event.returnValue = [];
     }
 });
@@ -725,6 +744,19 @@ ipcMain.handle('user-history:save', async (_event, history) => {
 });
 
 app.whenReady().then(() => {
+  // Ensure required directories exist
+  const dataDir = getDataPath();
+  const sessionsDir = path.join(dataDir, 'sessions');
+  const imagesDir = path.join(dataDir, 'images');
+  const thumbnailsDir = path.join(dataDir, 'thumbnails');
+
+  [sessionsDir, imagesDir, thumbnailsDir].forEach(dir => {
+    if (!fs.existsSync(dir)) {
+      fs.mkdirSync(dir, { recursive: true });
+      console.log('[Init] Created directory:', dir);
+    }
+  });
+
   createWindow();
   autoUpdater.checkForUpdatesAndNotify();
 

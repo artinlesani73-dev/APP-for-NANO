@@ -233,21 +233,33 @@ function AppContent() {
   };
 
   const loadMixboardSessions = () => {
+    console.log('[App] Loading Mixboard sessions...');
+    console.log('[App] Current user:', currentUser);
+
     // Get all session metadata from V2 storage
     const allMetadata = StorageServiceV2.listSessions();
+    console.log('[App] Total sessions found:', allMetadata.length);
+    console.log('[App] All session metadata:', allMetadata);
 
     // Filter by current user
     const userMetadata = currentUser
       ? allMetadata.filter(m => m.user?.id === currentUser.id)
       : [];
+    console.log('[App] User sessions after filter:', userMetadata.length);
+    console.log('[App] User metadata:', userMetadata);
 
     // Load full session data for each
     const userMixboardSessions = userMetadata
-      .map(meta => StorageServiceV2.loadSession(meta.session_id))
+      .map(meta => {
+        console.log('[App] Loading session:', meta.session_id);
+        const session = StorageServiceV2.loadSession(meta.session_id);
+        console.log('[App] Loaded session:', session?.session_id, 'Generations:', session?.generations?.length);
+        return session;
+      })
       .filter((s): s is MixboardSession => s !== null);
 
+    console.log('[App] Final loaded sessions:', userMixboardSessions.length);
     setMixboardSessions(userMixboardSessions);
-    console.log('[App] Loaded Mixboard sessions:', userMixboardSessions.length);
   };
 
   // Load Mixboard sessions when user changes
