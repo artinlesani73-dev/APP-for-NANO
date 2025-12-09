@@ -6,7 +6,6 @@ import { ResultPanel } from './components/ResultPanel';
 import type { HistoryGalleryItem } from './components/HistoryPanel';
 import { LoginForm } from './components/LoginForm';
 import { UserProvider, useUser } from './components/UserContext';
-import { StorageService } from './services/newStorageService';
 import { StorageServiceV2 } from './services/storageV2';
 import { GeminiService } from './services/geminiService';
 import { LoggerService } from './services/logger';
@@ -71,23 +70,17 @@ function AppContent() {
   const [hasHydratedSessions, setHasHydratedSessions] = useState(false);
 
   const historyItems = useMemo<HistoryGalleryItem[]>(() => {
-    // Combine legacy sessions and Mixboard sessions
-    const allSessions = [
-      ...(Array.isArray(sessions) ? sessions : []),
-      ...(Array.isArray(mixboardSessions) ? mixboardSessions : [])
-    ];
-
-    if (allSessions.length === 0) {
+    if (!Array.isArray(mixboardSessions) || mixboardSessions.length === 0) {
       return [];
     }
 
-    return allSessions
+    return mixboardSessions
       .flatMap(session => {
         if (!session || !session.generations || !Array.isArray(session.generations)) {
           return [];
         }
         return session.generations.flatMap<HistoryGalleryItem>((generation) => {
-          const outputs = generation.output_images || (generation.output_image ? [generation.output_image] : []);
+          const outputs = generation.output_images || [];
           const texts = generation.output_texts || [];
 
           if (outputs.length === 0) {
@@ -117,7 +110,7 @@ function AppContent() {
       })
       .flat()
       .sort((a, b) => new Date(b.generation.timestamp).getTime() - new Date(a.generation.timestamp).getTime());
-  }, [sessions, mixboardSessions]);
+  }, [mixboardSessions]);
 
   // Get current session
   const currentSession = sessions.find(s => s.session_id === currentSessionId) || null;
