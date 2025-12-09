@@ -384,16 +384,28 @@ export const StorageServiceV2 = {
    * Load a complete Mixboard session (combines generations + canvas)
    */
   loadSession: (sessionId: string): MixboardSession | null => {
+    console.log('[StorageV2.loadSession] Loading session:', sessionId);
     const canvasState = StorageServiceV2.loadCanvasState(sessionId);
-    if (!canvasState) return null;
+    if (!canvasState) {
+      console.warn('[StorageV2.loadSession] No canvas state for:', sessionId);
+      return null;
+    }
+    console.log('[StorageV2.loadSession] Canvas state loaded, images:', canvasState.canvas_images.length);
 
     const generations = StorageServiceV2.loadGenerations(sessionId);
+    console.log('[StorageV2.loadSession] Generations loaded:', generations.length);
+
     const registry = StorageServiceV2.loadImageRegistry();
+    console.log('[StorageV2.loadSession] Registry loaded, images:', Object.keys(registry.images).length);
 
     // Reconstruct canvas images with full data URIs
     const canvasImages: CanvasImage[] = canvasState.canvas_images.map(img => {
       const registryEntry = registry.images[img.imageHash];
       const dataUri = registryEntry ? StorageServiceV2.loadImageByHash(img.imageHash) : null;
+
+      if (!registryEntry) {
+        console.warn('[StorageV2.loadSession] Missing registry entry for hash:', img.imageHash);
+      }
 
       return {
         id: img.canvasId,
@@ -418,6 +430,7 @@ export const StorageServiceV2 = {
       };
     });
 
+    console.log('[StorageV2.loadSession] Session loaded successfully:', sessionId);
     return {
       session_id: sessionId,
       title: canvasState.title,
@@ -499,18 +512,25 @@ export const StorageServiceV2 = {
     try {
       // @ts-ignore
       const files: string[] = window.electron.listFilesSync('sessions/');
+      console.log('[StorageV2.listSessions] Raw files:', files);
 
       // Filter for canvas files only (one per session)
       const canvasFiles = files.filter(f => f.endsWith('_canvas.json'));
+      console.log('[StorageV2.listSessions] Canvas files:', canvasFiles);
 
       const metadata: SessionMetadata[] = [];
 
       for (const file of canvasFiles) {
         try {
+          console.log('[StorageV2.listSessions] Loading:', file);
           // @ts-ignore
           const content: string | null = window.electron.loadSync(`sessions/${file}`);
-          if (!content) continue;
+          if (!content) {
+            console.warn('[StorageV2.listSessions] Empty content:', file);
+            continue;
+          }
           const canvasState: CanvasStateData = JSON.parse(content as string);
+          console.log('[StorageV2.listSessions] Loaded session:', canvasState.session_id, 'User:', canvasState.user);
 
           // Load generation count
           const generationFile = file.replace('_canvas.json', '_generations.json');
@@ -523,7 +543,7 @@ export const StorageServiceV2 = {
               generationCount = genData.generations.length;
             }
           } catch (e) {
-            // Ignore
+            console.warn('[StorageV2.listSessions] No generations file:', generationFile);
           }
 
           metadata.push({
@@ -536,16 +556,17 @@ export const StorageServiceV2 = {
             canvas_image_count: canvasState.canvas_images.length
           });
         } catch (err) {
-          console.warn('[StorageV2] Failed to parse session file:', file);
+          console.warn('[StorageV2.listSessions] Parse error:', file, err);
         }
       }
 
+      console.log('[StorageV2.listSessions] Total metadata:', metadata.length);
       // Sort by updated_at (newest first)
       return metadata.sort((a, b) =>
         new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime()
       );
     } catch (err) {
-      console.error('[StorageV2] Failed to list sessions:', err);
+      console.error('[StorageV2.listSessions] List error:', err);
       return [];
     }
   },
