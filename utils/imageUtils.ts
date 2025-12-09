@@ -190,8 +190,12 @@ export function saveThumbnail(
 export function loadThumbnail(thumbnailPath?: string): string | null {
   if (!thumbnailPath) return null;
 
-  // If the stored value is already a data URI (legacy sessions), return it directly
-  if (thumbnailPath.startsWith('data:image/')) {
+  // If the stored value is already a data URI (legacy sessions), only trust it
+  // when it includes the base64 header. Otherwise this is likely raw base64 and
+  // should fall back to disk to avoid invalid data:image URLs.
+  const hasDataUriPrefix = thumbnailPath.startsWith('data:image/');
+  const hasBase64Header = thumbnailPath.includes(';base64,');
+  if (hasDataUriPrefix && hasBase64Header) {
     return thumbnailPath;
   }
 

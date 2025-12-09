@@ -278,8 +278,12 @@ export const StorageServiceV2 = {
     if (!isElectron()) return null;
     if (!thumbnailPath) return null;
 
-    // If the path is already a data URI (legacy sessions), return it directly
-    if (thumbnailPath.startsWith('data:image/')) {
+    // If the value is already a data URI (legacy sessions), only use it when it
+    // contains the full base64 header. Otherwise fall back to disk to avoid
+    // treating raw base64 as a URL (ERR_INVALID_URL).
+    const hasDataUriPrefix = thumbnailPath.startsWith('data:image/');
+    const hasBase64Header = thumbnailPath.includes(';base64,');
+    if (hasDataUriPrefix && hasBase64Header) {
       return thumbnailPath;
     }
 
@@ -700,8 +704,12 @@ export const StorageServiceV2 = {
     if (!isElectron()) return null;
     if (!thumbnailPath) return null;
 
-    // Support legacy data URIs stored directly in the session
-    if (thumbnailPath.startsWith('data:image/')) {
+    // Support legacy data URIs stored directly in the session, but only when
+    // the base64 marker is present. Otherwise this is likely a raw base64
+    // string and we should try disk instead of generating an invalid data URL.
+    const hasDataUriPrefix = thumbnailPath.startsWith('data:image/');
+    const hasBase64Header = thumbnailPath.includes(';base64,');
+    if (hasDataUriPrefix && hasBase64Header) {
       return thumbnailPath;
     }
 
