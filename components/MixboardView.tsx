@@ -570,7 +570,7 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
         } else {
           const { hash, entry } = StorageServiceV2.registerImage(selectedImg.dataUri, undefined, 'reference');
           inputImageMetas.push({
-            id: entry.id,
+            id: hash,  // Use content hash as ID (not entry.id which is a UUID)
             filename: entry.file_path.split('/').pop() || '',
             hash,
             size_bytes: entry.size_bytes
@@ -623,7 +623,7 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
         // Save output image to storage
         const { hash, entry } = StorageServiceV2.registerImage(imageDataUri, undefined, 'output');
         const outputImageMeta: StoredImageMeta = {
-          id: entry.id,
+          id: hash,  // Use content hash as ID (not entry.id which is a UUID)
           filename: entry.file_path.split('/').pop() || '',
           hash,
           size_bytes: entry.size_bytes
