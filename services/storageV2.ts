@@ -278,6 +278,11 @@ export const StorageServiceV2 = {
     if (!isElectron()) return null;
     if (!thumbnailPath) return null;
 
+    // If the path is already a data URI (legacy sessions), return it directly
+    if (thumbnailPath.startsWith('data:image/')) {
+      return thumbnailPath;
+    }
+
     try {
       // thumbnailPath format: "thumbnails/{session_id}/{imageId}.jpg"
       // @ts-ignore
@@ -693,13 +698,20 @@ export const StorageServiceV2 = {
    */
   loadThumbnail: (thumbnailPath: string): string | null => {
     if (!isElectron()) return null;
+    if (!thumbnailPath) return null;
+
+    // Support legacy data URIs stored directly in the session
+    if (thumbnailPath.startsWith('data:image/')) {
+      return thumbnailPath;
+    }
 
     try {
       // @ts-ignore
       const base64 = window.electron.loadThumbnailSync(thumbnailPath);
       if (!base64) return null;
 
-      return `data:image/png;base64,${base64}`;
+      // Electron returns a full data URI already
+      return base64;
     } catch (err) {
       console.error('[StorageV2] Failed to load thumbnail:', err);
       return null;
