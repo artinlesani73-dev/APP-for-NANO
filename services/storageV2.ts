@@ -279,13 +279,12 @@ export const StorageServiceV2 = {
     if (!thumbnailPath) return null;
 
     try {
-      // thumbnailPath format: "thumbnails/{session_id}/{imageId}.png"
+      // thumbnailPath format: "thumbnails/{session_id}/{imageId}.jpg"
       // Use loadThumbnailSync to load from thumbnail directory
+      // electron-main.cjs already returns the full data URI with correct MIME type
       // @ts-ignore
-      const base64 = window.electron.loadThumbnailSync(thumbnailPath);
-      if (!base64) return null;
-
-      return `data:image/png;base64,${base64}`;
+      const dataUri = window.electron.loadThumbnailSync(thumbnailPath);
+      return dataUri; // Already includes "data:image/jpeg;base64," prefix from Electron
     } catch (err) {
       return null;
     }
@@ -673,7 +672,7 @@ export const StorageServiceV2 = {
       const thumbnailPath = `${sessionId}/${imageId}`;
       // @ts-ignore
       window.electron.saveThumbnailSync(sessionId, imageId, stripDataUriHeader(thumbnailDataUri));
-      return `thumbnails/${thumbnailPath}.png`;
+      return `thumbnails/${thumbnailPath}.jpg`; // Match electron-main.cjs which saves as .jpg
     } catch (err) {
       console.error('[StorageV2] Failed to save thumbnail:', err);
       return thumbnailDataUri;
