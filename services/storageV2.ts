@@ -281,10 +281,10 @@ export const StorageServiceV2 = {
     try {
       // thumbnailPath format: "thumbnails/{session_id}/{imageId}.jpg"
       // @ts-ignore
-      const base64 = window.electron.loadSync(thumbnailPath);
-      if (!base64) return null;
+      const thumbnailUri = window.electron.loadThumbnailSync(thumbnailPath);
+      if (!thumbnailUri) return null;
 
-      return `data:image/jpeg;base64,${base64}`;
+      return thumbnailUri;
     } catch (err) {
       return null;
     }
@@ -669,10 +669,19 @@ export const StorageServiceV2 = {
     if (!isElectron()) return thumbnailDataUri;
 
     try {
-      const thumbnailPath = `${sessionId}/${imageId}`;
       // @ts-ignore
-      window.electron.saveThumbnailSync(sessionId, imageId, stripDataUriHeader(thumbnailDataUri));
-      return `thumbnails/${thumbnailPath}.png`;
+      const result = window.electron.saveThumbnailSync(
+        sessionId,
+        imageId,
+        stripDataUriHeader(thumbnailDataUri)
+      );
+
+      if (result?.success && result.path) {
+        return result.path;
+      }
+
+      console.error('[StorageV2] Failed to save thumbnail:', result?.error);
+      return thumbnailDataUri;
     } catch (err) {
       console.error('[StorageV2] Failed to save thumbnail:', err);
       return thumbnailDataUri;
