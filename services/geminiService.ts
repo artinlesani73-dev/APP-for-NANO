@@ -3,8 +3,53 @@ import { GenerationConfig } from "../types";
 import { AppConfig } from "./config";
 
 // Helper to remove data URL prefix for API
-const stripBase64Header = (dataUrl: string) => {
-  return dataUrl.split(',')[1];
+// Defensive implementation that handles edge cases
+const stripBase64Header = (dataUrl: string): string => {
+  // Handle null/undefined/empty
+  if (!dataUrl || typeof dataUrl !== 'string') {
+    throw new Error('Invalid image data: expected non-empty string');
+  }
+
+  // Trim whitespace
+  const trimmed = dataUrl.trim();
+
+  // Try multiple approaches to strip the data URI prefix
+  // 1. Standard format: data:image/png;base64,xxxxx (case-insensitive)
+  // 2. With charset: data:image/png;charset=utf-8;base64,xxxxx
+  // 3. Other variations
+
+  // More flexible regex - case insensitive, handles various MIME subtypes and optional params
+  const dataUriPattern = /^data:image\/[^;,]+(?:;[^;,]*)*;base64,/i;
+  let stripped = trimmed.replace(dataUriPattern, '');
+
+  // If first pattern didn't match, try simpler pattern
+  if (stripped === trimmed) {
+    // Try to find base64, marker and take everything after it
+    const base64Marker = ';base64,';
+    const markerIndex = trimmed.toLowerCase().indexOf(base64Marker);
+    if (markerIndex !== -1) {
+      stripped = trimmed.substring(markerIndex + base64Marker.length);
+    }
+  }
+
+  // If still no change, check if it might already be raw base64
+  if (stripped === trimmed) {
+    // Validate it looks like base64 (starts with valid base64 char)
+    if (!/^[A-Za-z0-9+/]/.test(trimmed)) {
+      console.error('[GeminiService] Invalid image data format. First 100 chars:', trimmed.substring(0, 100));
+      throw new Error('Invalid image data: not a valid data URL or base64 string');
+    }
+    // Already raw base64
+    return trimmed;
+  }
+
+  // Validate the stripped result isn't empty
+  if (!stripped || stripped.trim() === '') {
+    console.error('[GeminiService] Empty base64 after stripping. Original first 100 chars:', trimmed.substring(0, 100));
+    throw new Error('Invalid image data: base64 content is empty after stripping header');
+  }
+
+  return stripped;
 };
 
 const isElectron = () => {
@@ -101,21 +146,33 @@ export const GeminiService = {
     // Note: Gemini 'generateContent' takes context images.
     // We treat Control/Reference as multimodal inputs.
     controlImages.forEach((image, idx) => {
-      parts.push({
-        inlineData: {
-          mimeType: 'image/png', // Assuming PNG for simplicity in this demo, actual app would preserve mime
-          data: stripBase64Header(image)
-        }
-      });
+      try {
+        const base64Data = stripBase64Header(image);
+        parts.push({
+          inlineData: {
+            mimeType: 'image/png', // Assuming PNG for simplicity in this demo, actual app would preserve mime
+            data: base64Data
+          }
+        });
+      } catch (err) {
+        console.error(`[GeminiService] Invalid control image at index ${idx}:`, err);
+        throw new Error(`Control image ${idx + 1} is invalid: ${err instanceof Error ? err.message : 'unknown error'}`);
+      }
     });
 
     referenceImages.forEach((image, idx) => {
-      parts.push({
-        inlineData: {
-          mimeType: 'image/png',
-          data: stripBase64Header(image)
-        }
-      });
+      try {
+        const base64Data = stripBase64Header(image);
+        parts.push({
+          inlineData: {
+            mimeType: 'image/png',
+            data: base64Data
+          }
+        });
+      } catch (err) {
+        console.error(`[GeminiService] Invalid reference image at index ${idx}:`, err);
+        throw new Error(`Reference image ${idx + 1} is invalid: ${err instanceof Error ? err.message : 'unknown error'}`);
+      }
     });
 
     // Add a structured preamble so the model knows how many and which images are controls vs references.
@@ -238,13 +295,19 @@ export const GeminiService = {
         : [referenceImageBase64]
       : [];
 
-    referenceImages.forEach(image => {
-      parts.push({
-        inlineData: {
-          mimeType: 'image/png',
-          data: stripBase64Header(image)
-        }
-      });
+    referenceImages.forEach((image, idx) => {
+      try {
+        const base64Data = stripBase64Header(image);
+        parts.push({
+          inlineData: {
+            mimeType: 'image/png',
+            data: base64Data
+          }
+        });
+      } catch (err) {
+        console.error(`[GeminiService] Invalid reference image at index ${idx}:`, err);
+        throw new Error(`Reference image ${idx + 1} is invalid: ${err instanceof Error ? err.message : 'unknown error'}`);
+      }
     });
 
     const rangeSummary =
