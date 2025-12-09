@@ -240,7 +240,9 @@ const logAutoUpdateEvent = (event, details) => {
 // IPC Handlers for synchronous file operations
 ipcMain.on('save-sync', (event, filename, content) => {
     try {
-        writeFileBoth(`${filename}.json`, content, 'utf-8');
+        // Don't add .json if filename already has it
+        const finalFilename = filename.endsWith('.json') ? filename : `${filename}.json`;
+        writeFileBoth(finalFilename, content, 'utf-8');
         event.returnValue = true;
     } catch (e) {
         console.error("Save failed", e);
@@ -250,7 +252,9 @@ ipcMain.on('save-sync', (event, filename, content) => {
 
 ipcMain.on('load-sync', (event, filename) => {
     try {
-        const filePath = path.join(getDataPath(), `${filename}.json`);
+        // Don't add .json if filename already has it
+        const finalFilename = filename.endsWith('.json') ? filename : `${filename}.json`;
+        const filePath = path.join(getDataPath(), finalFilename);
         if (fs.existsSync(filePath)) {
             const content = fs.readFileSync(filePath, 'utf-8');
             event.returnValue = content;
@@ -276,18 +280,37 @@ ipcMain.on('delete-sync', (event, filename) => {
 
 ipcMain.on('list-files-sync', (event, prefix) => {
     try {
-        const dir = getDataPath();
-        const files = fs.readdirSync(dir);
-        const results = [];
+        const dataDir = getDataPath();
 
-        files.forEach(file => {
-            if (file.startsWith(prefix) && file.endsWith('.json')) {
-                const content = fs.readFileSync(path.join(dir, file), 'utf-8');
-                results.push({ key: file.replace('.json', ''), content });
+        // If prefix ends with '/', it's a directory path - list files in that directory
+        if (prefix.endsWith('/')) {
+            const targetDir = path.join(dataDir, prefix);
+
+            // Ensure directory exists
+            if (!fs.existsSync(targetDir)) {
+                console.log('[list-files-sync] Directory does not exist:', targetDir);
+                event.returnValue = [];
+                return;
             }
-        });
-        event.returnValue = results;
+
+            const files = fs.readdirSync(targetDir);
+            console.log('[list-files-sync] Files in', prefix, ':', files.length);
+            event.returnValue = files;
+        } else {
+            // Legacy behavior: filter by prefix in root directory
+            const files = fs.readdirSync(dataDir);
+            const results = [];
+
+            files.forEach(file => {
+                if (file.startsWith(prefix) && file.endsWith('.json')) {
+                    const content = fs.readFileSync(path.join(dataDir, file), 'utf-8');
+                    results.push({ key: file.replace('.json', ''), content });
+                }
+            });
+            event.returnValue = results;
+        }
     } catch (e) {
+        console.error('[list-files-sync] Error:', e);
         event.returnValue = [];
     }
 });
@@ -313,6 +336,18 @@ ipcMain.on('set-user-context', (_event, user) => {
 
 ipcMain.handle('fetch-logs', async () => {
     return readLogs();
+});
+
+// Append-only log handler (for JSONL format in StorageV2)
+ipcMain.on('append-log', (event, line) => {
+    try {
+        const local = path.join(getUserDataDir(), 'logs.jsonl');
+        fs.appendFileSync(local, line, 'utf-8');
+        event.returnValue = true;
+    } catch (e) {
+        console.error('Failed to append log line', e);
+        event.returnValue = false;
+    }
 });
 
 ipcMain.handle('sync-user-data', async () => {
@@ -660,7 +695,72 @@ ipcMain.on('rename-session-file-sync', (event, sessionId, newExtension) => {
     }
 });
 
+// User Settings handlers
+ipcMain.handle('user-settings:get', async () => {
+    try {
+        const settingsPath = path.join(getUserDataDir(), 'user-settings.json');
+        if (fs.existsSync(settingsPath)) {
+            const content = fs.readFileSync(settingsPath, 'utf-8');
+            return JSON.parse(content);
+        }
+        return null;
+    } catch (e) {
+        console.error('Failed to load user settings', e);
+        return null;
+    }
+});
+
+ipcMain.handle('user-settings:save', async (_event, settings) => {
+    try {
+        const settingsPath = path.join(getUserDataDir(), 'user-settings.json');
+        fs.writeFileSync(settingsPath, JSON.stringify(settings, null, 2), 'utf-8');
+        return { success: true };
+    } catch (e) {
+        console.error('Failed to save user settings', e);
+        return { success: false, error: e.message };
+    }
+});
+
+// User History handlers
+ipcMain.handle('user-history:get', async () => {
+    try {
+        const historyPath = path.join(getUserDataDir(), 'user-history.json');
+        if (fs.existsSync(historyPath)) {
+            const content = fs.readFileSync(historyPath, 'utf-8');
+            return JSON.parse(content);
+        }
+        return null;
+    } catch (e) {
+        console.error('Failed to load user history', e);
+        return null;
+    }
+});
+
+ipcMain.handle('user-history:save', async (_event, history) => {
+    try {
+        const historyPath = path.join(getUserDataDir(), 'user-history.json');
+        fs.writeFileSync(historyPath, JSON.stringify(history, null, 2), 'utf-8');
+        return { success: true };
+    } catch (e) {
+        console.error('Failed to save user history', e);
+        return { success: false, error: e.message };
+    }
+});
+
 app.whenReady().then(() => {
+  // Ensure required directories exist
+  const dataDir = getDataPath();
+  const sessionsDir = path.join(dataDir, 'sessions');
+  const imagesDir = path.join(dataDir, 'images');
+  const thumbnailsDir = path.join(dataDir, 'thumbnails');
+
+  [sessionsDir, imagesDir, thumbnailsDir].forEach(dir => {
+    if (!fs.existsSync(dir)) {
+      fs.mkdirSync(dir, { recursive: true });
+      console.log('[Init] Created directory:', dir);
+    }
+  });
+
   createWindow();
   autoUpdater.checkForUpdatesAndNotify();
 

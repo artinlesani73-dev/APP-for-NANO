@@ -22,6 +22,7 @@ export interface StoredImageMeta {
   hash?: string;
   original_name?: string;
   size_bytes?: number;
+  thumbnailPath?: string;  // Path to thumbnail file for history/graph display
 }
 
 export interface UploadedImagePayload {

@@ -1,5 +1,6 @@
 import { AppConfig } from './config';
 import { LogEntry, LogEventType } from '../types';
+import { StorageServiceV2 } from './storageV2';
 
 const LOG_STORAGE_KEY = 'nano_event_logs';
 const MAX_LOCAL_LOGS = 500;
@@ -108,8 +109,23 @@ class Logger {
     const entriesToSend = [...this.buffer];
     this.buffer = [];
 
-    if (isElectron() && window.electron?.logEvent) {
-      entriesToSend.forEach(entry => window.electron?.logEvent?.(entry));
+    if (isElectron()) {
+      // Use StorageV2 JSONL append-only logging for Electron
+      try {
+        entriesToSend.forEach(entry => {
+          StorageServiceV2.appendLog({
+            level: entry.type === 'login' ? 'info' : entry.type === 'action' ? 'action' : 'error',
+            user: entry.user,
+            userId: entry.userId,
+            message: entry.message,
+            context: entry.context
+          });
+        });
+      } catch (err) {
+        console.error('[LoggerService] Failed to append logs', err);
+        // Re-queue on failure
+        this.buffer.unshift(...entriesToSend);
+      }
       return;
     }
 
@@ -131,10 +147,20 @@ class Logger {
   }
 
   async fetchLogs(): Promise<LogEntry[]> {
-    if (isElectron() && window.electron?.fetchLogs) {
+    if (isElectron()) {
       try {
-        const remoteLogs = await window.electron.fetchLogs();
-        if (Array.isArray(remoteLogs)) return remoteLogs;
+        // Read from JSONL logs (StorageV2)
+        const jsonlLogs = StorageServiceV2.readLogs(500);
+        // Convert JSONL format to LogEntry format
+        return jsonlLogs.map(log => ({
+          id: crypto.randomUUID(), // Generate ID for compatibility
+          timestamp: log.timestamp,
+          user: log.user || 'anonymous',
+          userId: log.userId,
+          type: log.level === 'info' ? 'login' : log.level === 'action' ? 'action' : 'error',
+          message: log.message,
+          context: log.context
+        }));
       } catch {
         // fall back to local
       }

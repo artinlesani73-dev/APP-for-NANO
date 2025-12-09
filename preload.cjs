@@ -34,6 +34,7 @@ contextBridge.exposeInMainWorld('electron', {
   // Logging
   logEvent: (entry) => ipcRenderer.sendSync('log-event', entry),
   fetchLogs: () => ipcRenderer.invoke('fetch-logs'),
+  appendLog: (line) => ipcRenderer.sendSync('append-log', line),
   setUserContext: (user) => ipcRenderer.send('set-user-context', user),
   loadUserSettings: () => ipcRenderer.invoke('user-settings:get'),
   saveUserSettings: (settings) => ipcRenderer.invoke('user-settings:save', settings),

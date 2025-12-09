@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { Sparkles, Image as ImageIcon, Type, Trash2, ZoomIn, ZoomOut, Move, Download, Edit2, Check, X, LayoutTemplate, Bold, Italic, Save, Upload, Settings, Folder, Undo, Redo, ChevronDown, Copy, FileText, Square } from 'lucide-react';
 import { GeminiService } from '../services/geminiService';
-import { StorageService } from '../services/newStorageService';
+import { StorageServiceV2 } from '../services/storageV2';
 import { GenerationConfig, CanvasImage, MixboardSession, MixboardGeneration, StoredImageMeta } from '../types';
 import { ImageEditModal } from './ImageEditModal';
 import { ProjectsPage } from './ProjectsPage';
@@ -188,7 +188,7 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
         updated_at: new Date().toISOString()
       };
 
-      await StorageService.saveSessionAsync(updatedSession as any);
+      StorageServiceV2.saveSession(updatedSession);
       onSessionUpdate(updatedSession);
       isDirtyRef.current = false;
       setIsDirty(false);
@@ -434,7 +434,7 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
           canvas_images: imagesToSave,
           updated_at: new Date().toISOString()
         };
-        StorageService.saveSession(updatedSession as any);
+        StorageServiceV2.saveSession(updatedSession);
       }
     };
   }, [currentSession]); // Only depend on currentSession, not canvasImages or isDirty
@@ -568,8 +568,13 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
             size_bytes: selectedImg.dataUri.length
           });
         } else {
-          const meta = StorageService.saveImage(selectedImg.dataUri, 'reference');
-          inputImageMetas.push(meta);
+          const { hash, entry } = StorageServiceV2.registerImage(selectedImg.dataUri, undefined, 'reference');
+          inputImageMetas.push({
+            id: hash,  // Use content hash as ID (not entry.id which is a UUID)
+            filename: entry.file_path.split('/').pop() || '',
+            hash,
+            size_bytes: entry.size_bytes
+          });
         }
       }
 
@@ -616,119 +621,99 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
         const imageDataUri = `data:image/png;base64,${output.images[0]}`;
 
         // Save output image to storage
-        const outputImageMeta = StorageService.saveImage(imageDataUri, 'output');
-
-        // Calculate duration
-        const duration = Date.now() - startTime;
-
-        // Complete generation record
-        const completedGeneration: MixboardGeneration = {
-          ...newGeneration,
-          status: 'completed',
-          input_images: inputImageMetas,
-          output_images: [outputImageMeta],
-          output_texts: output.texts,
-          generation_time_ms: duration
-        };
+        const { hash, entry } = StorageServiceV2.registerImage(imageDataUri, undefined, 'output');
 
         // Add generated image to canvas
         const img = new Image();
         img.onload = async () => {
           // Generate thumbnail for the output image
           setIsGeneratingThumbnails(true);
+
+          let thumbnailPath: string | undefined;
+          let savedThumbnailUri: string | undefined;
+          let imageId = `img-${Date.now()}`;
+
           try {
             const { generateThumbnail, saveThumbnail } = await import('../utils/imageUtils');
             const thumbnailUri = await generateThumbnail(imageDataUri, 384, 0.90);
-            const imageId = `img-${Date.now()}`;
 
             // Save thumbnail to disk (Electron) or keep in memory (web)
-            const { thumbnailUri: savedThumbnailUri, thumbnailPath } = currentSession
+            const result = currentSession
               ? saveThumbnail(currentSession.session_id, imageId, thumbnailUri)
               : { thumbnailUri };
 
-            // Place image at center of visible canvas
-            const center = getVisibleCanvasCenter();
-            const imageWidth = 300;
-            const imageHeight = (imageWidth * img.height) / img.width;
+            savedThumbnailUri = result.thumbnailUri;
+            thumbnailPath = result.thumbnailPath;
 
-            const newCanvasImage: CanvasImage = {
-              id: imageId,
-              dataUri: imageDataUri,
-              thumbnailUri: savedThumbnailUri,
-              thumbnailPath,
-              x: center.x - imageWidth / 2,
-              y: center.y - imageHeight / 2,
-              width: imageWidth,
-              height: imageHeight,
-              selected: false,
-              originalWidth: img.width,
-              originalHeight: img.height,
-              generationId: generationId,
-              imageMetaId: outputImageMeta.id
-            };
-
-            setCanvasImages(prev => {
-              const updatedCanvasImages = [...prev, newCanvasImage];
-
-              // Update session with new generation and canvas state
-              const updatedSession: MixboardSession = {
-                ...currentSession,
-                generations: [...existingGenerations, completedGeneration],
-                canvas_images: updatedCanvasImages,
-                updated_at: new Date().toISOString()
-              };
-
-              // Persist session
-              StorageService.saveSession(updatedSession as any);
-              onSessionUpdate(updatedSession);
-
-              return updatedCanvasImages;
-            });
-
-            setCurrentGeneration(completedGeneration);
-            console.log(`[Generation] Output image added:`, imageId, `Thumbnail path: ${thumbnailPath || 'in-memory'}`);
+            console.log(`[Generation] Thumbnail generated:`, imageId, `Path: ${thumbnailPath || 'in-memory'}`);
           } catch (error) {
             console.error('Failed to generate thumbnail for output image:', error);
-            // Still add image without thumbnail as fallback
-            // Place image at center of visible canvas
-            const center = getVisibleCanvasCenter();
-            const imageWidth = 300;
-            const imageHeight = (imageWidth * img.height) / img.width;
+            // Continue without thumbnail
+          }
 
-            const newCanvasImage: CanvasImage = {
-              id: `img-${Date.now()}`,
-              dataUri: imageDataUri,
-              x: center.x - imageWidth / 2,
-              y: center.y - imageHeight / 2,
-              width: imageWidth,
-              height: imageHeight,
-              selected: false,
-              originalWidth: img.width,
-              originalHeight: img.height,
-              generationId: generationId,
-              imageMetaId: outputImageMeta.id
+          // Create output image metadata with thumbnail path (if available)
+          const outputImageMeta: StoredImageMeta = {
+            id: hash,  // Use content hash as ID (not entry.id which is a UUID)
+            filename: entry.file_path.split('/').pop() || '',
+            hash,
+            size_bytes: entry.size_bytes,
+            thumbnailPath  // Include thumbnail path for history/graph display (undefined if failed)
+          };
+
+          // Calculate duration
+          const duration = Date.now() - startTime;
+
+          // Complete generation record
+          const completedGeneration: MixboardGeneration = {
+            ...newGeneration,
+            status: 'completed',
+            input_images: inputImageMetas,
+            output_images: [outputImageMeta],
+            output_texts: output.texts,
+            generation_time_ms: duration
+          };
+
+          // Place image at center of visible canvas
+          const center = getVisibleCanvasCenter();
+          const imageWidth = 300;
+          const imageHeight = (imageWidth * img.height) / img.width;
+
+          const newCanvasImage: CanvasImage = {
+            id: imageId,
+            dataUri: imageDataUri,
+            thumbnailUri: savedThumbnailUri,
+            thumbnailPath,
+            x: center.x - imageWidth / 2,
+            y: center.y - imageHeight / 2,
+            width: imageWidth,
+            height: imageHeight,
+            selected: false,
+            originalWidth: img.width,
+            originalHeight: img.height,
+            generationId: generationId,
+            imageMetaId: outputImageMeta.id
+          };
+
+          setCanvasImages(prev => {
+            const updatedCanvasImages = [...prev, newCanvasImage];
+
+            // Update session with new generation and canvas state
+            const updatedSession: MixboardSession = {
+              ...currentSession,
+              generations: [...existingGenerations, completedGeneration],
+              canvas_images: updatedCanvasImages,
+              updated_at: new Date().toISOString()
             };
 
-            setCanvasImages(prev => {
-              const updatedCanvasImages = [...prev, newCanvasImage];
+            // Persist session
+            StorageServiceV2.saveSession(updatedSession);
+            onSessionUpdate(updatedSession);
 
-              const updatedSession: MixboardSession = {
-                ...currentSession,
-                generations: [...existingGenerations, completedGeneration],
-                canvas_images: updatedCanvasImages,
-                updated_at: new Date().toISOString()
-              };
+            return updatedCanvasImages;
+          });
 
-              StorageService.saveSession(updatedSession as any);
-              onSessionUpdate(updatedSession);
-
-              return updatedCanvasImages;
-            });
-
-            setCurrentGeneration(completedGeneration);
-          } finally {
-            setIsGeneratingThumbnails(false);
-          }
+          setCurrentGeneration(completedGeneration);
+          setIsGeneratingThumbnails(false);
         };
         img.src = imageDataUri;
       }
@@ -784,7 +769,7 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
           };
 
           // Persist session
-          StorageService.saveSession(updatedSession as any);
+          StorageServiceV2.saveSession(updatedSession);
           onSessionUpdate(updatedSession);
           setCurrentGeneration(null);
         }
@@ -823,7 +808,7 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
             updated_at: new Date().toISOString()
           };
 
-      StorageService.saveSession(updatedSession as any);
+      StorageServiceV2.saveSession(updatedSession);
       onSessionUpdate(updatedSession);
 
       setCurrentGeneration(showImageInput ? failedGeneration : null);
@@ -1488,7 +1473,7 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
           onSelectSession={onSelectSession}
           onClose={() => setShowProjectsPage(false)}
           onDeleteSession={(sessionId) => {
-            StorageService.deleteSession(sessionId);
+            StorageServiceV2.deleteSession(sessionId);
             window.location.reload();
           }}
         />
@@ -1517,7 +1502,7 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
                   autoFocus
                   onKeyDown={(e) => {
                     if (e.key === 'Enter' && currentSession) {
-                      StorageService.renameSession(currentSession.session_id, newSessionTitle);
+                      StorageServiceV2.renameSession(currentSession.session_id, newSessionTitle);
                       const updatedSession = { ...currentSession, title: newSessionTitle };
                       onSessionUpdate(updatedSession as MixboardSession);
                       setEditingSessionTitle(false);
@@ -1529,7 +1514,7 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
                 <button
                   onClick={() => {
                     if (currentSession) {
-                      StorageService.renameSession(currentSession.session_id, newSessionTitle);
+                      StorageServiceV2.renameSession(currentSession.session_id, newSessionTitle);
                       const updatedSession = { ...currentSession, title: newSessionTitle };
                       onSessionUpdate(updatedSession as MixboardSession);
                       setEditingSessionTitle(false);
@@ -1642,6 +1627,26 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
 
         {/* Left-Side Vertical Toolbar - Unified */}
         <div className="absolute left-4 top-1/2 -translate-y-1/2 z-30 bg-white dark:bg-zinc-900 border border-zinc-300 dark:border-zinc-700 rounded-lg shadow-lg flex flex-col">
+          <button
+            onClick={() => {
+              if (currentSession) {
+                StorageServiceV2.saveSession(currentSession);
+                onSessionUpdate(currentSession);
+                // Show a brief success indicator
+                const btn = document.activeElement as HTMLElement;
+                if (btn) {
+                  btn.style.backgroundColor = theme === 'dark' ? '#16a34a' : '#22c55e';
+                  setTimeout(() => {
+                    btn.style.backgroundColor = '';
+                  }, 300);
+                }
+              }
+            }}
+            className="p-2 hover:bg-zinc-50 dark:hover:bg-zinc-800 transition-colors border-b border-zinc-200 dark:border-zinc-700"
+            title="Save Session"
+          >
+            <Save size={20} className="text-zinc-600 dark:text-zinc-400" />
+          </button>
           <button
             className="p-2 hover:bg-zinc-50 dark:hover:bg-zinc-800 transition-colors"
             title="Templates (Coming Soon)"

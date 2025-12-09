@@ -25,7 +25,7 @@ interface HistoryPanelProps {
   onSelectGeneration: (sessionId: string, generation: SessionGeneration) => void;
   selectedGenerationId?: string;
   onExportImage: (filename: string) => void;
-  loadImage: (role: 'control' | 'reference' | 'output', id: string, filename: string) => string | null;
+  loadImage: (role: 'control' | 'reference' | 'output', id: string, filename: string, thumbnailPath?: string) => string | null;
 }
 
 export const HistoryPanel: React.FC<HistoryPanelProps> = ({
@@ -55,7 +55,7 @@ export const HistoryPanel: React.FC<HistoryPanelProps> = ({
           const isSelected = item.generation.generation_id === selectedGenerationId;
           const outputDataUri =
             item.kind === 'image'
-              ? loadImage('output', item.output.id, item.output.filename)
+              ? loadImage('output', item.output.id, item.output.filename, item.output.thumbnailPath)
               : null;
           const hasText = item.texts.length > 0;
           const textPreview = hasText ? item.texts.join('\n').slice(0, 180) : '';
