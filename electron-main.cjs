@@ -672,6 +672,58 @@ ipcMain.on('rename-session-file-sync', (event, sessionId, newExtension) => {
     }
 });
 
+// User Settings handlers
+ipcMain.handle('user-settings:get', async () => {
+    try {
+        const settingsPath = path.join(getUserDataDir(), 'user-settings.json');
+        if (fs.existsSync(settingsPath)) {
+            const content = fs.readFileSync(settingsPath, 'utf-8');
+            return JSON.parse(content);
+        }
+        return null;
+    } catch (e) {
+        console.error('Failed to load user settings', e);
+        return null;
+    }
+});
+
+ipcMain.handle('user-settings:save', async (_event, settings) => {
+    try {
+        const settingsPath = path.join(getUserDataDir(), 'user-settings.json');
+        fs.writeFileSync(settingsPath, JSON.stringify(settings, null, 2), 'utf-8');
+        return { success: true };
+    } catch (e) {
+        console.error('Failed to save user settings', e);
+        return { success: false, error: e.message };
+    }
+});
+
+// User History handlers
+ipcMain.handle('user-history:get', async () => {
+    try {
+        const historyPath = path.join(getUserDataDir(), 'user-history.json');
+        if (fs.existsSync(historyPath)) {
+            const content = fs.readFileSync(historyPath, 'utf-8');
+            return JSON.parse(content);
+        }
+        return null;
+    } catch (e) {
+        console.error('Failed to load user history', e);
+        return null;
+    }
+});
+
+ipcMain.handle('user-history:save', async (_event, history) => {
+    try {
+        const historyPath = path.join(getUserDataDir(), 'user-history.json');
+        fs.writeFileSync(historyPath, JSON.stringify(history, null, 2), 'utf-8');
+        return { success: true };
+    } catch (e) {
+        console.error('Failed to save user history', e);
+        return { success: false, error: e.message };
+    }
+});
+
 app.whenReady().then(() => {
   createWindow();
   autoUpdater.checkForUpdatesAndNotify();
