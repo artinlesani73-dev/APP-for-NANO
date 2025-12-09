@@ -279,12 +279,13 @@ export const StorageServiceV2 = {
     if (!thumbnailPath) return null;
 
     try {
-      // thumbnailPath format: "thumbnails/{session_id}/{imageId}.jpg"
+      // thumbnailPath format: "thumbnails/{session_id}/{imageId}.png"
+      // Use loadThumbnailSync to load from thumbnail directory
       // @ts-ignore
-      const base64 = window.electron.loadSync(thumbnailPath);
+      const base64 = window.electron.loadThumbnailSync(thumbnailPath);
       if (!base64) return null;
 
-      return `data:image/jpeg;base64,${base64}`;
+      return `data:image/png;base64,${base64}`;
     } catch (err) {
       return null;
     }
