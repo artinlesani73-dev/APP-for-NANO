@@ -261,10 +261,11 @@ export const StorageServiceV2 = {
       if (!filename) return null;
 
       // @ts-ignore
-      const base64 = window.electron.loadImageSync('images', filename);
-      if (!base64) return null;
+      // loadImageSync already returns a complete data URI (data:image/xxx;base64,...)
+      const dataUri = window.electron.loadImageSync('images', filename);
+      if (!dataUri) return null;
 
-      return `data:${entry.mime_type};base64,${base64}`;
+      return dataUri;
     } catch (err) {
       return null;
     }
