@@ -124,7 +124,11 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
 
   // Save system state
   const [isDirty, setIsDirty] = useState(false);
-  const [autoSaveInterval, setAutoSaveInterval] = useState(5); // minutes
+  // Load autosave interval from localStorage on init (default 5 minutes)
+  const [autoSaveInterval, setAutoSaveInterval] = useState(() => {
+    const saved = localStorage.getItem('autosave_interval');
+    return saved ? parseInt(saved, 10) : 5;
+  });
 
   // Undo/Redo state
   const [historyPast, setHistoryPast] = useState<CanvasImage[][]>([]);
@@ -2223,6 +2227,8 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
           onClose={() => setShowSettings(false)}
           theme={theme}
           toggleTheme={toggleTheme}
+          autoSaveInterval={autoSaveInterval}
+          onAutoSaveIntervalChange={(interval) => setAutoSaveInterval(interval)}
         />
 
         {/* Thumbnail Generation Loading Indicator */}

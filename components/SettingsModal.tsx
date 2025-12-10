@@ -1,5 +1,5 @@
 import React, { useRef, useState, useEffect } from 'react';
-import { X, Moon, Sun, Download, Upload, Monitor, Folder, Key, LogOut } from 'lucide-react';
+import { X, Moon, Sun, Download, Upload, Monitor, Folder, Key, LogOut, Clock, Save } from 'lucide-react';
 import { StorageService } from '../services/storageService';
 
 interface SettingsModalProps {
@@ -9,6 +9,8 @@ interface SettingsModalProps {
   toggleTheme: () => void;
   onApiKeyUpdate?: () => void;
   onLogout?: () => void;
+  autoSaveInterval?: number;
+  onAutoSaveIntervalChange?: (interval: number) => void;
 }
 
 export const SettingsModal: React.FC<SettingsModalProps> = ({
@@ -17,11 +19,27 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   theme,
   toggleTheme,
   onApiKeyUpdate,
-  onLogout
+  onLogout,
+  autoSaveInterval = 5,
+  onAutoSaveIntervalChange
 }) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const isElectron = StorageService.isElectron();
   const [apiKey, setApiKey] = useState('');
+  const [localAutoSaveInterval, setLocalAutoSaveInterval] = useState(autoSaveInterval);
+
+  // Sync local state when prop changes
+  useEffect(() => {
+    setLocalAutoSaveInterval(autoSaveInterval);
+  }, [autoSaveInterval]);
+
+  const handleAutoSaveChange = (value: number) => {
+    setLocalAutoSaveInterval(value);
+    // Persist to localStorage
+    localStorage.setItem('autosave_interval', String(value));
+    // Notify parent
+    onAutoSaveIntervalChange?.(value);
+  };
 
   useEffect(() => {
     if (isOpen && isElectron) {
@@ -139,16 +157,63 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 {theme === 'dark' ? <Moon size={18} /> : <Sun size={18} />}
                 <span className="text-sm font-medium">Interface Theme</span>
               </div>
-              <button 
+              <button
                 onClick={toggleTheme}
                 className={`px-3 py-1.5 rounded-md text-xs font-medium transition-colors border ${
-                  theme === 'dark' 
-                    ? 'bg-zinc-800 border-zinc-700 hover:bg-zinc-700' 
+                  theme === 'dark'
+                    ? 'bg-zinc-800 border-zinc-700 hover:bg-zinc-700'
                     : 'bg-white border-zinc-300 hover:bg-zinc-100'
                 }`}
               >
                 Switch to {theme === 'dark' ? 'Light' : 'Dark'}
               </button>
+            </div>
+          </section>
+
+          {/* Auto-Save Settings */}
+          <section className="space-y-3">
+            <h3 className={`text-sm font-medium ${theme === 'dark' ? 'text-zinc-400' : 'text-zinc-500'} uppercase tracking-wider`}>Auto-Save</h3>
+            <div className={`p-4 rounded-lg border space-y-4 ${theme === 'dark' ? 'bg-zinc-950 border-zinc-800' : 'bg-zinc-50 border-zinc-200'}`}>
+              <div className="flex items-start gap-3">
+                <Clock size={18} className="mt-0.5 text-blue-500" />
+                <div className="flex-1">
+                  <h4 className="text-sm font-medium">Auto-Save Interval</h4>
+                  <p className={`text-xs mt-1 ${theme === 'dark' ? 'text-zinc-500' : 'text-zinc-600'}`}>
+                    Automatically save your canvas at regular intervals. Set to 0 to disable.
+                  </p>
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <div className="flex items-center gap-3">
+                  <input
+                    type="range"
+                    min={0}
+                    max={30}
+                    step={1}
+                    value={localAutoSaveInterval}
+                    onChange={(e) => handleAutoSaveChange(Number(e.target.value))}
+                    className="flex-1 h-2 rounded-lg appearance-none cursor-pointer bg-zinc-300 dark:bg-zinc-700"
+                  />
+                  <span className={`text-sm font-mono w-16 text-right ${theme === 'dark' ? 'text-zinc-300' : 'text-zinc-700'}`}>
+                    {localAutoSaveInterval === 0 ? 'Off' : `${localAutoSaveInterval} min`}
+                  </span>
+                </div>
+                <div className="flex justify-between text-xs text-zinc-500">
+                  <span>Disabled</span>
+                  <span>30 min</span>
+                </div>
+              </div>
+
+              <div className={`flex items-center gap-2 text-xs ${theme === 'dark' ? 'text-zinc-500' : 'text-zinc-600'}`}>
+                <Save size={14} />
+                <span>
+                  {localAutoSaveInterval === 0
+                    ? 'Auto-save is disabled. Use Ctrl+S to save manually.'
+                    : `Canvas will be saved every ${localAutoSaveInterval} minute${localAutoSaveInterval > 1 ? 's' : ''} when changes are detected.`
+                  }
+                </span>
+              </div>
             </div>
           </section>
 
