@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { Sparkles, Image as ImageIcon, Type, Trash2, ZoomIn, ZoomOut, Move, Download, Edit2, Check, X, LayoutTemplate, Bold, Italic, Save, Upload, Settings, Folder, Undo, Redo, ChevronDown, Copy, FileText, Square } from 'lucide-react';
+import { Sparkles, Image as ImageIcon, Type, Trash2, ZoomIn, ZoomOut, Move, Download, Edit2, Check, X, LayoutTemplate, Bold, Italic, Save, Upload, Settings, Folder, Undo, Redo, ChevronDown, Copy, FileText, Square, Tag } from 'lucide-react';
 import { GeminiService } from '../services/geminiService';
 import { StorageServiceV2 } from '../services/storageV2';
 import { GenerationConfig, CanvasImage, MixboardSession, MixboardGeneration, StoredImageMeta } from '../types';
@@ -115,6 +115,9 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
   const [editingImage, setEditingImage] = useState<CanvasImage | null>(null);
   const [isGeneratingThumbnails, setIsGeneratingThumbnails] = useState(false);
 
+  // Tag dropdown state
+  const [tagDropdownOpen, setTagDropdownOpen] = useState<string | null>(null);
+
   // New UI state
   const [showProjectsPage, setShowProjectsPage] = useState(false);
   const [sessionDropdownOpen, setSessionDropdownOpen] = useState(false);
@@ -149,6 +152,7 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
       canvasX: 0,
       canvasY: 0
     });
+    setTagDropdownOpen(null);
   }, []);
 
   // Start timer to mark as dirty 30 seconds after save
@@ -912,6 +916,13 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
       selected: false
     };
     setCanvasImages(prev => [...prev, newImage]);
+  };
+
+  const handleSetImageTag = (imageId: string, tag: 'control' | 'reference' | null) => {
+    setCanvasImages(prev => prev.map(img =>
+      img.id === imageId ? { ...img, tag } : img
+    ));
+    setTagDropdownOpen(null);
   };
 
   const handleSaveEditedImage = async (editedDataUri: string) => {
@@ -1811,8 +1822,8 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
                 )}
               </div>
 
-              {/* Inline Toolbar for Selected Item */}
-              {image.selected && selectedCount === 1 && (
+              {/* Inline Toolbar for Selected Item - hidden when edit modal is open */}
+              {image.selected && selectedCount === 1 && !editModalOpen && (
                 <div
                   className="absolute flex items-center gap-1 bg-zinc-900/95 dark:bg-zinc-800/95 backdrop-blur-sm border border-zinc-700 dark:border-zinc-600 rounded-lg shadow-xl px-2 py-1.5"
                   style={{
@@ -1971,6 +1982,77 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
                           <Edit2 size={16} className="text-white" />
                         </button>
                       )}
+                      {/* Tag Dropdown */}
+                      <div className="relative">
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setTagDropdownOpen(tagDropdownOpen === image.id ? null : image.id);
+                          }}
+                          className={`p-1.5 rounded transition-colors flex items-center gap-1 ${
+                            image.tag
+                              ? image.tag === 'control'
+                                ? 'bg-blue-600 hover:bg-blue-500'
+                                : 'bg-purple-600 hover:bg-purple-500'
+                              : 'hover:bg-zinc-700 dark:hover:bg-zinc-700'
+                          }`}
+                          title={image.tag ? `Tagged as ${image.tag}` : 'Add tag'}
+                        >
+                          <Tag size={14} className="text-white" />
+                          <ChevronDown size={12} className="text-white" />
+                        </button>
+                        {tagDropdownOpen === image.id && (
+                          <>
+                            <div
+                              className="fixed inset-0 z-[999]"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setTagDropdownOpen(null);
+                              }}
+                            />
+                            <div className="absolute left-0 top-full mt-1 w-32 bg-zinc-800 border border-zinc-700 rounded-lg shadow-xl z-[1000] overflow-hidden">
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleSetImageTag(image.id, 'control');
+                                }}
+                                className={`w-full px-3 py-2 text-left text-xs hover:bg-zinc-700 transition-colors flex items-center gap-2 ${
+                                  image.tag === 'control' ? 'text-blue-400 bg-blue-900/30' : 'text-white'
+                                }`}
+                              >
+                                <div className="w-2 h-2 rounded-full bg-blue-500"></div>
+                                Control
+                              </button>
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleSetImageTag(image.id, 'reference');
+                                }}
+                                className={`w-full px-3 py-2 text-left text-xs hover:bg-zinc-700 transition-colors flex items-center gap-2 ${
+                                  image.tag === 'reference' ? 'text-purple-400 bg-purple-900/30' : 'text-white'
+                                }`}
+                              >
+                                <div className="w-2 h-2 rounded-full bg-purple-500"></div>
+                                Reference
+                              </button>
+                              {image.tag && (
+                                <>
+                                  <div className="h-px bg-zinc-700"></div>
+                                  <button
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      handleSetImageTag(image.id, null);
+                                    }}
+                                    className="w-full px-3 py-2 text-left text-xs text-red-400 hover:bg-red-900/30 transition-colors"
+                                  >
+                                    Remove Tag
+                                  </button>
+                                </>
+                              )}
+                            </div>
+                          </>
+                        )}
+                      </div>
                       <button
                         onClick={(e) => {
                           e.stopPropagation();

@@ -400,23 +400,51 @@ export const StorageServiceV2 = {
 
   /**
    * Load a complete Mixboard session (combines generations + canvas)
+   * @param loadImages - Whether to load full image data URIs (default: true). Set to false for lightweight loading.
    */
-  loadSession: (sessionId: string): MixboardSession | null => {
+  loadSession: (sessionId: string, loadImages: boolean = true): MixboardSession | null => {
     const canvasState = StorageServiceV2.loadCanvasState(sessionId);
     if (!canvasState) return null;
 
     const generations = StorageServiceV2.loadGenerations(sessionId);
-    const registry = StorageServiceV2.loadImageRegistry();
 
-    // Reconstruct canvas images with full data URIs
-    const canvasImages: CanvasImage[] = canvasState.canvas_images.map(img => {
-      const registryEntry = registry.images[img.imageHash];
-      const dataUri = registryEntry ? StorageServiceV2.loadImageByHash(img.imageHash) : null;
+    // Reconstruct canvas images - optionally load full data URIs
+    let canvasImages: CanvasImage[] = [];
 
-      return {
+    if (loadImages) {
+      const registry = StorageServiceV2.loadImageRegistry();
+      canvasImages = canvasState.canvas_images.map(img => {
+        const registryEntry = registry.images[img.imageHash];
+        const dataUri = registryEntry ? StorageServiceV2.loadImageByHash(img.imageHash) : null;
+
+        return {
+          id: img.canvasId,
+          type: img.type,
+          dataUri: dataUri || undefined,
+          text: img.text,
+          fontSize: img.fontSize,
+          fontWeight: img.fontWeight,
+          fontStyle: img.fontStyle,
+          fontFamily: img.fontFamily,
+          backgroundColor: img.backgroundColor,
+          x: img.x,
+          y: img.y,
+          width: img.width,
+          height: img.height,
+          selected: img.selected,
+          originalWidth: img.originalWidth,
+          originalHeight: img.originalHeight,
+          generationId: img.generationId,
+          thumbnailPath: img.thumbnailPath,
+          imageMetaId: img.imageHash // Store hash as meta ID for compatibility
+        };
+      });
+    } else {
+      // Lightweight mode: skip loading full image data, just get structure
+      canvasImages = canvasState.canvas_images.map(img => ({
         id: img.canvasId,
         type: img.type,
-        dataUri: dataUri || undefined,
+        dataUri: undefined, // Don't load full images
         text: img.text,
         fontSize: img.fontSize,
         fontWeight: img.fontWeight,
@@ -432,9 +460,9 @@ export const StorageServiceV2 = {
         originalHeight: img.originalHeight,
         generationId: img.generationId,
         thumbnailPath: img.thumbnailPath,
-        imageMetaId: img.imageHash // Store hash as meta ID for compatibility
-      };
-    });
+        imageMetaId: img.imageHash
+      }));
+    }
 
     return {
       session_id: sessionId,
@@ -443,6 +471,26 @@ export const StorageServiceV2 = {
       updated_at: canvasState.updated_at,
       generations,
       canvas_images: canvasImages,
+      user: canvasState.user
+    };
+  },
+
+  /**
+   * Load session for History/Graph views (lightweight - only generations, no canvas images)
+   */
+  loadSessionForHistory: (sessionId: string): MixboardSession | null => {
+    const canvasState = StorageServiceV2.loadCanvasState(sessionId);
+    if (!canvasState) return null;
+
+    const generations = StorageServiceV2.loadGenerations(sessionId);
+
+    return {
+      session_id: sessionId,
+      title: canvasState.title,
+      created_at: canvasState.created_at,
+      updated_at: canvasState.updated_at,
+      generations,
+      canvas_images: [], // Don't load canvas images for history view
       user: canvasState.user
     };
   },

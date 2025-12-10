@@ -232,7 +232,7 @@ function AppContent() {
     console.log('[App] Switched to Mixboard session:', sessionId);
   };
 
-  const loadMixboardSessions = () => {
+  const loadMixboardSessions = (forHistoryView: boolean = false) => {
     // Get all session metadata from V2 storage
     const allMetadata = StorageServiceV2.listSessions();
 
@@ -241,9 +241,11 @@ function AppContent() {
       ? allMetadata.filter(m => m.user?.id === currentUser.id)
       : [];
 
-    // Load full session data for each
+    // Load session data - use lightweight loader for History/Graph views
     const userMixboardSessions = userMetadata
-      .map(meta => StorageServiceV2.loadSession(meta.session_id))
+      .map(meta => forHistoryView
+        ? StorageServiceV2.loadSessionForHistory(meta.session_id)
+        : StorageServiceV2.loadSession(meta.session_id))
       .filter((s): s is MixboardSession => s !== null);
 
     setMixboardSessions(userMixboardSessions);
@@ -261,9 +263,10 @@ function AppContent() {
   }, [currentUser]);
 
   // Reload sessions when switching to History or Graph view to ensure fresh data
+  // Use lightweight loader (no canvas images) for faster loading
   useEffect(() => {
     if ((showHistory || showGraphView) && currentUser) {
-      loadMixboardSessions();
+      loadMixboardSessions(true); // true = lightweight loading for history view
     }
   }, [showHistory, showGraphView]);
 

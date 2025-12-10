@@ -208,6 +208,7 @@ export interface CanvasImage {
   originalHeight: number;          // Original image height / text box height
   generationId?: string;           // Parent generation ID (if generated)
   imageMetaId?: string;            // Link to StoredImageMeta for persistence
+  tag?: 'control' | 'reference' | null;  // User-assigned tag for image classification
 }
 
 /**

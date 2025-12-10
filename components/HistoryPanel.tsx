@@ -1,6 +1,8 @@
-import React from 'react';
+import React, { useState, useMemo, useCallback } from 'react';
 import { SessionGeneration, StoredImageMeta } from '../types';
-import { Clock, Image, Download, TextQuote, FileText } from 'lucide-react';
+import { Clock, Image, Download, TextQuote, FileText, ChevronDown } from 'lucide-react';
+
+const ITEMS_PER_PAGE = 20;
 
 export type HistoryGalleryItem =
   | {
@@ -35,6 +37,16 @@ export const HistoryPanel: React.FC<HistoryPanelProps> = ({
   onExportImage,
   loadImage
 }) => {
+  const [visibleCount, setVisibleCount] = useState(ITEMS_PER_PAGE);
+
+  // Memoize visible items to prevent unnecessary recalculations
+  const visibleItems = useMemo(() => items.slice(0, visibleCount), [items, visibleCount]);
+
+  const hasMore = visibleCount < items.length;
+
+  const loadMore = useCallback(() => {
+    setVisibleCount(prev => Math.min(prev + ITEMS_PER_PAGE, items.length));
+  }, [items.length]);
 
   if (items.length === 0) {
     return (
@@ -51,7 +63,7 @@ export const HistoryPanel: React.FC<HistoryPanelProps> = ({
   return (
     <div className="h-full overflow-y-auto p-4">
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
-        {items.map((item) => {
+        {visibleItems.map((item) => {
           const isSelected = item.generation.generation_id === selectedGenerationId;
           const outputDataUri =
             item.kind === 'image'
@@ -156,6 +168,19 @@ export const HistoryPanel: React.FC<HistoryPanelProps> = ({
           );
         })}
       </div>
+
+      {/* Load More Button */}
+      {hasMore && (
+        <div className="flex justify-center mt-6 mb-4">
+          <button
+            onClick={loadMore}
+            className="flex items-center gap-2 px-6 py-3 bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 text-zinc-700 dark:text-zinc-300 rounded-lg transition-colors text-sm font-medium border border-zinc-200 dark:border-zinc-700"
+          >
+            <ChevronDown size={16} />
+            Load More ({items.length - visibleCount} remaining)
+          </button>
+        </div>
+      )}
     </div>
   );
 };
