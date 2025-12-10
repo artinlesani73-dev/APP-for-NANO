@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
-import { X, Undo, Redo, Square, Circle, Triangle, Minus, Maximize2, Minimize2, Loader2, AlertCircle } from 'lucide-react';
+import { X, Undo, Redo, Square, Circle, Triangle, Minus, Loader2, AlertCircle } from 'lucide-react';
 
 interface ImageEditModalProps {
   isOpen: boolean;
@@ -41,9 +41,8 @@ export const ImageEditModal: React.FC<ImageEditModalProps> = ({ isOpen, image, o
   const [loadError, setLoadError] = useState<string | null>(null);
   const [imageDimensions, setImageDimensions] = useState<{ width: number; height: number } | null>(null);
 
-  // Modal size states
+  // Modal size states (resizable only, no maximize)
   const [modalSize, setModalSize] = useState<ModalSize>({ width: DEFAULT_MODAL_WIDTH, height: DEFAULT_MODAL_HEIGHT });
-  const [isMaximized, setIsMaximized] = useState(false);
   const [isResizing, setIsResizing] = useState(false);
   const [resizeEdge, setResizeEdge] = useState<string | null>(null);
   const resizeStartRef = useRef<{ x: number; y: number; width: number; height: number } | null>(null);
@@ -394,14 +393,8 @@ export const ImageEditModal: React.FC<ImageEditModalProps> = ({ isOpen, image, o
     onClose();
   };
 
-  // Toggle maximize
-  const toggleMaximize = useCallback(() => {
-    setIsMaximized(prev => !prev);
-  }, []);
-
   // Handle resize start
   const handleResizeStart = useCallback((e: React.MouseEvent, edge: string) => {
-    if (isMaximized) return;
     e.preventDefault();
     e.stopPropagation();
     setIsResizing(true);
@@ -412,7 +405,7 @@ export const ImageEditModal: React.FC<ImageEditModalProps> = ({ isOpen, image, o
       width: modalSize.width,
       height: modalSize.height
     };
-  }, [isMaximized, modalSize]);
+  }, [modalSize]);
 
   // Handle resize move
   useEffect(() => {
@@ -467,22 +460,16 @@ export const ImageEditModal: React.FC<ImageEditModalProps> = ({ isOpen, image, o
   if (!isOpen || !image) return null;
 
   // Calculate canvas container height based on modal size
-  const toolbarWidth = 200; // Approximate width of the toolbar
-  const headerHeight = 52; // Height of the header
-  const padding = 40; // Padding around the canvas area
-  const canvasContainerHeight = isMaximized
-    ? 'calc(100vh - 120px)'
-    : `${modalSize.height - headerHeight - padding}px`;
+  const headerHeight = 52;
+  const padding = 40;
+  const canvasContainerHeight = `${modalSize.height - headerHeight - padding}px`;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
       <div
         ref={modalRef}
-        className={`bg-white dark:bg-zinc-900 rounded-2xl shadow-2xl border border-zinc-200 dark:border-zinc-800 overflow-hidden flex flex-col ${isResizing ? 'select-none' : ''}`}
-        style={isMaximized ? {
-          width: 'calc(100vw - 32px)',
-          height: 'calc(100vh - 32px)',
-        } : {
+        className={`bg-white dark:bg-zinc-900 rounded-2xl shadow-2xl border border-zinc-200 dark:border-zinc-800 overflow-hidden flex flex-col relative ${isResizing ? 'select-none' : ''}`}
+        style={{
           width: `${modalSize.width}px`,
           height: `${modalSize.height}px`,
           maxWidth: 'calc(100vw - 32px)',
@@ -499,21 +486,12 @@ export const ImageEditModal: React.FC<ImageEditModalProps> = ({ isOpen, image, o
               </span>
             )}
           </div>
-          <div className="flex items-center gap-1">
-            <button
-              onClick={toggleMaximize}
-              className="p-2 rounded-full hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors"
-              title={isMaximized ? 'Restore size' : 'Maximize'}
-            >
-              {isMaximized ? <Minimize2 size={16} /> : <Maximize2 size={16} />}
-            </button>
-            <button
-              onClick={onClose}
-              className="p-2 rounded-full hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors"
-            >
-              <X size={16} />
-            </button>
-          </div>
+          <button
+            onClick={onClose}
+            className="p-2 rounded-full hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors"
+          >
+            <X size={16} />
+          </button>
         </div>
 
         {/* Content */}
@@ -545,12 +523,12 @@ export const ImageEditModal: React.FC<ImageEditModalProps> = ({ isOpen, image, o
                 <canvas
                   ref={baseCanvasRef}
                   className="block"
-                  style={{ maxWidth: '100%', maxHeight: isMaximized ? 'calc(100vh - 140px)' : `${modalSize.height - headerHeight - padding - 20}px` }}
+                  style={{ maxWidth: '100%', maxHeight: `${modalSize.height - headerHeight - padding - 20}px` }}
                 />
                 <canvas
                   ref={drawCanvasRef}
                   className="absolute inset-0"
-                  style={{ maxWidth: '100%', maxHeight: isMaximized ? 'calc(100vh - 140px)' : `${modalSize.height - headerHeight - padding - 20}px` }}
+                  style={{ maxWidth: '100%', maxHeight: `${modalSize.height - headerHeight - padding - 20}px` }}
                 />
                 <canvas
                   ref={previewCanvasRef}
@@ -558,7 +536,7 @@ export const ImageEditModal: React.FC<ImageEditModalProps> = ({ isOpen, image, o
                   style={{
                     cursor: 'none',
                     maxWidth: '100%',
-                    maxHeight: isMaximized ? 'calc(100vh - 140px)' : `${modalSize.height - headerHeight - padding - 20}px`
+                    maxHeight: `${modalSize.height - headerHeight - padding - 20}px`
                   }}
                   onPointerDown={handlePointerDown}
                   onPointerMove={handlePointerMove}
@@ -810,45 +788,43 @@ export const ImageEditModal: React.FC<ImageEditModalProps> = ({ isOpen, image, o
           </div>
         </div>
 
-        {/* Resize handles - only show when not maximized */}
-        {!isMaximized && (
-          <>
-            {/* Corner handles */}
-            <div
-              className="absolute top-0 left-0 w-4 h-4 cursor-nwse-resize"
-              onMouseDown={(e) => handleResizeStart(e, 'nw')}
-            />
-            <div
-              className="absolute top-0 right-0 w-4 h-4 cursor-nesw-resize"
-              onMouseDown={(e) => handleResizeStart(e, 'ne')}
-            />
-            <div
-              className="absolute bottom-0 left-0 w-4 h-4 cursor-nesw-resize"
-              onMouseDown={(e) => handleResizeStart(e, 'sw')}
-            />
-            <div
-              className="absolute bottom-0 right-0 w-4 h-4 cursor-nwse-resize"
-              onMouseDown={(e) => handleResizeStart(e, 'se')}
-            />
-            {/* Edge handles */}
-            <div
-              className="absolute top-0 left-4 right-4 h-2 cursor-ns-resize"
-              onMouseDown={(e) => handleResizeStart(e, 'n')}
-            />
-            <div
-              className="absolute bottom-0 left-4 right-4 h-2 cursor-ns-resize"
-              onMouseDown={(e) => handleResizeStart(e, 's')}
-            />
-            <div
-              className="absolute left-0 top-4 bottom-4 w-2 cursor-ew-resize"
-              onMouseDown={(e) => handleResizeStart(e, 'w')}
-            />
-            <div
-              className="absolute right-0 top-4 bottom-4 w-2 cursor-ew-resize"
-              onMouseDown={(e) => handleResizeStart(e, 'e')}
-            />
-          </>
-        )}
+        {/* Resize handles */}
+        <>
+          {/* Corner handles */}
+          <div
+            className="absolute top-0 left-0 w-4 h-4 cursor-nwse-resize"
+            onMouseDown={(e) => handleResizeStart(e, 'nw')}
+          />
+          <div
+            className="absolute top-0 right-0 w-4 h-4 cursor-nesw-resize"
+            onMouseDown={(e) => handleResizeStart(e, 'ne')}
+          />
+          <div
+            className="absolute bottom-0 left-0 w-4 h-4 cursor-nesw-resize"
+            onMouseDown={(e) => handleResizeStart(e, 'sw')}
+          />
+          <div
+            className="absolute bottom-0 right-0 w-4 h-4 cursor-nwse-resize"
+            onMouseDown={(e) => handleResizeStart(e, 'se')}
+          />
+          {/* Edge handles */}
+          <div
+            className="absolute top-0 left-4 right-4 h-2 cursor-ns-resize"
+            onMouseDown={(e) => handleResizeStart(e, 'n')}
+          />
+          <div
+            className="absolute bottom-0 left-4 right-4 h-2 cursor-ns-resize"
+            onMouseDown={(e) => handleResizeStart(e, 's')}
+          />
+          <div
+            className="absolute left-0 top-4 bottom-4 w-2 cursor-ew-resize"
+            onMouseDown={(e) => handleResizeStart(e, 'w')}
+          />
+          <div
+            className="absolute right-0 top-4 bottom-4 w-2 cursor-ew-resize"
+            onMouseDown={(e) => handleResizeStart(e, 'e')}
+          />
+        </>
       </div>
     </div>
   );

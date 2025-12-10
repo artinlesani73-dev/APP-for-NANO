@@ -890,40 +890,58 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
       return;
     }
 
-    // Handle regular images
+    // Handle regular images - try multiple sources in order of preference
+    let imageToEdit: CanvasImage | null = null;
+
+    // 1. First try: use existing dataUri if available (full resolution)
     if (image.dataUri) {
-      // Image already has full resolution data
-      setEditingImage(image);
-      setEditModalOpen(true);
-      return;
+      console.log('[Edit] Using existing dataUri for image:', imageId);
+      imageToEdit = image;
     }
 
-    // Try to load full resolution image from storage if dataUri is missing
-    if (image.imageMetaId) {
+    // 2. Second try: load full resolution from storage by hash
+    if (!imageToEdit && image.imageMetaId) {
       setIsLoadingImageForEdit(true);
       try {
+        console.log('[Edit] Attempting to load image from storage, hash:', image.imageMetaId);
         const dataUri = StorageServiceV2.loadImageByHash(image.imageMetaId);
         if (dataUri) {
-          // Update the image in state with loaded dataUri and open modal
+          console.log('[Edit] Loaded full resolution image from storage:', imageId);
+          // Update the image in state with loaded dataUri
           const updatedImage = { ...image, dataUri };
           setCanvasImages(prev =>
             prev.map(img => img.id === imageId ? updatedImage : img)
           );
-          setEditingImage(updatedImage);
-          setEditModalOpen(true);
-          console.log('[Edit] Loaded full resolution image from storage:', imageId);
+          imageToEdit = updatedImage;
         } else {
-          console.error('[Edit] Failed to load image from storage - image not found:', image.imageMetaId);
+          console.warn('[Edit] loadImageByHash returned null for hash:', image.imageMetaId);
         }
       } catch (error) {
         console.error('[Edit] Failed to load image from storage:', error);
       } finally {
         setIsLoadingImageForEdit(false);
       }
-      return;
     }
 
-    console.warn('[Edit] Image has no dataUri and no imageMetaId, cannot open editor:', imageId);
+    // 3. Third try: use thumbnail as fallback (lower quality but better than nothing)
+    if (!imageToEdit && image.thumbnailUri) {
+      console.log('[Edit] Using thumbnail as fallback for image:', imageId);
+      imageToEdit = { ...image, dataUri: image.thumbnailUri };
+    }
+
+    // Open the modal if we have an image to edit
+    if (imageToEdit && imageToEdit.dataUri) {
+      setEditingImage(imageToEdit);
+      setEditModalOpen(true);
+    } else {
+      console.error('[Edit] Cannot open editor - no image data available:', {
+        imageId,
+        hasDataUri: !!image.dataUri,
+        hasImageMetaId: !!image.imageMetaId,
+        hasThumbnailUri: !!image.thumbnailUri,
+        hasThumbnailPath: !!image.thumbnailPath
+      });
+    }
   };
 
   const handleDeleteImage = (imageId: string) => {
