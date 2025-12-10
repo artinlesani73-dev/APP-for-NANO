@@ -261,10 +261,16 @@ export const StorageServiceV2 = {
       if (!filename) return null;
 
       // @ts-ignore
-      const base64 = window.electron.loadImageSync('images', filename);
-      if (!base64) return null;
+      const imageData = window.electron.loadImageSync('images', filename);
+      if (!imageData) return null;
 
-      return `data:${entry.mime_type};base64,${base64}`;
+      // Check if Electron already returned a full data URI (defensive handling)
+      // This prevents double-wrapping which causes Base64 decoding failures
+      if (typeof imageData === 'string' && imageData.startsWith('data:')) {
+        return imageData;
+      }
+
+      return `data:${entry.mime_type};base64,${imageData}`;
     } catch (err) {
       return null;
     }
