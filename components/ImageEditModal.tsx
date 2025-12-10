@@ -1,5 +1,5 @@
-import React, { useEffect, useRef, useState } from 'react';
-import { X, Undo, Redo, Square, Circle, Triangle, Minus } from 'lucide-react';
+import React, { useEffect, useRef, useState, useCallback } from 'react';
+import { X, Undo, Redo, Square, Circle, Triangle, Minus, GripVertical } from 'lucide-react';
 
 interface ImageEditModalProps {
   isOpen: boolean;
@@ -10,10 +10,17 @@ interface ImageEditModalProps {
 
 type Tool = 'brush' | 'erase' | 'rectangle' | 'circle' | 'triangle' | 'line';
 
+// Minimum and maximum modal dimensions
+const MIN_MODAL_WIDTH = 600;
+const MIN_MODAL_HEIGHT = 400;
+const MAX_MODAL_WIDTH = window.innerWidth * 0.95;
+const MAX_MODAL_HEIGHT = window.innerHeight * 0.95;
+
 export const ImageEditModal: React.FC<ImageEditModalProps> = ({ isOpen, image, onClose, onSave }) => {
   const baseCanvasRef = useRef<HTMLCanvasElement>(null);
   const drawCanvasRef = useRef<HTMLCanvasElement>(null);
   const previewCanvasRef = useRef<HTMLCanvasElement>(null);
+  const modalRef = useRef<HTMLDivElement>(null);
   const [isDrawing, setIsDrawing] = useState(false);
   const [brushColor, setBrushColor] = useState('#3b82f6');
   const [brushSize, setBrushSize] = useState(8);
@@ -25,9 +32,71 @@ export const ImageEditModal: React.FC<ImageEditModalProps> = ({ isOpen, image, o
   const [fillShape, setFillShape] = useState(false);
   const [shapeThickness, setShapeThickness] = useState(3);
 
+  // Modal resize state
+  const [modalSize, setModalSize] = useState({ width: 900, height: 600 });
+  const [isResizing, setIsResizing] = useState(false);
+  const [resizeStart, setResizeStart] = useState<{ x: number; y: number; width: number; height: number } | null>(null);
+  const [resizeDirection, setResizeDirection] = useState<string | null>(null);
+
   // Undo/Redo history
   const [history, setHistory] = useState<ImageData[]>([]);
   const [historyIndex, setHistoryIndex] = useState(-1);
+
+  // Handle resize mouse down
+  const handleResizeMouseDown = useCallback((e: React.MouseEvent, direction: string) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsResizing(true);
+    setResizeDirection(direction);
+    setResizeStart({
+      x: e.clientX,
+      y: e.clientY,
+      width: modalSize.width,
+      height: modalSize.height
+    });
+  }, [modalSize]);
+
+  // Handle resize mouse move
+  useEffect(() => {
+    if (!isResizing || !resizeStart || !resizeDirection) return;
+
+    const handleMouseMove = (e: MouseEvent) => {
+      const dx = e.clientX - resizeStart.x;
+      const dy = e.clientY - resizeStart.y;
+
+      let newWidth = resizeStart.width;
+      let newHeight = resizeStart.height;
+
+      if (resizeDirection.includes('e')) {
+        newWidth = Math.min(MAX_MODAL_WIDTH, Math.max(MIN_MODAL_WIDTH, resizeStart.width + dx));
+      }
+      if (resizeDirection.includes('w')) {
+        newWidth = Math.min(MAX_MODAL_WIDTH, Math.max(MIN_MODAL_WIDTH, resizeStart.width - dx));
+      }
+      if (resizeDirection.includes('s')) {
+        newHeight = Math.min(MAX_MODAL_HEIGHT, Math.max(MIN_MODAL_HEIGHT, resizeStart.height + dy));
+      }
+      if (resizeDirection.includes('n')) {
+        newHeight = Math.min(MAX_MODAL_HEIGHT, Math.max(MIN_MODAL_HEIGHT, resizeStart.height - dy));
+      }
+
+      setModalSize({ width: newWidth, height: newHeight });
+    };
+
+    const handleMouseUp = () => {
+      setIsResizing(false);
+      setResizeDirection(null);
+      setResizeStart(null);
+    };
+
+    document.addEventListener('mousemove', handleMouseMove);
+    document.addEventListener('mouseup', handleMouseUp);
+
+    return () => {
+      document.removeEventListener('mousemove', handleMouseMove);
+      document.removeEventListener('mouseup', handleMouseUp);
+    };
+  }, [isResizing, resizeStart, resizeDirection]);
 
   const getPointerPosition = (e: React.PointerEvent<HTMLCanvasElement>) => {
     const canvas = e.currentTarget;
@@ -340,31 +409,99 @@ export const ImageEditModal: React.FC<ImageEditModalProps> = ({ isOpen, image, o
 
   if (!isOpen || !image) return null;
 
+  // Calculate the available canvas area height (modal height - header - padding)
+  const canvasAreaHeight = modalSize.height - 80; // 80px for header and padding
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
-      <div className="bg-white dark:bg-zinc-900 rounded-2xl shadow-2xl border border-zinc-200 dark:border-zinc-800 max-w-4xl w-full overflow-hidden">
+      <div
+        ref={modalRef}
+        className="bg-white dark:bg-zinc-900 rounded-2xl shadow-2xl border border-zinc-200 dark:border-zinc-800 overflow-hidden relative"
+        style={{
+          width: `${modalSize.width}px`,
+          height: `${modalSize.height}px`,
+          maxWidth: '95vw',
+          maxHeight: '95vh'
+        }}
+      >
+        {/* Resize handles */}
+        {/* Right edge */}
+        <div
+          className="absolute top-0 right-0 w-2 h-full cursor-e-resize hover:bg-blue-500/20 transition-colors z-10"
+          onMouseDown={(e) => handleResizeMouseDown(e, 'e')}
+        />
+        {/* Bottom edge */}
+        <div
+          className="absolute bottom-0 left-0 h-2 w-full cursor-s-resize hover:bg-blue-500/20 transition-colors z-10"
+          onMouseDown={(e) => handleResizeMouseDown(e, 's')}
+        />
+        {/* Bottom-right corner */}
+        <div
+          className="absolute bottom-0 right-0 w-4 h-4 cursor-se-resize hover:bg-blue-500/30 transition-colors z-20 flex items-center justify-center"
+          onMouseDown={(e) => handleResizeMouseDown(e, 'se')}
+        >
+          <GripVertical size={12} className="text-zinc-400 rotate-[-45deg]" />
+        </div>
+        {/* Left edge */}
+        <div
+          className="absolute top-0 left-0 w-2 h-full cursor-w-resize hover:bg-blue-500/20 transition-colors z-10"
+          onMouseDown={(e) => handleResizeMouseDown(e, 'w')}
+        />
+        {/* Top edge */}
+        <div
+          className="absolute top-0 left-0 h-2 w-full cursor-n-resize hover:bg-blue-500/20 transition-colors z-10"
+          onMouseDown={(e) => handleResizeMouseDown(e, 'n')}
+        />
+
         <div className="flex items-center justify-between px-5 py-3 border-b border-zinc-200 dark:border-zinc-800">
           <div className="font-semibold text-sm text-zinc-800 dark:text-zinc-100">Edit Control Image</div>
-          <button
-            onClick={onClose}
-            className="p-2 rounded-full hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors"
-          >
-            <X size={16} />
-          </button>
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-zinc-500 dark:text-zinc-400">Drag edges to resize</span>
+            <button
+              onClick={onClose}
+              className="p-2 rounded-full hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors"
+            >
+              <X size={16} />
+            </button>
+          </div>
         </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-4 gap-4 p-5">
-          <div className="lg:col-span-3 bg-zinc-100 dark:bg-zinc-950 border border-dashed border-zinc-200 dark:border-zinc-800 rounded-xl overflow-auto max-h-[70vh] flex items-center justify-center">
-            <div className="relative max-w-full max-h-[70vh] touch-none">
-              <canvas ref={baseCanvasRef} className="block max-w-full max-h-[70vh]" />
+        <div className="grid grid-cols-1 lg:grid-cols-4 gap-4 p-5 h-[calc(100%-56px)] overflow-hidden">
+          <div
+            className="lg:col-span-3 bg-zinc-100 dark:bg-zinc-950 border border-dashed border-zinc-200 dark:border-zinc-800 rounded-xl overflow-hidden flex items-center justify-center"
+            style={{ height: `${canvasAreaHeight}px` }}
+          >
+            <div className="relative touch-none" style={{ display: 'inline-block' }}>
+              <canvas
+                ref={baseCanvasRef}
+                className="block"
+                style={{
+                  maxWidth: `${modalSize.width * 0.65}px`,
+                  maxHeight: `${canvasAreaHeight - 32}px`,
+                  width: 'auto',
+                  height: 'auto'
+                }}
+              />
               <canvas
                 ref={drawCanvasRef}
-                className="absolute inset-0 max-w-full max-h-[70vh]"
+                className="absolute top-0 left-0"
+                style={{
+                  maxWidth: `${modalSize.width * 0.65}px`,
+                  maxHeight: `${canvasAreaHeight - 32}px`,
+                  width: 'auto',
+                  height: 'auto'
+                }}
               />
               <canvas
                 ref={previewCanvasRef}
-                className="absolute inset-0 max-w-full max-h-[70vh] touch-none"
-                style={{ cursor: 'none' }}
+                className="absolute top-0 left-0 touch-none"
+                style={{
+                  cursor: 'none',
+                  maxWidth: `${modalSize.width * 0.65}px`,
+                  maxHeight: `${canvasAreaHeight - 32}px`,
+                  width: 'auto',
+                  height: 'auto'
+                }}
                 onPointerDown={handlePointerDown}
                 onPointerMove={handlePointerMove}
                 onPointerUp={stopDrawing}
@@ -414,7 +551,7 @@ export const ImageEditModal: React.FC<ImageEditModalProps> = ({ isOpen, image, o
             </div>
           </div>
 
-          <div className="space-y-4">
+          <div className="space-y-4 overflow-y-auto" style={{ maxHeight: `${canvasAreaHeight}px` }}>
             {/* Undo/Redo buttons */}
             <div className="flex items-center gap-2">
               <button
