@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { Sparkles, Image as ImageIcon, Type, Trash2, ZoomIn, ZoomOut, Move, Download, Edit2, Check, X, LayoutTemplate, Bold, Italic, Save, Upload, Settings, Folder, Undo, Redo, ChevronDown, Copy, FileText, Square } from 'lucide-react';
+import { Sparkles, Image as ImageIcon, Type, Trash2, ZoomIn, ZoomOut, Move, Download, Edit2, Check, X, LayoutTemplate, Bold, Italic, Save, Upload, Settings, Folder, Undo, Redo, ChevronDown, Copy, FileText, Square, Tag, Crosshair, BookImage } from 'lucide-react';
 import { GeminiService } from '../services/geminiService';
 import { StorageServiceV2 } from '../services/storageV2';
 import { GenerationConfig, CanvasImage, MixboardSession, MixboardGeneration, StoredImageMeta } from '../types';
@@ -114,6 +114,9 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
   const [editModalOpen, setEditModalOpen] = useState(false);
   const [editingImage, setEditingImage] = useState<CanvasImage | null>(null);
   const [isGeneratingThumbnails, setIsGeneratingThumbnails] = useState(false);
+
+  // Tag dropdown state
+  const [tagDropdownImageId, setTagDropdownImageId] = useState<string | null>(null);
 
   // New UI state
   const [showProjectsPage, setShowProjectsPage] = useState(false);
@@ -469,11 +472,15 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
   }, []);
 
   useEffect(() => {
-    const handleGlobalClick = () => closeContextMenu();
+    const handleGlobalClick = () => {
+      closeContextMenu();
+      setTagDropdownImageId(null);
+    };
     const handleEscape = (event: KeyboardEvent) => {
       if (event.key === 'Escape') {
         closeContextMenu();
         setEditingTextId(null);
+        setTagDropdownImageId(null);
       }
     };
 
@@ -916,6 +923,13 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
       selected: false
     };
     setCanvasImages(prev => [...prev, newImage]);
+  };
+
+  const handleSetImageTag = (imageId: string, tag: 'control' | 'reference' | undefined) => {
+    setCanvasImages(prev => prev.map(img =>
+      img.id === imageId ? { ...img, tag } : img
+    ));
+    setTagDropdownImageId(null);
   };
 
   const handleSaveEditedImage = async (editedDataUri: string) => {
@@ -1796,33 +1810,50 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
                     style={{ backgroundColor: image.backgroundColor || '#ffffff' }}
                   />
                 ) : (
-                  <img
-                    src={image.thumbnailUri || image.dataUri}
-                    alt="Canvas item"
-                    className="w-full h-full object-cover pointer-events-none"
-                    draggable={false}
-                    style={{
-                      userSelect: 'none',
-                      WebkitUserSelect: 'none',
-                      MozUserSelect: 'none',
-                      msUserSelect: 'none'
-                    } as React.CSSProperties}
-                    onDragStart={(e) => e.preventDefault()}
-                  />
+                  <>
+                    <img
+                      src={image.thumbnailUri || image.dataUri}
+                      alt="Canvas item"
+                      className="w-full h-full object-cover pointer-events-none"
+                      draggable={false}
+                      style={{
+                        userSelect: 'none',
+                        WebkitUserSelect: 'none',
+                        MozUserSelect: 'none',
+                        msUserSelect: 'none'
+                      } as React.CSSProperties}
+                      onDragStart={(e) => e.preventDefault()}
+                    />
+                    {/* Tag indicator badge */}
+                    {image.tag && (
+                      <div
+                        className={`absolute top-1 left-1 px-1.5 py-0.5 rounded text-[10px] font-bold text-white flex items-center gap-1 pointer-events-none ${
+                          image.tag === 'control' ? 'bg-blue-600' : 'bg-purple-600'
+                        }`}
+                        style={{ transform: `scale(${1 / zoom})`, transformOrigin: 'top left' }}
+                      >
+                        {image.tag === 'control' ? (
+                          <><Crosshair size={10} /> C</>
+                        ) : (
+                          <><BookImage size={10} /> R</>
+                        )}
+                      </div>
+                    )}
+                  </>
                 )}
                 {image.selected && (
                   <div className="absolute bottom-0 right-0 w-4 h-4 bg-orange-500 cursor-nwse-resize" />
                 )}
               </div>
 
-              {/* Inline Toolbar for Selected Item */}
-              {image.selected && selectedCount === 1 && (
+              {/* Inline Toolbar for Selected Item - hidden when edit modal is open */}
+              {image.selected && selectedCount === 1 && !editModalOpen && (
                 <div
                   className="absolute flex items-center gap-1 bg-zinc-900/95 dark:bg-zinc-800/95 backdrop-blur-sm border border-zinc-700 dark:border-zinc-600 rounded-lg shadow-xl px-2 py-1.5"
                   style={{
                     left: `${image.x * zoom + panOffset.x}px`,
                     top: `${(image.y + image.height) * zoom + panOffset.y + 8}px`,
-                    zIndex: 1000
+                    zIndex: 40
                   }}
                   onMouseDown={(e) => e.stopPropagation()}
                 >
@@ -1985,6 +2016,70 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
                       >
                         <Copy size={16} className="text-white" />
                       </button>
+                      <div className="w-px h-4 bg-zinc-600 mx-1"></div>
+                      {/* Tag Dropdown */}
+                      <div className="relative">
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setTagDropdownImageId(tagDropdownImageId === image.id ? null : image.id);
+                          }}
+                          className={`p-1.5 rounded transition-colors ${
+                            image.tag
+                              ? image.tag === 'control'
+                                ? 'bg-blue-600 hover:bg-blue-500'
+                                : 'bg-purple-600 hover:bg-purple-500'
+                              : 'hover:bg-zinc-700 dark:hover:bg-zinc-700'
+                          }`}
+                          title="Set Tag"
+                        >
+                          <Tag size={16} className="text-white" />
+                        </button>
+                        {tagDropdownImageId === image.id && (
+                          <div className="absolute bottom-full left-0 mb-1 bg-zinc-800 border border-zinc-600 rounded-lg shadow-xl overflow-hidden min-w-[120px] z-50">
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleSetImageTag(image.id, 'control');
+                              }}
+                              className={`w-full px-3 py-2 text-left text-xs flex items-center gap-2 transition-colors ${
+                                image.tag === 'control'
+                                  ? 'bg-blue-600 text-white'
+                                  : 'hover:bg-zinc-700 text-white'
+                              }`}
+                            >
+                              <Crosshair size={14} />
+                              Control
+                            </button>
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleSetImageTag(image.id, 'reference');
+                              }}
+                              className={`w-full px-3 py-2 text-left text-xs flex items-center gap-2 transition-colors ${
+                                image.tag === 'reference'
+                                  ? 'bg-purple-600 text-white'
+                                  : 'hover:bg-zinc-700 text-white'
+                              }`}
+                            >
+                              <BookImage size={14} />
+                              Reference
+                            </button>
+                            {image.tag && (
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleSetImageTag(image.id, undefined);
+                                }}
+                                className="w-full px-3 py-2 text-left text-xs hover:bg-red-600 text-white flex items-center gap-2 border-t border-zinc-600 transition-colors"
+                              >
+                                <X size={14} />
+                                Remove Tag
+                              </button>
+                            )}
+                          </div>
+                        )}
+                      </div>
                       <div className="w-px h-4 bg-zinc-600 mx-1"></div>
                       <button
                         onClick={(e) => {

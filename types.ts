@@ -199,6 +199,7 @@ export interface CanvasImage {
   fontStyle?: 'normal' | 'italic'; // Font style (for text)
   fontFamily?: string;             // Font family (for text)
   backgroundColor?: string;        // Background color (for board entities)
+  tag?: 'control' | 'reference';   // User-assigned tag for images
   x: number;                       // Canvas X position
   y: number;                       // Canvas Y position
   width: number;                   // Display width
