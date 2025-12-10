@@ -879,20 +879,73 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
   // Inline toolbar handlers for selected items
   const handleEditImage = (imageId: string) => {
     const image = canvasImages.find(img => img.id === imageId);
-    if (!image) return;
+    if (!image) {
+      console.warn('[Edit] Image not found on canvas:', imageId);
+      return;
+    }
+
+    console.log('[Edit] handleEditImage called:', {
+      id: image.id,
+      type: image.type,
+      hasDataUri: !!image.dataUri,
+      dataUriLength: image.dataUri?.length,
+      hasImageMetaId: !!image.imageMetaId,
+      imageMetaId: image.imageMetaId
+    });
 
     // Handle whiteboards - convert to dataUri for editing
     if (image.type === 'board') {
+      console.log('[Edit] Converting whiteboard to dataUri');
       const dataUri = whiteboardToDataUri(image);
       setEditingImage({ ...image, dataUri });
       setEditModalOpen(true);
       return;
     }
 
-    // Handle regular images
-    if (image.dataUri) {
-      setEditingImage(image);
+    // Handle regular images - ensure we have full-resolution dataUri
+    let fullResDataUri = image.dataUri;
+
+    // Check if dataUri is missing or invalid (not a proper data URI)
+    const needsLoading = !fullResDataUri || !fullResDataUri.startsWith('data:');
+
+    if (needsLoading) {
+      console.log('[Edit] DataUri missing or invalid, loading from storage...');
+
+      // Try to load full-resolution image from storage
+      const { dataUri: loadedDataUri, source } = StorageServiceV2.loadFullResolutionForEdit(
+        image.imageMetaId,
+        image.dataUri
+      );
+
+      console.log('[Edit] Storage load result:', { success: !!loadedDataUri, source });
+
+      if (loadedDataUri) {
+        fullResDataUri = loadedDataUri;
+
+        // Update the canvas image with the loaded dataUri for future use
+        setCanvasImages(prev =>
+          prev.map(img =>
+            img.id === imageId ? { ...img, dataUri: loadedDataUri } : img
+          )
+        );
+        console.log('[Edit] Updated canvas image with loaded dataUri');
+      } else {
+        console.error('[Edit] Failed to load full-resolution image:', {
+          imageId,
+          imageMetaId: image.imageMetaId,
+          source
+        });
+        // Show error to user - modal will handle displaying the error
+      }
+    }
+
+    if (fullResDataUri) {
+      console.log('[Edit] Opening edit modal with dataUri length:', fullResDataUri.length);
+      setEditingImage({ ...image, dataUri: fullResDataUri });
       setEditModalOpen(true);
+    } else {
+      console.error('[Edit] Cannot open edit modal - no valid dataUri available');
+      // Optionally show a toast/alert to the user here
     }
   };
 

@@ -289,6 +289,71 @@ export const StorageServiceV2 = {
     }
   },
 
+  /**
+   * Load full-resolution image for editing
+   * Tries multiple strategies: imageMetaId (hash), direct registry lookup
+   * Returns the full dataUri or null with detailed logging
+   */
+  loadFullResolutionForEdit: (imageMetaId?: string, existingDataUri?: string): { dataUri: string | null; source: string } => {
+    console.log('[StorageV2] loadFullResolutionForEdit called:', { imageMetaId, hasExistingDataUri: !!existingDataUri });
+
+    // Strategy 1: Use existing dataUri if it's a valid data URI (not a file path)
+    if (existingDataUri && existingDataUri.startsWith('data:')) {
+      console.log('[StorageV2] Using existing dataUri (valid data URI format)');
+      return { dataUri: existingDataUri, source: 'existing-dataUri' };
+    }
+
+    // Strategy 2: Load from registry by hash (imageMetaId)
+    if (imageMetaId) {
+      console.log('[StorageV2] Trying to load by imageMetaId (hash):', imageMetaId);
+
+      const registry = StorageServiceV2.loadImageRegistry();
+      const registryEntry = registry.images[imageMetaId];
+
+      if (registryEntry) {
+        console.log('[StorageV2] Found registry entry:', {
+          id: registryEntry.id,
+          filePath: registryEntry.file_path,
+          mimeType: registryEntry.mime_type
+        });
+
+        try {
+          const filename = registryEntry.file_path.split('/').pop();
+          if (!filename) {
+            console.error('[StorageV2] Invalid file_path in registry entry:', registryEntry.file_path);
+            return { dataUri: null, source: 'error-invalid-filepath' };
+          }
+
+          // @ts-ignore
+          const base64 = window.electron.loadImageSync('images', filename);
+
+          if (base64) {
+            const dataUri = `data:${registryEntry.mime_type};base64,${base64}`;
+            console.log('[StorageV2] Successfully loaded full-resolution image from disk');
+            return { dataUri, source: 'disk-via-hash' };
+          } else {
+            console.error('[StorageV2] loadImageSync returned null for:', filename);
+            return { dataUri: null, source: 'error-loadImageSync-null' };
+          }
+        } catch (err) {
+          console.error('[StorageV2] Error loading image from disk:', err);
+          return { dataUri: null, source: 'error-disk-read' };
+        }
+      } else {
+        console.warn('[StorageV2] No registry entry found for hash:', imageMetaId);
+
+        // Log available registry keys for debugging
+        const availableHashes = Object.keys(registry.images).slice(0, 5);
+        console.log('[StorageV2] Sample registry hashes:', availableHashes);
+
+        return { dataUri: null, source: 'error-no-registry-entry' };
+      }
+    }
+
+    console.warn('[StorageV2] No imageMetaId provided and no valid existingDataUri');
+    return { dataUri: null, source: 'error-no-imageMetaId' };
+  },
+
   // --------------------------------------------------------------------------
   // SESSION MANAGEMENT
   // --------------------------------------------------------------------------
