@@ -1,5 +1,5 @@
-import React, { useEffect, useRef, useState } from 'react';
-import { X, Undo, Redo, Square, Circle, Triangle, Minus } from 'lucide-react';
+import React, { useEffect, useRef, useState, useCallback } from 'react';
+import { X, Undo, Redo, Square, Circle, Triangle, Minus, Maximize2, Minimize2, Loader2, AlertCircle } from 'lucide-react';
 
 interface ImageEditModalProps {
   isOpen: boolean;
@@ -10,10 +10,21 @@ interface ImageEditModalProps {
 
 type Tool = 'brush' | 'erase' | 'rectangle' | 'circle' | 'triangle' | 'line';
 
+interface ModalSize {
+  width: number;
+  height: number;
+}
+
+const MIN_MODAL_WIDTH = 600;
+const MIN_MODAL_HEIGHT = 400;
+const DEFAULT_MODAL_WIDTH = 900;
+const DEFAULT_MODAL_HEIGHT = 600;
+
 export const ImageEditModal: React.FC<ImageEditModalProps> = ({ isOpen, image, onClose, onSave }) => {
   const baseCanvasRef = useRef<HTMLCanvasElement>(null);
   const drawCanvasRef = useRef<HTMLCanvasElement>(null);
   const previewCanvasRef = useRef<HTMLCanvasElement>(null);
+  const modalRef = useRef<HTMLDivElement>(null);
   const [isDrawing, setIsDrawing] = useState(false);
   const [brushColor, setBrushColor] = useState('#3b82f6');
   const [brushSize, setBrushSize] = useState(8);
@@ -24,6 +35,18 @@ export const ImageEditModal: React.FC<ImageEditModalProps> = ({ isOpen, image, o
   const [startPos, setStartPos] = useState<{ x: number; y: number } | null>(null);
   const [fillShape, setFillShape] = useState(false);
   const [shapeThickness, setShapeThickness] = useState(3);
+
+  // Loading and error states
+  const [isLoading, setIsLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [imageDimensions, setImageDimensions] = useState<{ width: number; height: number } | null>(null);
+
+  // Modal size states
+  const [modalSize, setModalSize] = useState<ModalSize>({ width: DEFAULT_MODAL_WIDTH, height: DEFAULT_MODAL_HEIGHT });
+  const [isMaximized, setIsMaximized] = useState(false);
+  const [isResizing, setIsResizing] = useState(false);
+  const [resizeEdge, setResizeEdge] = useState<string | null>(null);
+  const resizeStartRef = useRef<{ x: number; y: number; width: number; height: number } | null>(null);
 
   // Undo/Redo history
   const [history, setHistory] = useState<ImageData[]>([]);
@@ -44,16 +67,39 @@ export const ImageEditModal: React.FC<ImageEditModalProps> = ({ isOpen, image, o
     };
   };
 
+  // Reset states when modal opens/closes
+  useEffect(() => {
+    if (isOpen && image) {
+      setIsLoading(true);
+      setLoadError(null);
+      setImageDimensions(null);
+    } else if (!isOpen) {
+      // Reset states when closing
+      setIsLoading(true);
+      setLoadError(null);
+      setHistory([]);
+      setHistoryIndex(-1);
+    }
+  }, [isOpen, image]);
+
+  // Load image with error handling
   useEffect(() => {
     if (!isOpen || !image) return;
 
+    setIsLoading(true);
+    setLoadError(null);
+
     const img = new Image();
-    img.src = image;
+
     img.onload = () => {
       const baseCanvas = baseCanvasRef.current;
       const drawCanvas = drawCanvasRef.current;
       const previewCanvas = previewCanvasRef.current;
-      if (!baseCanvas || !drawCanvas || !previewCanvas) return;
+      if (!baseCanvas || !drawCanvas || !previewCanvas) {
+        setLoadError('Failed to initialize canvas elements');
+        setIsLoading(false);
+        return;
+      }
 
       baseCanvas.width = img.width;
       baseCanvas.height = img.height;
@@ -64,7 +110,11 @@ export const ImageEditModal: React.FC<ImageEditModalProps> = ({ isOpen, image, o
 
       const baseCtx = baseCanvas.getContext('2d');
       const drawCtx = drawCanvas.getContext('2d');
-      if (!baseCtx || !drawCtx) return;
+      if (!baseCtx || !drawCtx) {
+        setLoadError('Failed to get canvas context');
+        setIsLoading(false);
+        return;
+      }
 
       baseCtx.clearRect(0, 0, baseCanvas.width, baseCanvas.height);
       baseCtx.drawImage(img, 0, 0);
@@ -74,17 +124,23 @@ export const ImageEditModal: React.FC<ImageEditModalProps> = ({ isOpen, image, o
       const initialState = drawCtx.getImageData(0, 0, drawCanvas.width, drawCanvas.height);
       setHistory([initialState]);
       setHistoryIndex(0);
+      setImageDimensions({ width: img.width, height: img.height });
+      setIsLoading(false);
     };
+
+    img.onerror = () => {
+      setLoadError('Failed to load image. The image data may be corrupted or missing.');
+      setIsLoading(false);
+    };
+
+    img.src = image;
   }, [image, isOpen]);
 
   // Get context with willReadFrequently for better performance
   useEffect(() => {
     const drawCanvas = drawCanvasRef.current;
     if (drawCanvas) {
-      const ctx = drawCanvas.getContext('2d', { willReadFrequently: true });
-      if (ctx) {
-        // Context is now optimized for frequent reads
-      }
+      drawCanvas.getContext('2d', { willReadFrequently: true });
     }
   }, []);
 
@@ -338,88 +394,229 @@ export const ImageEditModal: React.FC<ImageEditModalProps> = ({ isOpen, image, o
     onClose();
   };
 
+  // Toggle maximize
+  const toggleMaximize = useCallback(() => {
+    setIsMaximized(prev => !prev);
+  }, []);
+
+  // Handle resize start
+  const handleResizeStart = useCallback((e: React.MouseEvent, edge: string) => {
+    if (isMaximized) return;
+    e.preventDefault();
+    e.stopPropagation();
+    setIsResizing(true);
+    setResizeEdge(edge);
+    resizeStartRef.current = {
+      x: e.clientX,
+      y: e.clientY,
+      width: modalSize.width,
+      height: modalSize.height
+    };
+  }, [isMaximized, modalSize]);
+
+  // Handle resize move
+  useEffect(() => {
+    if (!isResizing || !resizeEdge) return;
+
+    const handleMouseMove = (e: MouseEvent) => {
+      if (!resizeStartRef.current) return;
+
+      const deltaX = e.clientX - resizeStartRef.current.x;
+      const deltaY = e.clientY - resizeStartRef.current.y;
+
+      let newWidth = resizeStartRef.current.width;
+      let newHeight = resizeStartRef.current.height;
+
+      if (resizeEdge.includes('e')) {
+        newWidth = Math.max(MIN_MODAL_WIDTH, resizeStartRef.current.width + deltaX * 2);
+      }
+      if (resizeEdge.includes('w')) {
+        newWidth = Math.max(MIN_MODAL_WIDTH, resizeStartRef.current.width - deltaX * 2);
+      }
+      if (resizeEdge.includes('s')) {
+        newHeight = Math.max(MIN_MODAL_HEIGHT, resizeStartRef.current.height + deltaY * 2);
+      }
+      if (resizeEdge.includes('n')) {
+        newHeight = Math.max(MIN_MODAL_HEIGHT, resizeStartRef.current.height - deltaY * 2);
+      }
+
+      // Constrain to viewport
+      const maxWidth = window.innerWidth - 48;
+      const maxHeight = window.innerHeight - 48;
+      newWidth = Math.min(newWidth, maxWidth);
+      newHeight = Math.min(newHeight, maxHeight);
+
+      setModalSize({ width: newWidth, height: newHeight });
+    };
+
+    const handleMouseUp = () => {
+      setIsResizing(false);
+      setResizeEdge(null);
+      resizeStartRef.current = null;
+    };
+
+    document.addEventListener('mousemove', handleMouseMove);
+    document.addEventListener('mouseup', handleMouseUp);
+
+    return () => {
+      document.removeEventListener('mousemove', handleMouseMove);
+      document.removeEventListener('mouseup', handleMouseUp);
+    };
+  }, [isResizing, resizeEdge]);
+
   if (!isOpen || !image) return null;
+
+  // Calculate canvas container height based on modal size
+  const toolbarWidth = 200; // Approximate width of the toolbar
+  const headerHeight = 52; // Height of the header
+  const padding = 40; // Padding around the canvas area
+  const canvasContainerHeight = isMaximized
+    ? 'calc(100vh - 120px)'
+    : `${modalSize.height - headerHeight - padding}px`;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
-      <div className="bg-white dark:bg-zinc-900 rounded-2xl shadow-2xl border border-zinc-200 dark:border-zinc-800 max-w-4xl w-full overflow-hidden">
-        <div className="flex items-center justify-between px-5 py-3 border-b border-zinc-200 dark:border-zinc-800">
-          <div className="font-semibold text-sm text-zinc-800 dark:text-zinc-100">Edit Control Image</div>
-          <button
-            onClick={onClose}
-            className="p-2 rounded-full hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors"
-          >
-            <X size={16} />
-          </button>
+      <div
+        ref={modalRef}
+        className={`bg-white dark:bg-zinc-900 rounded-2xl shadow-2xl border border-zinc-200 dark:border-zinc-800 overflow-hidden flex flex-col ${isResizing ? 'select-none' : ''}`}
+        style={isMaximized ? {
+          width: 'calc(100vw - 32px)',
+          height: 'calc(100vh - 32px)',
+        } : {
+          width: `${modalSize.width}px`,
+          height: `${modalSize.height}px`,
+          maxWidth: 'calc(100vw - 32px)',
+          maxHeight: 'calc(100vh - 32px)',
+        }}
+      >
+        {/* Header */}
+        <div className="flex items-center justify-between px-5 py-3 border-b border-zinc-200 dark:border-zinc-800 shrink-0">
+          <div className="flex items-center gap-3">
+            <div className="font-semibold text-sm text-zinc-800 dark:text-zinc-100">Edit Image</div>
+            {imageDimensions && !isLoading && (
+              <span className="text-xs text-zinc-500 dark:text-zinc-400">
+                {imageDimensions.width} x {imageDimensions.height}px
+              </span>
+            )}
+          </div>
+          <div className="flex items-center gap-1">
+            <button
+              onClick={toggleMaximize}
+              className="p-2 rounded-full hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors"
+              title={isMaximized ? 'Restore size' : 'Maximize'}
+            >
+              {isMaximized ? <Minimize2 size={16} /> : <Maximize2 size={16} />}
+            </button>
+            <button
+              onClick={onClose}
+              className="p-2 rounded-full hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors"
+            >
+              <X size={16} />
+            </button>
+          </div>
         </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-4 gap-4 p-5">
-          <div className="lg:col-span-3 bg-zinc-100 dark:bg-zinc-950 border border-dashed border-zinc-200 dark:border-zinc-800 rounded-xl overflow-auto max-h-[70vh] flex items-center justify-center">
-            <div className="relative max-w-full max-h-[70vh] touch-none">
-              <canvas ref={baseCanvasRef} className="block max-w-full max-h-[70vh]" />
-              <canvas
-                ref={drawCanvasRef}
-                className="absolute inset-0 max-w-full max-h-[70vh]"
-              />
-              <canvas
-                ref={previewCanvasRef}
-                className="absolute inset-0 max-w-full max-h-[70vh] touch-none"
-                style={{ cursor: 'none' }}
-                onPointerDown={handlePointerDown}
-                onPointerMove={handlePointerMove}
-                onPointerUp={stopDrawing}
-                onPointerEnter={handlePointerEnter}
-                onPointerLeave={handlePointerLeave}
-              />
-              {/* Cursor indicator */}
-              {showCursor && cursorPos && drawCanvasRef.current && (
-                <>
-                  {(tool === 'brush' || tool === 'erase') && (
-                    <div
-                      className="absolute pointer-events-none"
-                      style={{
-                        left: cursorPos.x,
-                        top: cursorPos.y,
-                        transform: 'translate(-50%, -50%)',
-                        width: brushSize * (drawCanvasRef.current.getBoundingClientRect().width / drawCanvasRef.current.width),
-                        height: brushSize * (drawCanvasRef.current.getBoundingClientRect().height / drawCanvasRef.current.height),
-                        borderRadius: '50%',
-                        border: `2px solid ${tool === 'erase' ? '#f59e0b' : '#3b82f6'}`,
-                        backgroundColor: tool === 'erase'
-                          ? 'rgba(245, 158, 11, 0.1)'
-                          : `${brushColor}${Math.round(brushOpacity * 255).toString(16).padStart(2, '0')}`,
-                        mixBlendMode: tool === 'erase' ? 'normal' : 'normal'
-                      }}
-                    />
-                  )}
-                  {(tool === 'line' || tool === 'rectangle' || tool === 'circle' || tool === 'triangle') && (
-                    <div
-                      className="absolute pointer-events-none"
-                      style={{
-                        left: cursorPos.x,
-                        top: cursorPos.y,
-                        transform: 'translate(-50%, -50%)',
-                        width: 20,
-                        height: 20
-                      }}
-                    >
-                      <svg width="20" height="20" viewBox="0 0 20 20">
-                        <line x1="10" y1="0" x2="10" y2="20" stroke="#3b82f6" strokeWidth="2" />
-                        <line x1="0" y1="10" x2="20" y2="10" stroke="#3b82f6" strokeWidth="2" />
-                      </svg>
-                    </div>
-                  )}
-                </>
-              )}
-            </div>
+        {/* Content */}
+        <div className="flex flex-1 overflow-hidden">
+          {/* Canvas area */}
+          <div
+            className="flex-1 bg-zinc-100 dark:bg-zinc-950 border-r border-zinc-200 dark:border-zinc-800 overflow-auto flex items-center justify-center p-4"
+            style={{ height: canvasContainerHeight }}
+          >
+            {isLoading ? (
+              <div className="flex flex-col items-center justify-center gap-3 text-zinc-500 dark:text-zinc-400">
+                <Loader2 size={32} className="animate-spin" />
+                <span className="text-sm">Loading image...</span>
+              </div>
+            ) : loadError ? (
+              <div className="flex flex-col items-center justify-center gap-3 text-red-500 max-w-md text-center p-4">
+                <AlertCircle size={32} />
+                <span className="text-sm font-medium">Failed to load image</span>
+                <span className="text-xs text-zinc-500 dark:text-zinc-400">{loadError}</span>
+                <button
+                  onClick={onClose}
+                  className="mt-2 px-4 py-2 text-sm rounded-lg bg-zinc-200 dark:bg-zinc-800 hover:bg-zinc-300 dark:hover:bg-zinc-700 transition-colors"
+                >
+                  Close
+                </button>
+              </div>
+            ) : (
+              <div className="relative touch-none" style={{ maxWidth: '100%', maxHeight: '100%' }}>
+                <canvas
+                  ref={baseCanvasRef}
+                  className="block"
+                  style={{ maxWidth: '100%', maxHeight: isMaximized ? 'calc(100vh - 140px)' : `${modalSize.height - headerHeight - padding - 20}px` }}
+                />
+                <canvas
+                  ref={drawCanvasRef}
+                  className="absolute inset-0"
+                  style={{ maxWidth: '100%', maxHeight: isMaximized ? 'calc(100vh - 140px)' : `${modalSize.height - headerHeight - padding - 20}px` }}
+                />
+                <canvas
+                  ref={previewCanvasRef}
+                  className="absolute inset-0 touch-none"
+                  style={{
+                    cursor: 'none',
+                    maxWidth: '100%',
+                    maxHeight: isMaximized ? 'calc(100vh - 140px)' : `${modalSize.height - headerHeight - padding - 20}px`
+                  }}
+                  onPointerDown={handlePointerDown}
+                  onPointerMove={handlePointerMove}
+                  onPointerUp={stopDrawing}
+                  onPointerEnter={handlePointerEnter}
+                  onPointerLeave={handlePointerLeave}
+                />
+                {/* Cursor indicator */}
+                {showCursor && cursorPos && drawCanvasRef.current && (
+                  <>
+                    {(tool === 'brush' || tool === 'erase') && (
+                      <div
+                        className="absolute pointer-events-none"
+                        style={{
+                          left: cursorPos.x,
+                          top: cursorPos.y,
+                          transform: 'translate(-50%, -50%)',
+                          width: brushSize * (drawCanvasRef.current.getBoundingClientRect().width / drawCanvasRef.current.width),
+                          height: brushSize * (drawCanvasRef.current.getBoundingClientRect().height / drawCanvasRef.current.height),
+                          borderRadius: '50%',
+                          border: `2px solid ${tool === 'erase' ? '#f59e0b' : '#3b82f6'}`,
+                          backgroundColor: tool === 'erase'
+                            ? 'rgba(245, 158, 11, 0.1)'
+                            : `${brushColor}${Math.round(brushOpacity * 255).toString(16).padStart(2, '0')}`,
+                          mixBlendMode: tool === 'erase' ? 'normal' : 'normal'
+                        }}
+                      />
+                    )}
+                    {(tool === 'line' || tool === 'rectangle' || tool === 'circle' || tool === 'triangle') && (
+                      <div
+                        className="absolute pointer-events-none"
+                        style={{
+                          left: cursorPos.x,
+                          top: cursorPos.y,
+                          transform: 'translate(-50%, -50%)',
+                          width: 20,
+                          height: 20
+                        }}
+                      >
+                        <svg width="20" height="20" viewBox="0 0 20 20">
+                          <line x1="10" y1="0" x2="10" y2="20" stroke="#3b82f6" strokeWidth="2" />
+                          <line x1="0" y1="10" x2="20" y2="10" stroke="#3b82f6" strokeWidth="2" />
+                        </svg>
+                      </div>
+                    )}
+                  </>
+                )}
+              </div>
+            )}
           </div>
 
-          <div className="space-y-4">
+          {/* Toolbar */}
+          <div className="w-52 p-4 space-y-4 overflow-y-auto shrink-0">
             {/* Undo/Redo buttons */}
             <div className="flex items-center gap-2">
               <button
                 onClick={undo}
-                disabled={historyIndex <= 0}
+                disabled={historyIndex <= 0 || isLoading || !!loadError}
                 className="flex-1 px-3 py-2 text-sm rounded-lg border border-zinc-200 dark:border-zinc-700 text-zinc-700 dark:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-800 disabled:opacity-50 disabled:cursor-not-allowed transition flex items-center justify-center gap-1"
               >
                 <Undo size={14} />
@@ -427,7 +624,7 @@ export const ImageEditModal: React.FC<ImageEditModalProps> = ({ isOpen, image, o
               </button>
               <button
                 onClick={redo}
-                disabled={historyIndex >= history.length - 1}
+                disabled={historyIndex >= history.length - 1 || isLoading || !!loadError}
                 className="flex-1 px-3 py-2 text-sm rounded-lg border border-zinc-200 dark:border-zinc-700 text-zinc-700 dark:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-800 disabled:opacity-50 disabled:cursor-not-allowed transition flex items-center justify-center gap-1"
               >
                 <Redo size={14} />
@@ -441,21 +638,23 @@ export const ImageEditModal: React.FC<ImageEditModalProps> = ({ isOpen, image, o
               <div className="grid grid-cols-2 gap-2">
                 <button
                   onClick={() => setTool('brush')}
+                  disabled={isLoading || !!loadError}
                   className={`px-3 py-2 text-xs rounded-lg border transition ${
                     tool === 'brush'
                       ? 'bg-blue-600 text-white border-blue-500'
                       : 'bg-white dark:bg-zinc-800 border-zinc-200 dark:border-zinc-700 text-zinc-700 dark:text-zinc-200'
-                  }`}
+                  } disabled:opacity-50 disabled:cursor-not-allowed`}
                 >
                   Brush
                 </button>
                 <button
                   onClick={() => setTool('erase')}
+                  disabled={isLoading || !!loadError}
                   className={`px-3 py-2 text-xs rounded-lg border transition ${
                     tool === 'erase'
                       ? 'bg-amber-500 text-white border-amber-400'
                       : 'bg-white dark:bg-zinc-800 border-zinc-200 dark:border-zinc-700 text-zinc-700 dark:text-zinc-200'
-                  }`}
+                  } disabled:opacity-50 disabled:cursor-not-allowed`}
                 >
                   Eraser
                 </button>
@@ -468,44 +667,48 @@ export const ImageEditModal: React.FC<ImageEditModalProps> = ({ isOpen, image, o
               <div className="grid grid-cols-2 gap-2">
                 <button
                   onClick={() => setTool('line')}
+                  disabled={isLoading || !!loadError}
                   className={`px-3 py-2 text-xs rounded-lg border transition flex items-center justify-center gap-1 ${
                     tool === 'line'
                       ? 'bg-blue-600 text-white border-blue-500'
                       : 'bg-white dark:bg-zinc-800 border-zinc-200 dark:border-zinc-700 text-zinc-700 dark:text-zinc-200'
-                  }`}
+                  } disabled:opacity-50 disabled:cursor-not-allowed`}
                 >
                   <Minus size={14} />
                   Line
                 </button>
                 <button
                   onClick={() => setTool('rectangle')}
+                  disabled={isLoading || !!loadError}
                   className={`px-3 py-2 text-xs rounded-lg border transition flex items-center justify-center gap-1 ${
                     tool === 'rectangle'
                       ? 'bg-blue-600 text-white border-blue-500'
                       : 'bg-white dark:bg-zinc-800 border-zinc-200 dark:border-zinc-700 text-zinc-700 dark:text-zinc-200'
-                  }`}
+                  } disabled:opacity-50 disabled:cursor-not-allowed`}
                 >
                   <Square size={14} />
                   Rect
                 </button>
                 <button
                   onClick={() => setTool('circle')}
+                  disabled={isLoading || !!loadError}
                   className={`px-3 py-2 text-xs rounded-lg border transition flex items-center justify-center gap-1 ${
                     tool === 'circle'
                       ? 'bg-blue-600 text-white border-blue-500'
                       : 'bg-white dark:bg-zinc-800 border-zinc-200 dark:border-zinc-700 text-zinc-700 dark:text-zinc-200'
-                  }`}
+                  } disabled:opacity-50 disabled:cursor-not-allowed`}
                 >
                   <Circle size={14} />
                   Circle
                 </button>
                 <button
                   onClick={() => setTool('triangle')}
+                  disabled={isLoading || !!loadError}
                   className={`px-3 py-2 text-xs rounded-lg border transition flex items-center justify-center gap-1 ${
                     tool === 'triangle'
                       ? 'bg-blue-600 text-white border-blue-500'
                       : 'bg-white dark:bg-zinc-800 border-zinc-200 dark:border-zinc-700 text-zinc-700 dark:text-zinc-200'
-                  }`}
+                  } disabled:opacity-50 disabled:cursor-not-allowed`}
                 >
                   <Triangle size={14} />
                   Triangle
@@ -520,21 +723,23 @@ export const ImageEditModal: React.FC<ImageEditModalProps> = ({ isOpen, image, o
                 <div className="flex items-center gap-2">
                   <button
                     onClick={() => setFillShape(false)}
+                    disabled={isLoading || !!loadError}
                     className={`flex-1 px-3 py-2 text-xs rounded-lg border transition ${
                       !fillShape
                         ? 'bg-blue-600 text-white border-blue-500'
                         : 'bg-white dark:bg-zinc-800 border-zinc-200 dark:border-zinc-700 text-zinc-700 dark:text-zinc-200'
-                    }`}
+                    } disabled:opacity-50 disabled:cursor-not-allowed`}
                   >
                     Outline
                   </button>
                   <button
                     onClick={() => setFillShape(true)}
+                    disabled={isLoading || !!loadError}
                     className={`flex-1 px-3 py-2 text-xs rounded-lg border transition ${
                       fillShape
                         ? 'bg-blue-600 text-white border-blue-500'
                         : 'bg-white dark:bg-zinc-800 border-zinc-200 dark:border-zinc-700 text-zinc-700 dark:text-zinc-200'
-                    }`}
+                    } disabled:opacity-50 disabled:cursor-not-allowed`}
                   >
                     Filled
                   </button>
@@ -552,7 +757,8 @@ export const ImageEditModal: React.FC<ImageEditModalProps> = ({ isOpen, image, o
                   max={20}
                   value={shapeThickness}
                   onChange={(e) => setShapeThickness(Number(e.target.value))}
-                  className="w-full"
+                  disabled={isLoading || !!loadError}
+                  className="w-full disabled:opacity-50"
                 />
                 <div className="text-[11px] text-zinc-500 dark:text-zinc-400 mt-1">{shapeThickness}px</div>
               </div>
@@ -564,7 +770,8 @@ export const ImageEditModal: React.FC<ImageEditModalProps> = ({ isOpen, image, o
                 type="color"
                 value={brushColor}
                 onChange={(e) => setBrushColor(e.target.value)}
-                className="w-full h-10 rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800"
+                disabled={isLoading || !!loadError}
+                className="w-full h-10 rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 disabled:opacity-50"
               />
             </div>
 
@@ -578,7 +785,8 @@ export const ImageEditModal: React.FC<ImageEditModalProps> = ({ isOpen, image, o
                   max={72}
                   value={brushSize}
                   onChange={(e) => setBrushSize(Number(e.target.value))}
-                  className="w-full"
+                  disabled={isLoading || !!loadError}
+                  className="w-full disabled:opacity-50"
                 />
                 <div className="text-[11px] text-zinc-500 dark:text-zinc-400 mt-1">{brushSize}px</div>
               </div>
@@ -593,15 +801,55 @@ export const ImageEditModal: React.FC<ImageEditModalProps> = ({ isOpen, image, o
               </button>
               <button
                 onClick={handleSave}
-                className="px-4 py-2 text-sm rounded-lg bg-blue-600 hover:bg-blue-500 text-white font-semibold shadow-sm"
+                disabled={isLoading || !!loadError}
+                className="px-4 py-2 text-sm rounded-lg bg-blue-600 hover:bg-blue-500 text-white font-semibold shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 Save Drawing
               </button>
             </div>
           </div>
         </div>
+
+        {/* Resize handles - only show when not maximized */}
+        {!isMaximized && (
+          <>
+            {/* Corner handles */}
+            <div
+              className="absolute top-0 left-0 w-4 h-4 cursor-nwse-resize"
+              onMouseDown={(e) => handleResizeStart(e, 'nw')}
+            />
+            <div
+              className="absolute top-0 right-0 w-4 h-4 cursor-nesw-resize"
+              onMouseDown={(e) => handleResizeStart(e, 'ne')}
+            />
+            <div
+              className="absolute bottom-0 left-0 w-4 h-4 cursor-nesw-resize"
+              onMouseDown={(e) => handleResizeStart(e, 'sw')}
+            />
+            <div
+              className="absolute bottom-0 right-0 w-4 h-4 cursor-nwse-resize"
+              onMouseDown={(e) => handleResizeStart(e, 'se')}
+            />
+            {/* Edge handles */}
+            <div
+              className="absolute top-0 left-4 right-4 h-2 cursor-ns-resize"
+              onMouseDown={(e) => handleResizeStart(e, 'n')}
+            />
+            <div
+              className="absolute bottom-0 left-4 right-4 h-2 cursor-ns-resize"
+              onMouseDown={(e) => handleResizeStart(e, 's')}
+            />
+            <div
+              className="absolute left-0 top-4 bottom-4 w-2 cursor-ew-resize"
+              onMouseDown={(e) => handleResizeStart(e, 'w')}
+            />
+            <div
+              className="absolute right-0 top-4 bottom-4 w-2 cursor-ew-resize"
+              onMouseDown={(e) => handleResizeStart(e, 'e')}
+            />
+          </>
+        )}
       </div>
     </div>
   );
 };
-

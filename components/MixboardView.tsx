@@ -114,6 +114,7 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
   const [editModalOpen, setEditModalOpen] = useState(false);
   const [editingImage, setEditingImage] = useState<CanvasImage | null>(null);
   const [isGeneratingThumbnails, setIsGeneratingThumbnails] = useState(false);
+  const [isLoadingImageForEdit, setIsLoadingImageForEdit] = useState(false);
 
   // New UI state
   const [showProjectsPage, setShowProjectsPage] = useState(false);
@@ -877,7 +878,7 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
   };
 
   // Inline toolbar handlers for selected items
-  const handleEditImage = (imageId: string) => {
+  const handleEditImage = async (imageId: string) => {
     const image = canvasImages.find(img => img.id === imageId);
     if (!image) return;
 
@@ -891,9 +892,38 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
 
     // Handle regular images
     if (image.dataUri) {
+      // Image already has full resolution data
       setEditingImage(image);
       setEditModalOpen(true);
+      return;
     }
+
+    // Try to load full resolution image from storage if dataUri is missing
+    if (image.imageMetaId) {
+      setIsLoadingImageForEdit(true);
+      try {
+        const dataUri = StorageServiceV2.loadImageByHash(image.imageMetaId);
+        if (dataUri) {
+          // Update the image in state with loaded dataUri and open modal
+          const updatedImage = { ...image, dataUri };
+          setCanvasImages(prev =>
+            prev.map(img => img.id === imageId ? updatedImage : img)
+          );
+          setEditingImage(updatedImage);
+          setEditModalOpen(true);
+          console.log('[Edit] Loaded full resolution image from storage:', imageId);
+        } else {
+          console.error('[Edit] Failed to load image from storage - image not found:', image.imageMetaId);
+        }
+      } catch (error) {
+        console.error('[Edit] Failed to load image from storage:', error);
+      } finally {
+        setIsLoadingImageForEdit(false);
+      }
+      return;
+    }
+
+    console.warn('[Edit] Image has no dataUri and no imageMetaId, cannot open editor:', imageId);
   };
 
   const handleDeleteImage = (imageId: string) => {
@@ -1959,13 +1989,14 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
                   ) : (
                     // Image toolbar
                     <>
-                      {image.dataUri && (
+                      {(image.dataUri || image.imageMetaId) && (
                         <button
                           onClick={(e) => {
                             e.stopPropagation();
                             handleEditImage(image.id);
                           }}
-                          className="p-1.5 rounded hover:bg-zinc-700 dark:hover:bg-zinc-700 transition-colors"
+                          disabled={isLoadingImageForEdit}
+                          className="p-1.5 rounded hover:bg-zinc-700 dark:hover:bg-zinc-700 transition-colors disabled:opacity-50"
                           title="Edit"
                         >
                           <Edit2 size={16} className="text-white" />
@@ -2230,6 +2261,14 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
           <div className="fixed bottom-4 right-4 bg-blue-600 text-white px-4 py-2 rounded-lg shadow-lg flex items-center gap-2 z-50">
             <div className="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent" />
             Generating thumbnails...
+          </div>
+        )}
+
+        {/* Loading Image for Edit Indicator */}
+        {isLoadingImageForEdit && (
+          <div className="fixed bottom-4 right-4 bg-blue-600 text-white px-4 py-2 rounded-lg shadow-lg flex items-center gap-2 z-50">
+            <div className="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent" />
+            Loading full resolution image...
           </div>
         )}
       </div>
