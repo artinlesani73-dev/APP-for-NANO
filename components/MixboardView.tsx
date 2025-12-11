@@ -1824,13 +1824,12 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
                       } as React.CSSProperties}
                       onDragStart={(e) => e.preventDefault()}
                     />
-                    {/* Tag indicator badge */}
+                    {/* Tag indicator badge - fixed size regardless of zoom */}
                     {image.tag && (
                       <div
                         className={`absolute top-1 left-1 px-1.5 py-0.5 rounded text-[10px] font-bold text-white flex items-center gap-1 pointer-events-none ${
                           image.tag === 'control' ? 'bg-blue-600' : 'bg-purple-600'
                         }`}
-                        style={{ transform: `scale(${1 / zoom})`, transformOrigin: 'top left' }}
                       >
                         {image.tag === 'control' ? (
                           <><Crosshair size={10} /> C</>
