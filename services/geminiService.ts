@@ -252,6 +252,19 @@ export const GeminiService = {
       finalPrompt = `${preamble}\n\nUSER PROMPT: ${prompt}`;
     }
 
+    // [TEMP DEBUG] Log the final prompt and payload structure
+    console.log('[Payload Debug] Final prompt being sent:');
+    console.log('─'.repeat(60));
+    console.log(finalPrompt);
+    console.log('─'.repeat(60));
+    console.log('[Payload Debug] Parts structure:', {
+      totalParts: parts.length + 1, // +1 for the text part we're about to add
+      imageParts: parts.length,
+      controlImages: controlImages.length,
+      referenceImages: referenceImages.length,
+      contextImages: contextImages.length
+    });
+
     parts.push({ text: finalPrompt });
 
     // Construct image config

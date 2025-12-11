@@ -636,6 +636,15 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
         // IMAGE MODE: Generate image
         // Call API for image generation
         // Pass images separated by their tags: control, reference, and context (untagged)
+
+        // [TEMP DEBUG] Log payload summary
+        console.log('[Payload Debug] Image counts:', {
+          control: controlImageData.length,
+          reference: referenceImageData.length,
+          context: contextImageData.length,
+          total: controlImageData.length + referenceImageData.length + contextImageData.length
+        });
+
         const output = await GeminiService.generateImage(
           newGeneration.prompt,
           config,
