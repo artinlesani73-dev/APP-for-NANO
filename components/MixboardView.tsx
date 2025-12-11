@@ -756,12 +756,22 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
       }
       } else {
         // TEXT MODE: Generate text
+        // [TEMP DEBUG] Log payload summary for text mode
+        console.log('[Payload Debug - Text Mode] Image counts:', {
+          control: controlImageData.length,
+          reference: referenceImageData.length,
+          context: contextImageData.length,
+          total: controlImageData.length + referenceImageData.length + contextImageData.length
+        });
+
         const output = await GeminiService.generateText(
           newGeneration.prompt,
           config,
           150,  // Max 150 words
           currentUser?.displayName,
-          referenceImageData
+          controlImageData.length > 0 ? controlImageData : undefined,
+          referenceImageData.length > 0 ? referenceImageData : undefined,
+          contextImageData.length > 0 ? contextImageData : undefined
         );
 
         if (output.text) {

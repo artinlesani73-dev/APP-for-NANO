@@ -330,7 +330,9 @@ export const GeminiService = {
     config: GenerationConfig,
     maxWords: number = 150,
     userName?: string,
-    referenceImageBase64?: string[] | string
+    controlImageBase64?: string[] | string,
+    referenceImageBase64?: string[] | string,
+    contextImageBase64?: string[] | string
   ): Promise<{ text: string }> => {
 
     // Get API key based on environment
@@ -356,12 +358,41 @@ export const GeminiService = {
 
     const parts: Part[] = [];
 
+    const controlImages = controlImageBase64
+      ? Array.isArray(controlImageBase64)
+        ? controlImageBase64
+        : [controlImageBase64]
+      : [];
+
     const referenceImages = referenceImageBase64
       ? Array.isArray(referenceImageBase64)
         ? referenceImageBase64
         : [referenceImageBase64]
       : [];
 
+    const contextImages = contextImageBase64
+      ? Array.isArray(contextImageBase64)
+        ? contextImageBase64
+        : [contextImageBase64]
+      : [];
+
+    // Add control images first
+    controlImages.forEach((image, idx) => {
+      try {
+        const base64Data = stripBase64Header(image);
+        parts.push({
+          inlineData: {
+            mimeType: 'image/png',
+            data: base64Data
+          }
+        });
+      } catch (err) {
+        console.error(`[GeminiService] Invalid control image at index ${idx}:`, err);
+        throw new Error(`Control image ${idx + 1} is invalid: ${err instanceof Error ? err.message : 'unknown error'}`);
+      }
+    });
+
+    // Add reference images
     referenceImages.forEach((image, idx) => {
       try {
         const base64Data = stripBase64Header(image);
@@ -377,13 +408,85 @@ export const GeminiService = {
       }
     });
 
-    const rangeSummary =
-      referenceImages.length > 0
-        ? `Context images provided (parts 1-${referenceImages.length}). Analyse the content of context images and respond to the requests.`
-        : '';
+    // Add context images
+    contextImages.forEach((image, idx) => {
+      try {
+        const base64Data = stripBase64Header(image);
+        parts.push({
+          inlineData: {
+            mimeType: 'image/png',
+            data: base64Data
+          }
+        });
+      } catch (err) {
+        console.error(`[GeminiService] Invalid context image at index ${idx}:`, err);
+        throw new Error(`Context image ${idx + 1} is invalid: ${err instanceof Error ? err.message : 'unknown error'}`);
+      }
+    });
 
-    // Construct prompt with word limit
-    const finalPrompt = `${rangeSummary ? `${rangeSummary}\n\n` : ''}${prompt}\n\n(Generate a concise response in ${maxWords} words or less)`;
+    // Build descriptive preamble for each image type
+    let finalPrompt = prompt;
+    const hasControls = controlImages.length > 0;
+    const hasReferences = referenceImages.length > 0;
+    const hasContext = contextImages.length > 0;
+
+    if (hasControls || hasReferences || hasContext) {
+      const preambleParts: string[] = [];
+      let partIndex = 1;
+
+      if (hasControls) {
+        const controlEnd = partIndex + controlImages.length - 1;
+        const controlRange = controlImages.length === 1
+          ? `part ${partIndex}`
+          : `parts ${partIndex}-${controlEnd}`;
+        preambleParts.push(
+          `CONTROL IMAGE${controlImages.length === 1 ? '' : 'S'} (${controlRange}): ` +
+          `Analyze these for structure, geometry, composition, layout, and spatial arrangement.`
+        );
+        partIndex = controlEnd + 1;
+      }
+
+      if (hasReferences) {
+        const refEnd = partIndex + referenceImages.length - 1;
+        const refRange = referenceImages.length === 1
+          ? `part ${partIndex}`
+          : `parts ${partIndex}-${refEnd}`;
+        preambleParts.push(
+          `REFERENCE IMAGE${referenceImages.length === 1 ? '' : 'S'} (${refRange}): ` +
+          `Analyze these for style, materials, textures, colors, mood, lighting, and artistic qualities.`
+        );
+        partIndex = refEnd + 1;
+      }
+
+      if (hasContext) {
+        const ctxEnd = partIndex + contextImages.length - 1;
+        const ctxRange = contextImages.length === 1
+          ? `part ${partIndex}`
+          : `parts ${partIndex}-${ctxEnd}`;
+        preambleParts.push(
+          `CONTEXT IMAGE${contextImages.length === 1 ? '' : 'S'} (${ctxRange}): ` +
+          `Use these as general visual context.`
+        );
+      }
+
+      const preamble = preambleParts.join('\n\n');
+      finalPrompt = `${preamble}\n\nUSER PROMPT: ${prompt}\n\n(Generate a concise response in ${maxWords} words or less)`;
+    } else {
+      finalPrompt = `${prompt}\n\n(Generate a concise response in ${maxWords} words or less)`;
+    }
+
+    // [TEMP DEBUG] Log the final prompt and payload structure
+    console.log('[Payload Debug - Text] Final prompt being sent:');
+    console.log('─'.repeat(60));
+    console.log(finalPrompt);
+    console.log('─'.repeat(60));
+    console.log('[Payload Debug - Text] Parts structure:', {
+      totalParts: parts.length + 1,
+      imageParts: parts.length,
+      controlImages: controlImages.length,
+      referenceImages: referenceImages.length,
+      contextImages: contextImages.length
+    });
 
     const requestOptions = userName
       ? {
