@@ -68,6 +68,7 @@ export interface CanvasStateData {
     fontStyle?: 'normal' | 'italic';
     fontFamily?: string;
     backgroundColor?: string;
+    tag?: 'control' | 'reference';  // User-assigned tag for images
     x: number;
     y: number;
     width: number;
@@ -423,6 +424,7 @@ export const StorageServiceV2 = {
         fontStyle: img.fontStyle,
         fontFamily: img.fontFamily,
         backgroundColor: img.backgroundColor,
+        tag: img.tag,
         x: img.x,
         y: img.y,
         width: img.width,
@@ -479,6 +481,7 @@ export const StorageServiceV2 = {
         fontStyle: img.fontStyle,
         fontFamily: img.fontFamily,
         backgroundColor: img.backgroundColor,
+        tag: img.tag,
         x: img.x,
         y: img.y,
         width: img.width,
