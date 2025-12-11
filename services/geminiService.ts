@@ -97,6 +97,7 @@ export const GeminiService = {
     config: GenerationConfig,
     controlImageBase64?: string[] | string,
     referenceImageBase64?: string[] | string,
+    contextImageBase64?: string[] | string,
     userName?: string
   ): Promise<{ images: string[]; texts: string[] }> => {
 
@@ -142,6 +143,12 @@ export const GeminiService = {
         : [referenceImageBase64]
       : [];
 
+    const contextImages = contextImageBase64
+      ? Array.isArray(contextImageBase64)
+        ? contextImageBase64
+        : [contextImageBase64]
+      : [];
+
     // Add images to parts if they exist
     // Note: Gemini 'generateContent' takes context images.
     // We treat Control/Reference as multimodal inputs.
@@ -175,27 +182,74 @@ export const GeminiService = {
       }
     });
 
+    contextImages.forEach((image, idx) => {
+      try {
+        const base64Data = stripBase64Header(image);
+        parts.push({
+          inlineData: {
+            mimeType: 'image/png',
+            data: base64Data
+          }
+        });
+      } catch (err) {
+        console.error(`[GeminiService] Invalid context image at index ${idx}:`, err);
+        throw new Error(`Context image ${idx + 1} is invalid: ${err instanceof Error ? err.message : 'unknown error'}`);
+      }
+    });
+
     // Add a structured preamble so the model knows how many and which images are controls vs references.
-    // We describe the order and role of each slice of parts.
+    // We describe the order and role of each slice of parts with specific guidance for each type.
     let finalPrompt = prompt;
-    if (controlImages.length > 0 || referenceImages.length > 0) {
-      const hasControls = controlImages.length > 0;
-      const hasReferences = referenceImages.length > 0;
+    const hasControls = controlImages.length > 0;
+    const hasReferences = referenceImages.length > 0;
+    const hasContext = contextImages.length > 0;
 
-      const controlRange = hasControls
-        ? `control image${controlImages.length === 1 ? '' : 's'} (parts 1-${controlImages.length})`
-        : '';
+    if (hasControls || hasReferences || hasContext) {
+      const preambleParts: string[] = [];
+      let partIndex = 1;
 
-      const referenceStart = controlImages.length + 1;
-      const referenceRange = hasReferences
-        ? `reference image${referenceImages.length === 1 ? '' : 's'} (parts ${referenceStart}-${referenceStart + referenceImages.length - 1})`
-        : '';
+      // Control images: structure, geometry, composition
+      if (hasControls) {
+        const controlEnd = partIndex + controlImages.length - 1;
+        const controlRange = controlImages.length === 1
+          ? `part ${partIndex}`
+          : `parts ${partIndex}-${controlEnd}`;
+        preambleParts.push(
+          `CONTROL IMAGE${controlImages.length === 1 ? '' : 'S'} (${controlRange}): ` +
+          `Analyze these for structure, geometry, composition, layout, and spatial arrangement. ` +
+          `Use these as the structural foundation for the generated image.`
+        );
+        partIndex = controlEnd + 1;
+      }
 
-      const rangeSummary = [controlRange, referenceRange].filter(Boolean).join('; ');
-      const contextNote = rangeSummary
-        ? `Context images: ${rangeSummary}. Analyse the content of context images and respond to the requests.`
-        : '';
-      finalPrompt = `${contextNote ? `${contextNote}\n\n` : ''}${prompt}`;
+      // Reference images: style, materials, mood
+      if (hasReferences) {
+        const refEnd = partIndex + referenceImages.length - 1;
+        const refRange = referenceImages.length === 1
+          ? `part ${partIndex}`
+          : `parts ${partIndex}-${refEnd}`;
+        preambleParts.push(
+          `REFERENCE IMAGE${referenceImages.length === 1 ? '' : 'S'} (${refRange}): ` +
+          `Analyze these for style, materials, textures, colors, mood, lighting, and artistic qualities. ` +
+          `Apply these visual characteristics to the generated image.`
+        );
+        partIndex = refEnd + 1;
+      }
+
+      // Context images: general context (untagged)
+      if (hasContext) {
+        const ctxEnd = partIndex + contextImages.length - 1;
+        const ctxRange = contextImages.length === 1
+          ? `part ${partIndex}`
+          : `parts ${partIndex}-${ctxEnd}`;
+        preambleParts.push(
+          `CONTEXT IMAGE${contextImages.length === 1 ? '' : 'S'} (${ctxRange}): ` +
+          `Use these as general visual context and inspiration for the generation.`
+        );
+      }
+
+      const preamble = preambleParts.join('\n\n');
+      finalPrompt = `${preamble}\n\nUSER PROMPT: ${prompt}`;
     }
 
     parts.push({ text: finalPrompt });

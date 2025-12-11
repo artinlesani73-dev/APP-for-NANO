@@ -565,12 +565,25 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
     const selectedImages = canvasImages.filter(img => img.selected && (!img.type || img.type === 'image'));
     const prepareSelectedImages = () => {
       const inputImageMetas: StoredImageMeta[] = [];
+      const controlImageData: string[] = [];
       const referenceImageData: string[] = [];
+      const contextImageData: string[] = [];
 
       for (const selectedImg of selectedImages) {
         if (!selectedImg.dataUri) continue;
 
-        referenceImageData.push(selectedImg.dataUri);
+        // Separate images by their tag
+        if (selectedImg.tag === 'control') {
+          controlImageData.push(selectedImg.dataUri);
+        } else if (selectedImg.tag === 'reference') {
+          referenceImageData.push(selectedImg.dataUri);
+        } else {
+          // Untagged images are context images
+          contextImageData.push(selectedImg.dataUri);
+        }
+
+        // Determine storage role based on tag
+        const storageRole = selectedImg.tag || 'reference';
 
         if (selectedImg.imageMetaId) {
           inputImageMetas.push({
@@ -580,7 +593,7 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
             thumbnailPath: selectedImg.thumbnailPath
           });
         } else {
-          const { hash, entry } = StorageServiceV2.registerImage(selectedImg.dataUri, undefined, 'reference');
+          const { hash, entry } = StorageServiceV2.registerImage(selectedImg.dataUri, undefined, storageRole);
           inputImageMetas.push({
             id: hash,  // Use content hash as ID (not entry.id which is a UUID)
             filename: entry.file_path.split('/').pop() || '',
@@ -591,10 +604,10 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
         }
       }
 
-      return { inputImageMetas, referenceImageData };
+      return { inputImageMetas, controlImageData, referenceImageData, contextImageData };
     };
 
-    const { inputImageMetas, referenceImageData } = prepareSelectedImages();
+    const { inputImageMetas, controlImageData, referenceImageData, contextImageData } = prepareSelectedImages();
     const startTime = Date.now();
 
     try {
@@ -622,11 +635,13 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
       if (showImageInput) {
         // IMAGE MODE: Generate image
         // Call API for image generation
+        // Pass images separated by their tags: control, reference, and context (untagged)
         const output = await GeminiService.generateImage(
           newGeneration.prompt,
           config,
-          undefined,  // No control images in Mixboard
-          referenceImageData,
+          controlImageData.length > 0 ? controlImageData : undefined,
+          referenceImageData.length > 0 ? referenceImageData : undefined,
+          contextImageData.length > 0 ? contextImageData : undefined,
           currentUser?.displayName
         );
 
