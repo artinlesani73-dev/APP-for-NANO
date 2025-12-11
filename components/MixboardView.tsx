@@ -1045,15 +1045,23 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
                 ? saveThumbnail(currentSession.session_id, imageId, thumbnailUri)
                 : { thumbnailUri };
 
+              // Calculate center of visible canvas area
+              const imageWidth = 300;
+              const imageHeight = (300 * img.height) / img.width;
+              const containerWidth = canvasRef.current?.clientWidth || 800;
+              const containerHeight = canvasRef.current?.clientHeight || 600;
+              const centerX = (containerWidth / 2 + panOffset.x) / zoom - imageWidth / 2;
+              const centerY = (containerHeight / 2 + panOffset.y) / zoom - imageHeight / 2;
+
               const newImage: CanvasImage = {
                 id: imageId,
                 dataUri,
                 thumbnailUri: savedThumbnailUri,
                 thumbnailPath,
-                x: 100,
-                y: 100,
-                width: 300,
-                height: (300 * img.height) / img.width,
+                x: centerX,
+                y: centerY,
+                width: imageWidth,
+                height: imageHeight,
                 selected: false,
                 originalWidth: img.width,
                 originalHeight: img.height
@@ -1067,13 +1075,20 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
             } catch (error) {
               console.error('Failed to generate thumbnail:', error);
               // Still add the image without thumbnail as fallback
+              const imageWidth = 300;
+              const imageHeight = (300 * img.height) / img.width;
+              const containerWidth = canvasRef.current?.clientWidth || 800;
+              const containerHeight = canvasRef.current?.clientHeight || 600;
+              const centerX = (containerWidth / 2 + panOffset.x) / zoom - imageWidth / 2;
+              const centerY = (containerHeight / 2 + panOffset.y) / zoom - imageHeight / 2;
+
               const newImage: CanvasImage = {
                 id: `img-${Date.now()}-${Math.random()}`,
                 dataUri,
-                x: 100,
-                y: 100,
-                width: 300,
-                height: (300 * img.height) / img.width,
+                x: centerX,
+                y: centerY,
+                width: imageWidth,
+                height: imageHeight,
                 selected: false,
                 originalWidth: img.width,
                 originalHeight: img.height
