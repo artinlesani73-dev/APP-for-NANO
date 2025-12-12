@@ -469,6 +469,52 @@ const restoreOriginalColors = (model: THREE.Group) => {
 };
 ```
 
+### 1.7 Persistence (Save/Load)
+
+**Container State Persistence:**
+All 3D model container properties are saved as part of the session and restored on load:
+
+```typescript
+// Saved to session's canvas_items array
+interface PersistedCanvas3DModel {
+  id: string;
+  type: '3d-model';
+  modelType: 'ifc' | 'glb' | 'obj';
+
+  // Position & Size (PERSISTED)
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  aspectRatio: number;
+
+  // File references (PERSISTED)
+  modelPath?: string;
+  thumbnailPath?: string;
+  fileName: string;
+  fileSize: number;
+
+  // Appearance (PERSISTED)
+  modelColor?: string;
+  useOriginalColors: boolean;
+
+  // Camera state (PERSISTED - restore last view in edit mode)
+  savedCameraPosition?: { x: number; y: number; z: number };
+  savedCameraTarget?: { x: number; y: number; z: number };
+}
+```
+
+**Save Triggers:**
+- Auto-save interval (every 5 minutes)
+- Manual save
+- Session switch / app close
+- After any container move/resize operation
+
+**Load Behavior:**
+- On session load, restore all 3D model containers at saved positions/sizes
+- Thumbnails loaded from disk paths
+- Model files loaded on-demand (when entering edit mode)
+
 ---
 
 ## Feature 2: Video Generation
@@ -970,6 +1016,232 @@ Videos appear in generation history graph with video icon:
 )}
 ```
 
+### 2.9 Persistence (Save/Load)
+
+**Container State Persistence:**
+All video container properties are saved as part of the session and restored on load:
+
+```typescript
+// Saved to session's canvas_items array
+interface PersistedCanvasVideo {
+  id: string;
+  type: 'video';
+
+  // Position & Size (PERSISTED)
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  aspectRatio: number;
+
+  // File references (PERSISTED)
+  videoPath?: string;
+  thumbnailPath?: string;
+
+  // Video metadata (PERSISTED)
+  duration: number;
+  fps: number;
+  fileSize: number;
+  mimeType: 'video/mp4' | 'video/webm';
+
+  // Generation info (PERSISTED)
+  generationId?: string;
+  prompt?: string;
+  inputImageIds?: string[];
+
+  // Tagging (PERSISTED)
+  tag?: 'control' | 'reference';
+}
+```
+
+**Save Triggers:**
+- Auto-save interval (every 5 minutes)
+- Manual save
+- Session switch / app close
+- After any container move/resize operation
+- After tagging change
+
+**Load Behavior:**
+- On session load, restore all video containers at saved positions/sizes
+- Thumbnails loaded from disk paths
+- Video files streamed from disk on playback
+
+---
+
+## Feature 3: Gallery Integration
+
+### 3.1 Overview
+
+The Gallery displays all canvas items (images, videos, 3D models) with filtering capabilities. Users can filter by item type and quickly add items back to the canvas.
+
+### 3.2 Gallery UI
+
+**File: `components/GalleryPanel.tsx` (Updated)**
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│  Gallery                                                    [×]     │
+├─────────────────────────────────────────────────────────────────────┤
+│                                                                     │
+│  Filter by Type:                                                    │
+│  ┌─────────┐ ┌─────────┐ ┌─────────┐ ┌─────────┐                   │
+│  │   All   │ │  📷     │ │  🎬     │ │  🎲     │                   │
+│  │  (24)   │ │ Images  │ │ Videos  │ │   3D    │                   │
+│  │ [Active]│ │  (15)   │ │   (5)   │ │   (4)   │                   │
+│  └─────────┘ └─────────┘ └─────────┘ └─────────┘                   │
+│                                                                     │
+│  ┌─────────────────────────────────────────────────────────────┐   │
+│  │ ┌─────┐ ┌─────┐ ┌─────┐ ┌─────┐ ┌─────┐ ┌─────┐ ┌─────┐    │   │
+│  │ │ 📷  │ │ 📷  │ │ 🎬  │ │ 📷  │ │ 🎲  │ │ 📷  │ │ 🎬  │    │   │
+│  │ │     │ │     │ │ ▶️  │ │     │ │     │ │     │ │ ▶️  │    │   │
+│  │ └─────┘ └─────┘ └─────┘ └─────┘ └─────┘ └─────┘ └─────┘    │   │
+│  │                                                             │   │
+│  │ ┌─────┐ ┌─────┐ ┌─────┐ ┌─────┐ ┌─────┐ ┌─────┐ ┌─────┐    │   │
+│  │ │ 🎲  │ │ 📷  │ │ 📷  │ │ 🎬  │ │ 🎲  │ │ 📷  │ │ 📷  │    │   │
+│  │ │     │ │     │ │     │ │ ▶️  │ │     │ │     │ │     │    │   │
+│  │ └─────┘ └─────┘ └─────┘ └─────┘ └─────┘ └─────┘ └─────┘    │   │
+│  └─────────────────────────────────────────────────────────────┘   │
+│                                                                     │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+### 3.3 Filter Types
+
+```typescript
+type GalleryFilterType = 'all' | 'image' | 'video' | '3d-model';
+
+interface GalleryFilter {
+  type: GalleryFilterType;
+  count: number;  // Number of items matching this filter
+}
+
+// Filter logic
+const filterGalleryItems = (
+  items: CanvasItem[],
+  filter: GalleryFilterType
+): CanvasItem[] => {
+  if (filter === 'all') return items;
+  return items.filter(item => item.type === filter);
+};
+```
+
+### 3.4 Gallery Item Display
+
+Each item type has a distinct visual indicator:
+
+**Image Items:**
+```
+┌─────────────┐
+│             │
+│   [Image]   │
+│             │
+│ 📷 filename │
+└─────────────┘
+```
+
+**Video Items:**
+```
+┌─────────────┐
+│             │
+│ [Thumbnail] │
+│     ▶️      │  ← Play icon overlay
+│             │
+│ 🎬 0:10     │  ← Duration badge
+└─────────────┘
+```
+
+**3D Model Items:**
+```
+┌─────────────┐
+│             │
+│ [3D Preview]│
+│     🎲      │  ← 3D icon overlay
+│             │
+│ 📦 model.glb│  ← File name
+└─────────────┘
+```
+
+### 3.5 Gallery Interactions
+
+**All Item Types:**
+- Click: Select item (shows details)
+- Double-click: Add to canvas at center
+- Right-click: Context menu
+  - Add to Canvas
+  - Delete from Gallery
+  - View Details
+
+**Type-Specific Actions:**
+- **Images**: Same as existing (tag, edit, use as reference)
+- **Videos**: Play preview on hover, open player modal
+- **3D Models**: Open 3D viewer modal
+
+### 3.6 Gallery Item Type Definition
+
+```typescript
+interface GalleryItem {
+  id: string;
+  type: 'image' | 'video' | '3d-model';
+  thumbnailUri: string;
+  thumbnailPath?: string;
+  createdAt: string;
+  sessionId: string;
+
+  // Type-specific metadata
+  // Images
+  generationId?: string;
+  prompt?: string;
+
+  // Videos
+  duration?: number;
+  videoPath?: string;
+
+  // 3D Models
+  fileName?: string;
+  modelType?: 'ifc' | 'glb' | 'obj';
+  modelPath?: string;
+}
+```
+
+### 3.7 Storage Integration
+
+**Updated Session Structure:**
+```typescript
+interface MixboardSession {
+  session_id: string;
+  title: string;
+  created_at: string;
+  updated_at: string;
+
+  // Canvas items (all types)
+  canvas_items: CanvasItem[];  // Union of CanvasImage | CanvasVideo | Canvas3DModel
+
+  // Legacy support (images only) - deprecated
+  canvas_images?: CanvasImage[];
+
+  // Generations (images + videos)
+  generations: MixboardGeneration[];
+
+  // Other existing fields...
+}
+```
+
+**Unified Canvas Items Array:**
+```typescript
+// All canvas item types stored together
+type CanvasItem = CanvasImage | CanvasVideo | Canvas3DModel;
+
+// Type guard helpers
+const isImage = (item: CanvasItem): item is CanvasImage =>
+  item.type === 'image';
+
+const isVideo = (item: CanvasItem): item is CanvasVideo =>
+  item.type === 'video';
+
+const is3DModel = (item: CanvasItem): item is Canvas3DModel =>
+  item.type === '3d-model';
+```
+
 ---
 
 ## Implementation Roadmap
@@ -1014,16 +1286,31 @@ Videos appear in generation history graph with video icon:
 
 *Depends on API availability
 
-### Phase 4: Polish & Integration (Week 6)
+### Phase 4: Gallery Integration (Week 6)
 
-| Task | Priority |
-|------|----------|
-| Error handling and edge cases | High |
-| Loading states and progress indicators | High |
-| Keyboard shortcuts | Medium |
-| Performance optimization | Medium |
-| Cross-feature integration (3D model rotation video) | Low |
-| Documentation and help text | Low |
+| Task | Component | Priority |
+|------|-----------|----------|
+| Add type filter buttons to Gallery | `GalleryPanel.tsx` | High |
+| Implement filter logic (all/image/video/3d) | `GalleryPanel.tsx` | High |
+| Add 3D model items to gallery | `GalleryPanel.tsx` | High |
+| Add video items to gallery | `GalleryPanel.tsx` | High |
+| Type-specific thumbnails and badges | `GalleryPanel.tsx` | Medium |
+| Gallery item count per type | `GalleryPanel.tsx` | Medium |
+| Double-click to add to canvas | `GalleryPanel.tsx` | Medium |
+
+### Phase 5: Persistence & Polish (Week 7)
+
+| Task | Component | Priority |
+|------|-----------|----------|
+| Save/load 3D model container state | `storageV2.ts` | High |
+| Save/load video container state | `storageV2.ts` | High |
+| Unified canvas_items array | `storageV2.ts` | High |
+| Migration from canvas_images to canvas_items | `migrationService.ts` | Medium |
+| Error handling and edge cases | Various | High |
+| Loading states and progress indicators | Various | High |
+| Keyboard shortcuts | Various | Medium |
+| Performance optimization | Various | Medium |
+| Documentation and help text | Various | Low |
 
 ---
 
@@ -1068,13 +1355,15 @@ Videos appear in generation history graph with video icon:
 ├── Model3DViewerModal.tsx        [NEW]
 ├── Model3DCanvas.tsx             [NEW]
 ├── VideoPlayerModal.tsx          [NEW]
+├── GalleryPanel.tsx              [UPDATED] - Type filtering added
 ├── MixboardView.tsx              [UPDATED]
 ├── ParametersPanel.tsx           [UPDATED]
 ├── GraphView.tsx                 [UPDATED]
 └── ...
 
 /services/
-├── storageV2.ts                  [UPDATED]
+├── storageV2.ts                  [UPDATED] - Unified canvas_items, persistence
+├── migrationService.ts           [UPDATED] - canvas_images → canvas_items migration
 ├── videoGenerationService.ts     [NEW]
 └── ...
 
@@ -1083,7 +1372,7 @@ Videos appear in generation history graph with video icon:
 ├── model3DLoaders.ts             [NEW]
 └── ...
 
-/types.ts                         [UPDATED]
+/types.ts                         [UPDATED] - CanvasItem union type, GalleryFilterType
 
 /public/
 ├── draco/                        [NEW] - Draco decoder for compressed GLB
@@ -1112,6 +1401,9 @@ Videos appear in generation history graph with video icon:
 - [ ] Screenshot capture adds image to canvas
 - [ ] Screenshots are CLEAN (no grid, axes, or helpers visible)
 - [ ] Screenshots can be used for AI generation
+- [ ] **PERSISTENCE**: Container position/size saved to session
+- [ ] **PERSISTENCE**: Container position/size restored on session load
+- [ ] **PERSISTENCE**: Model color and camera state persisted
 
 ### Video Generation Feature
 - [ ] Can toggle between Image and Video generation modes
@@ -1124,4 +1416,17 @@ Videos appear in generation history graph with video icon:
 - [ ] Can play video in modal player
 - [ ] Can extract frames from video as images
 - [ ] Videos can be tagged as control/reference
-- [ ] Videos saved to disk and persist across sessions
+- [ ] **PERSISTENCE**: Container position/size saved to session
+- [ ] **PERSISTENCE**: Container position/size restored on session load
+- [ ] **PERSISTENCE**: Video metadata and tags persisted
+
+### Gallery Integration
+- [ ] Gallery shows all item types (images, videos, 3D models)
+- [ ] Filter buttons: All, Images, Videos, 3D Models
+- [ ] Filter shows item count per type (e.g., "Images (15)")
+- [ ] Each item type has distinct visual indicator/badge
+- [ ] Videos show play icon overlay and duration badge
+- [ ] 3D models show 3D icon overlay and file name
+- [ ] Double-click adds item to canvas at center
+- [ ] Right-click context menu works for all types
+- [ ] Filter selection persists during session
