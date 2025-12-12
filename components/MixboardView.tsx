@@ -1,11 +1,18 @@
-import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { Sparkles, Image as ImageIcon, Type, Trash2, ZoomIn, ZoomOut, Move, Download, Edit2, Check, X, LayoutTemplate, Bold, Italic, Save, Upload, Settings, Folder, Undo, Redo, ChevronDown, Copy, FileText, Square, Tag, Crosshair, BookImage } from 'lucide-react';
+import React, { useState, useRef, useEffect, useCallback, lazy, Suspense } from 'react';
+import { Sparkles, Image as ImageIcon, Type, Trash2, ZoomIn, ZoomOut, Move, Download, Edit2, Check, X, LayoutTemplate, Bold, Italic, Save, Upload, Settings, Folder, Undo, Redo, ChevronDown, Copy, FileText, Square, Tag, Crosshair, BookImage, Box, Video, Play } from 'lucide-react';
 import { GeminiService } from '../services/geminiService';
 import { StorageServiceV2 } from '../services/storageV2';
-import { GenerationConfig, CanvasImage, MixboardSession, MixboardGeneration, StoredImageMeta } from '../types';
+import { GenerationConfig, CanvasImage, MixboardSession, MixboardGeneration, StoredImageMeta, Canvas3DModel, CanvasVideo, CanvasItem, isCanvasImage, isCanvas3DModel, isCanvasVideo } from '../types';
 import { ImageEditModal } from './ImageEditModal';
 import { ProjectsPage } from './ProjectsPage';
 import { SettingsModal } from './SettingsModal';
+import { Model3DUploadPanel } from './Model3DUploadPanel';
+import { VideoUploadPanel } from './VideoUploadPanel';
+import { formatDuration } from '../utils/videoUtils';
+
+// Lazy load modals for better performance
+const Model3DViewerModal = lazy(() => import('./Model3DViewerModal'));
+const VideoPlayerModal = lazy(() => import('./VideoPlayerModal'));
 
 type CanvasEngine = {
   attach: (element: HTMLDivElement, options: { onZoom: (delta: number) => void }) => void;
@@ -114,6 +121,14 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
   const [editModalOpen, setEditModalOpen] = useState(false);
   const [editingImage, setEditingImage] = useState<CanvasImage | null>(null);
   const [isGeneratingThumbnails, setIsGeneratingThumbnails] = useState(false);
+
+  // 3D Model state
+  const [canvas3DModels, setCanvas3DModels] = useState<Canvas3DModel[]>([]);
+  const [viewing3DModel, setViewing3DModel] = useState<Canvas3DModel | null>(null);
+
+  // Video state
+  const [canvasVideos, setCanvasVideos] = useState<CanvasVideo[]>([]);
+  const [viewingVideo, setViewingVideo] = useState<CanvasVideo | null>(null);
 
   // Tag dropdown state
   const [tagDropdownImageId, setTagDropdownImageId] = useState<string | null>(null);
@@ -948,6 +963,80 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
     ));
     setTagDropdownImageId(null);
   };
+
+  // 3D Model handlers
+  const handle3DModelLoaded = useCallback((model: Canvas3DModel) => {
+    // Calculate center position in visible canvas
+    const canvasWidth = canvasRef.current?.clientWidth || 800;
+    const canvasHeight = canvasRef.current?.clientHeight || 600;
+    const centerX = (-panOffset.x + canvasWidth / 2) / zoom - model.width / 2;
+    const centerY = (-panOffset.y + canvasHeight / 2) / zoom - model.height / 2;
+
+    const positionedModel: Canvas3DModel = {
+      ...model,
+      x: centerX,
+      y: centerY,
+    };
+
+    setCanvas3DModels(prev => [...prev, positionedModel]);
+  }, [panOffset, zoom]);
+
+  const handleDelete3DModel = useCallback((modelId: string) => {
+    setCanvas3DModels(prev => prev.filter(m => m.id !== modelId));
+  }, []);
+
+  const handle3DModelScreenshot = useCallback((screenshot: Omit<CanvasImage, 'x' | 'y'>) => {
+    // Add screenshot as canvas image
+    const canvasWidth = canvasRef.current?.clientWidth || 800;
+    const canvasHeight = canvasRef.current?.clientHeight || 600;
+    const centerX = (-panOffset.x + canvasWidth / 2) / zoom - screenshot.width / 2;
+    const centerY = (-panOffset.y + canvasHeight / 2) / zoom - screenshot.height / 2;
+
+    const newImage: CanvasImage = {
+      ...screenshot,
+      x: centerX,
+      y: centerY + 50, // Offset slightly to avoid overlap
+    };
+
+    setCanvasImages(prev => [...prev, newImage]);
+  }, [panOffset, zoom]);
+
+  // Video handlers
+  const handleVideoLoaded = useCallback((video: CanvasVideo) => {
+    // Calculate center position in visible canvas
+    const canvasWidth = canvasRef.current?.clientWidth || 800;
+    const canvasHeight = canvasRef.current?.clientHeight || 600;
+    const centerX = (-panOffset.x + canvasWidth / 2) / zoom - video.width / 2;
+    const centerY = (-panOffset.y + canvasHeight / 2) / zoom - video.height / 2;
+
+    const positionedVideo: CanvasVideo = {
+      ...video,
+      x: centerX,
+      y: centerY,
+    };
+
+    setCanvasVideos(prev => [...prev, positionedVideo]);
+  }, [panOffset, zoom]);
+
+  const handleDeleteVideo = useCallback((videoId: string) => {
+    setCanvasVideos(prev => prev.filter(v => v.id !== videoId));
+  }, []);
+
+  const handleVideoFrameExtract = useCallback((frame: Omit<CanvasImage, 'x' | 'y'>) => {
+    // Add extracted frame as canvas image
+    const canvasWidth = canvasRef.current?.clientWidth || 800;
+    const canvasHeight = canvasRef.current?.clientHeight || 600;
+    const centerX = (-panOffset.x + canvasWidth / 2) / zoom - frame.width / 2;
+    const centerY = (-panOffset.y + canvasHeight / 2) / zoom - frame.height / 2;
+
+    const newImage: CanvasImage = {
+      ...frame,
+      x: centerX,
+      y: centerY + 50, // Offset slightly to avoid overlap
+    };
+
+    setCanvasImages(prev => [...prev, newImage]);
+  }, [panOffset, zoom]);
 
   const handleSaveEditedImage = async (editedDataUri: string) => {
     if (!editingImage) return;
@@ -2128,6 +2217,98 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
             </React.Fragment>
           ))}
 
+          {/* 3D Models on Canvas */}
+          {canvas3DModels.map(model => (
+            <div
+              key={model.id}
+              className={`absolute cursor-move ${model.selected ? 'ring-4 ring-blue-500' : 'ring-1 ring-zinc-300 dark:ring-zinc-700'}`}
+              style={{
+                left: `${model.x * zoom + panOffset.x}px`,
+                top: `${model.y * zoom + panOffset.y}px`,
+                width: `${model.width * zoom}px`,
+                height: `${model.height * zoom}px`,
+                transformOrigin: 'top left',
+                userSelect: 'none',
+              }}
+              onDoubleClick={() => setViewing3DModel(model)}
+            >
+              <img
+                src={model.thumbnailUri}
+                alt={model.fileName}
+                className="w-full h-full object-cover pointer-events-none"
+                draggable={false}
+              />
+              {/* 3D badge */}
+              <div className="absolute top-1 left-1 px-1.5 py-0.5 rounded text-[10px] font-bold text-white flex items-center gap-1 pointer-events-none bg-blue-600">
+                <Box size={10} /> 3D
+              </div>
+              {/* File type badge */}
+              <div className="absolute bottom-1 right-1 px-1.5 py-0.5 rounded text-[10px] font-bold text-white bg-black/60 pointer-events-none">
+                {model.modelType.toUpperCase()}
+              </div>
+              {/* Delete button on hover */}
+              <button
+                className="absolute top-1 right-1 p-1 bg-red-600 rounded opacity-0 hover:opacity-100 transition-opacity"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleDelete3DModel(model.id);
+                }}
+                title="Delete 3D Model"
+              >
+                <Trash2 size={12} className="text-white" />
+              </button>
+            </div>
+          ))}
+
+          {/* Videos on Canvas */}
+          {canvasVideos.map(video => (
+            <div
+              key={video.id}
+              className={`absolute cursor-move ${video.selected ? 'ring-4 ring-purple-500' : 'ring-1 ring-zinc-300 dark:ring-zinc-700'}`}
+              style={{
+                left: `${video.x * zoom + panOffset.x}px`,
+                top: `${video.y * zoom + panOffset.y}px`,
+                width: `${video.width * zoom}px`,
+                height: `${video.height * zoom}px`,
+                transformOrigin: 'top left',
+                userSelect: 'none',
+              }}
+              onDoubleClick={() => setViewingVideo(video)}
+            >
+              <img
+                src={video.thumbnailUri}
+                alt={video.fileName}
+                className="w-full h-full object-cover pointer-events-none"
+                draggable={false}
+              />
+              {/* Play overlay */}
+              <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                <div className="w-12 h-12 bg-black/50 rounded-full flex items-center justify-center">
+                  <Play size={24} className="text-white ml-1" />
+                </div>
+              </div>
+              {/* Video badge */}
+              <div className="absolute top-1 left-1 px-1.5 py-0.5 rounded text-[10px] font-bold text-white flex items-center gap-1 pointer-events-none bg-purple-600">
+                <Video size={10} /> Video
+              </div>
+              {/* Duration badge */}
+              <div className="absolute bottom-1 right-1 px-1.5 py-0.5 rounded text-[10px] font-bold text-white bg-black/60 pointer-events-none">
+                {formatDuration(video.duration)}
+              </div>
+              {/* Delete button on hover */}
+              <button
+                className="absolute top-1 right-1 p-1 bg-red-600 rounded opacity-0 hover:opacity-100 transition-opacity"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleDeleteVideo(video.id);
+                }}
+                title="Delete Video"
+              >
+                <Trash2 size={12} className="text-white" />
+              </button>
+            </div>
+          ))}
+
           {/* Selection Box */}
           {isSelecting && selectionBox && (
             <div
@@ -2298,6 +2479,21 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
                   </>
                 )}
               </button>
+
+              {/* Divider */}
+              <div className="border-t border-zinc-200 dark:border-zinc-700 my-4" />
+
+              {/* 3D Model Upload */}
+              <Model3DUploadPanel
+                onModelLoaded={handle3DModelLoaded}
+                disabled={isGenerating}
+              />
+
+              {/* Video Upload */}
+              <VideoUploadPanel
+                onVideoLoaded={handleVideoLoaded}
+                disabled={isGenerating}
+              />
             </div>
           </div>
         </div>
@@ -2355,6 +2551,38 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
           autoSaveInterval={autoSaveInterval}
           onAutoSaveIntervalChange={(interval) => setAutoSaveInterval(interval)}
         />
+
+        {/* 3D Model Viewer Modal */}
+        {viewing3DModel && (
+          <Suspense fallback={
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80">
+              <div className="animate-spin rounded-full h-8 w-8 border-2 border-white border-t-transparent" />
+            </div>
+          }>
+            <Model3DViewerModal
+              model={viewing3DModel}
+              isOpen={!!viewing3DModel}
+              onClose={() => setViewing3DModel(null)}
+              onScreenshot={handle3DModelScreenshot}
+            />
+          </Suspense>
+        )}
+
+        {/* Video Player Modal */}
+        {viewingVideo && (
+          <Suspense fallback={
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80">
+              <div className="animate-spin rounded-full h-8 w-8 border-2 border-white border-t-transparent" />
+            </div>
+          }>
+            <VideoPlayerModal
+              video={viewingVideo}
+              isOpen={!!viewingVideo}
+              onClose={() => setViewingVideo(null)}
+              onFrameExtract={handleVideoFrameExtract}
+            />
+          </Suspense>
+        )}
 
         {/* Thumbnail Generation Loading Indicator */}
         {isGeneratingThumbnails && (
