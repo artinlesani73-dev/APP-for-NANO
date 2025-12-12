@@ -82,8 +82,9 @@ interface Canvas3DModel {
   y: number;
   width: number;
   height: number;
-  originalWidth: number;
-  originalHeight: number;
+  originalWidth: number;        // Original thumbnail width (for aspect ratio)
+  originalHeight: number;       // Original thumbnail height (for aspect ratio)
+  aspectRatio: number;          // Locked aspect ratio (width / height)
   selected: boolean;
 
   // 3D metadata
@@ -93,6 +94,10 @@ interface Canvas3DModel {
   };
   vertexCount?: number;
   faceCount?: number;
+
+  // Appearance settings
+  modelColor?: string;          // Hex color to apply to entire model (e.g., '#808080')
+  useOriginalColors: boolean;   // If true, use model's original materials/colors
 
   // Saved camera state (restore last view)
   savedCameraPosition?: { x: number; y: number; z: number };
@@ -145,6 +150,10 @@ type CanvasItem = CanvasImage | Canvas3DModel | CanvasVideo;
 │  │                                             │  │ ☐ Wireframe  │  │
 │  │                                             │  │ ☐ Axes       │  │
 │  │                                             │  │              │  │
+│  │                                             │  │ Model Color  │  │
+│  │                                             │  │ [■ #808080]  │  │
+│  │                                             │  │ ☐ Use orig.  │  │
+│  │                                             │  │              │  │
 │  │                                             │  │ Background   │  │
 │  │                                             │  │ [■ #1a1a2e]  │  │
 │  └─────────────────────────────────────────────┘  └──────────────┘  │
@@ -163,34 +172,49 @@ type CanvasItem = CanvasImage | Canvas3DModel | CanvasVideo;
 - **Pan Controls**: Shift + drag to move camera laterally
 - **Zoom Controls**: Mouse wheel to zoom in/out
 - **View Presets**: One-click buttons for standard views (front, back, left, right, top, bottom, isometric)
-- **Display Options**: Toggle grid, wireframe mode, axis helpers
+- **Display Options**: Toggle grid, wireframe mode, axis helpers (for viewing assistance only)
+- **Model Color**: Color picker to apply uniform color to entire model
 - **Background Color**: Customizable background (useful for transparent screenshots)
-- **Screenshot Capture**: Capture current view as PNG image
+- **Screenshot Capture**: Capture current view as PNG image (clean - no grid/axes)
 - **Resolution Options**: 1x, 2x, 4x screenshot resolution multiplier
+
+**IMPORTANT - Clean Screenshots:**
+Screenshots capture ONLY the 3D model - grid, axes, and all helper elements are automatically hidden during capture. The screenshot contains just the model against the chosen background color (or transparent).
 
 #### D. Screenshot Capture Logic
 
 ```typescript
 // In Model3DViewerModal.tsx
 const captureScreenshot = async () => {
-  // 1. Get the Three.js renderer canvas
+  // 1. HIDE all helper elements before capture (clean screenshot)
+  if (gridHelper) gridHelper.visible = false;
+  if (axesHelper) axesHelper.visible = false;
+  if (boundingBoxHelper) boundingBoxHelper.visible = false;
+  // Hide any other non-model elements
+
+  // 2. Get the Three.js renderer canvas
   const canvas = rendererRef.current.domElement;
 
-  // 2. Render at requested resolution
+  // 3. Render at requested resolution
   const multiplier = screenshotResolution; // 1, 2, or 4
   renderer.setSize(canvas.width * multiplier, canvas.height * multiplier);
   renderer.render(scene, camera);
 
-  // 3. Convert to data URI
+  // 4. Convert to data URI
   const dataUri = canvas.toDataURL('image/png');
 
-  // 4. Reset renderer size
+  // 5. Reset renderer size
   renderer.setSize(canvas.width, canvas.height);
 
-  // 5. Generate thumbnail for canvas display
+  // 6. RESTORE helper visibility to previous state
+  if (gridHelper) gridHelper.visible = showGrid;
+  if (axesHelper) axesHelper.visible = showAxes;
+  if (boundingBoxHelper) boundingBoxHelper.visible = showBoundingBox;
+
+  // 7. Generate thumbnail for canvas display
   const thumbnailUri = await generateThumbnail(dataUri, 512);
 
-  // 6. Create new canvas image
+  // 8. Create new canvas image
   const screenshotImage: CanvasImage = {
     id: `3d-screenshot-${Date.now()}-${crypto.randomUUID()}`,
     type: 'image',
@@ -207,15 +231,15 @@ const captureScreenshot = async () => {
     sourceModelId: model.id,
   };
 
-  // 7. Add to canvas via callback
+  // 9. Add to canvas via callback
   onScreenshotCapture(screenshotImage);
 
-  // 8. Save to storage (Electron)
+  // 10. Save to storage (Electron)
   if (window.electron) {
     await window.electron.saveThumbnail(sessionId, screenshotImage.id, thumbnailUri);
   }
 
-  // 9. Show success toast
+  // 11. Show success toast
   showToast('Screenshot added to canvas');
 };
 ```
@@ -385,12 +409,12 @@ AppData/AREA49-Nano-Banana/storage/
 
 ### 1.6 Canvas Integration
 
-**3D Model on Canvas:**
+**3D Model Container on Canvas:**
 ```
 ┌──────────────────────────┐
 │  ┌────────────────────┐  │
 │  │                    │  │
-│  │   [3D Thumbnail]   │  │
+│  │   [3D Thumbnail]   │  │  ← Preview always fitted to container
 │  │                    │  │
 │  │        🎲          │  │  ← 3D icon overlay
 │  │                    │  │
@@ -400,12 +424,50 @@ AppData/AREA49-Nano-Banana/storage/
      ↑ Double-click to open Edit Mode
 ```
 
+**Container Behavior:**
+- **Movable**: Drag anywhere on canvas
+- **Resizable**: Corner/edge handles to resize
+- **Aspect Ratio LOCKED**: When resizing, preview maintains original aspect ratio
+- Preview image is always fitted inside container (object-fit: contain)
+
 **Interactions:**
 - Single click: Select/deselect
 - Double-click: Open 3D Viewer Modal (Edit Mode)
-- Drag: Move on canvas
-- Resize handles: Scale the preview
-- Right-click: Context menu (Delete, Open Viewer)
+- Drag: Move container on canvas
+- Resize handles: Scale container (aspect ratio locked)
+- Right-click: Context menu (Delete, Open Viewer, Change Color)
+
+#### Model Color Change Logic
+
+```typescript
+// Apply uniform color to entire 3D model
+const applyModelColor = (model: THREE.Group, color: string) => {
+  const material = new THREE.MeshStandardMaterial({
+    color: new THREE.Color(color),
+    roughness: 0.7,
+    metalness: 0.3
+  });
+
+  model.traverse((child) => {
+    if (child instanceof THREE.Mesh) {
+      // Store original material for "Use Original" toggle
+      if (!child.userData.originalMaterial) {
+        child.userData.originalMaterial = child.material;
+      }
+      child.material = material;
+    }
+  });
+};
+
+// Restore original materials
+const restoreOriginalColors = (model: THREE.Group) => {
+  model.traverse((child) => {
+    if (child instanceof THREE.Mesh && child.userData.originalMaterial) {
+      child.material = child.userData.originalMaterial;
+    }
+  });
+};
+```
 
 ---
 
@@ -479,8 +541,9 @@ interface CanvasVideo {
   y: number;
   width: number;
   height: number;
-  originalWidth: number;
-  originalHeight: number;
+  originalWidth: number;           // Original video width (for aspect ratio)
+  originalHeight: number;          // Original video height (for aspect ratio)
+  aspectRatio: number;             // Locked aspect ratio (width / height)
   selected: boolean;
 
   // Video metadata
@@ -585,13 +648,13 @@ interface MixboardGeneration {
 - **Download**: Save video file to disk
 - Generation info display (prompt, parameters)
 
-#### D. Canvas Video Display
+#### D. Canvas Video Container
 
 ```
 ┌──────────────────────────┐
 │  ┌────────────────────┐  │
 │  │                    │  │
-│  │   [Video Frame]    │  │
+│  │   [Video Frame]    │  │  ← Thumbnail always fitted to container
 │  │                    │  │
 │  │        ▶️          │  │  ← Play button overlay
 │  │                    │  │
@@ -599,6 +662,19 @@ interface MixboardGeneration {
 │  🎬 0:10                  │  ← Video badge + duration
 └──────────────────────────┘
 ```
+
+**Container Behavior:**
+- **Movable**: Drag anywhere on canvas
+- **Resizable**: Corner/edge handles to resize
+- **Aspect Ratio LOCKED**: When resizing, thumbnail maintains original video aspect ratio
+- Thumbnail is always fitted inside container (object-fit: contain)
+
+**Interactions:**
+- Single click: Select/deselect (can be tagged as control/reference)
+- Double-click: Open Video Player Modal
+- Drag: Move container on canvas
+- Resize handles: Scale container (aspect ratio locked)
+- Right-click: Context menu (Play, Delete, Tag as Control/Reference)
 
 ### 2.5 Video Generation Service
 
@@ -1024,18 +1100,27 @@ Videos appear in generation history graph with video icon:
 
 ### 3D Model Feature
 - [ ] Can upload GLB, OBJ, and IFC files via drag-drop
-- [ ] 3D model appears on canvas with preview thumbnail
+- [ ] 3D model appears on canvas with preview thumbnail in container
+- [ ] Container is movable (drag to reposition)
+- [ ] Container is resizable with LOCKED aspect ratio
+- [ ] Preview thumbnail always fitted to container
 - [ ] Double-click opens 3D Viewer Modal
 - [ ] Can orbit, pan, and zoom around model
 - [ ] View presets work (front, back, top, etc.)
+- [ ] Can change model color (uniform color for entire model)
+- [ ] Can toggle between custom color and original materials
 - [ ] Screenshot capture adds image to canvas
+- [ ] Screenshots are CLEAN (no grid, axes, or helpers visible)
 - [ ] Screenshots can be used for AI generation
 
 ### Video Generation Feature
 - [ ] Can toggle between Image and Video generation modes
 - [ ] Video parameters panel shows when Video mode selected
 - [ ] Video generation initiates with progress indicator
-- [ ] Generated video appears on canvas with thumbnail
+- [ ] Generated video appears on canvas with thumbnail in container
+- [ ] Container is movable (drag to reposition)
+- [ ] Container is resizable with LOCKED aspect ratio
+- [ ] Thumbnail always fitted to container
 - [ ] Can play video in modal player
 - [ ] Can extract frames from video as images
 - [ ] Videos can be tagged as control/reference
