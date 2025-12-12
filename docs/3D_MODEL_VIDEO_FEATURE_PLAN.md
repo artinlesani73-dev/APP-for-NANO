@@ -562,12 +562,14 @@ Users can generate AI videos using the same workflow as image generation. Enter 
 **File: `types.ts`**
 
 ```typescript
-// Video generation configuration
+// Video generation configuration (aligned with Google Veo API)
 interface VideoGenerationConfig {
-  duration: 5 | 10 | 15;           // Seconds
-  aspectRatio: '16:9' | '9:16' | '1:1' | '4:3';
-  quality: 'standard' | 'high';
-  fps: 24 | 30;                    // Frames per second
+  model: 'veo-3.1-generate-preview' | 'veo-3.1-fast-generate-preview' | 'veo-2.0-generate-exp';
+  duration: 4 | 6 | 8;             // Seconds (Veo supported values)
+  aspectRatio: '16:9' | '9:16';    // Landscape or Portrait
+  resolution?: '720p' | '1080p';   // Veo 3.1 only
+  negativePrompt?: string;         // Content to avoid
+  sampleCount?: 1 | 2 | 3 | 4;     // Number of videos to generate
 }
 
 // Canvas video item
@@ -641,21 +643,38 @@ interface MixboardGeneration {
 ┌────────────────────────────────────────┐
 │  Video Settings                         │
 │                                         │
+│  Model                                  │
+│  ┌──────────────────────────────────┐  │
+│  │ Veo 3.1 (High Quality)        ▼  │  │
+│  └──────────────────────────────────┘  │
+│  Options: Veo 3.1, Veo 3.1 Fast, Veo 2 │
+│                                         │
 │  Duration                               │
 │  ┌────┐  ┌────┐  ┌────┐                │
-│  │ 5s │  │10s │  │15s │                │
+│  │ 4s │  │ 6s │  │ 8s │                │
 │  └────┘  └────┘  └────┘                │
 │                                         │
 │  Aspect Ratio                           │
 │  ┌──────────────────────────────────┐  │
 │  │ 16:9 (Landscape)              ▼  │  │
 │  └──────────────────────────────────┘  │
+│  Options: 16:9 (Landscape), 9:16 (Portrait) │
 │                                         │
-│  Quality                                │
-│  ○ Standard    ● High                  │
+│  Resolution (Veo 3.1 only)             │
+│  ○ 720p    ● 1080p                     │
+│                                         │
+│  ──────────────────────────────────    │
+│  Advanced                               │
+│  Negative Prompt: [________________]   │
+│  (Describe what to avoid)              │
 │                                         │
 └────────────────────────────────────────┘
 ```
+
+**Veo Model Comparison:**
+- **Veo 3.1**: Highest quality, 1080p, native audio, 11s-6min generation
+- **Veo 3.1 Fast**: Good quality, faster generation, ideal for iteration
+- **Veo 2**: Supports style reference images, 720p only
 
 #### C. Video Player Modal
 
@@ -722,98 +741,317 @@ interface MixboardGeneration {
 - Resize handles: Scale container (aspect ratio locked)
 - Right-click: Context menu (Play, Delete, Tag as Control/Reference)
 
-### 2.5 Video Generation Service
+### 2.5 Video Generation Service - Google Veo API Integration
 
 **File: `services/videoGenerationService.ts`**
 
+#### Overview
+
+This app integrates with **Google Veo** (via the Gemini API) for AI video generation. Veo is Google's state-of-the-art video generation model, available through the same `@google/genai` SDK used for image generation.
+
+#### Available Veo Models
+
+| Model | Resolution | Duration | Audio | Speed | Use Case |
+|-------|------------|----------|-------|-------|----------|
+| `veo-3.1-generate-preview` | 720p/1080p | 4-8s | Native | Standard | High quality |
+| `veo-3.1-fast-generate-preview` | 720p/1080p | 4-8s | Native | Fast | Quick iterations |
+| `veo-2.0-generate-exp` | 720p | 5-8s | No | Standard | Style references |
+
+#### API Configuration
+
 ```typescript
+// Video generation configuration (updated for Veo)
+interface VeoVideoConfig {
+  model: 'veo-3.1-generate-preview' | 'veo-3.1-fast-generate-preview' | 'veo-2.0-generate-exp';
+  duration: 4 | 6 | 8;              // Seconds (Veo 3.x: 4, 6, 8)
+  aspectRatio: '16:9' | '9:16';     // Landscape or Portrait
+  resolution?: '720p' | '1080p';    // Veo 3.x only
+  negativePrompt?: string;          // Content to avoid
+  sampleCount?: 1 | 2 | 3 | 4;      // Number of videos to generate
+  seed?: number;                    // For reproducibility
+  personGeneration?: 'allow_adult' | 'dont_allow';  // Safety setting
+}
+
+// Request structure
 interface VideoGenerationRequest {
   prompt: string;
-  referenceImages?: {
-    controlImages: string[];    // Base64 images for composition
-    referenceImages: string[];  // Base64 images for style
+  config: VeoVideoConfig;
+
+  // Image-to-Video (optional)
+  firstFrame?: {
+    imageBytes: string;    // Base64 image data
+    mimeType: string;      // 'image/png' | 'image/jpeg'
   };
-  config: VideoGenerationConfig;
+
+  // First + Last Frame Interpolation (Veo 3.1 only)
+  lastFrame?: {
+    imageBytes: string;
+    mimeType: string;
+  };
+
+  // Reference Images (up to 3 for subject consistency)
+  referenceImages?: {
+    imageBytes: string;
+    mimeType: string;
+  }[];
 }
 
 interface VideoGenerationResponse {
   success: boolean;
-  videoUrl?: string;            // URL to generated video
-  videoData?: ArrayBuffer;      // Video binary data
-  thumbnailUrl?: string;        // First frame thumbnail
-  metadata: {
-    duration: number;
+  videos: {
+    videoUri: string;         // Download URL (valid for 2 days)
+    mimeType: string;         // 'video/mp4'
+    durationSeconds: number;
     width: number;
     height: number;
-    fps: number;
-    fileSize: number;
-  };
+  }[];
   error?: string;
 }
+```
 
-// Video generation (API integration point)
+#### Implementation
+
+```typescript
+import { GoogleGenAI } from '@google/genai';
+
+const client = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+
+/**
+ * Generate video using Google Veo API
+ */
 export async function generateVideo(
   request: VideoGenerationRequest,
-  apiKey: string,
-  onProgress?: (progress: number) => void
+  onProgress?: (status: string, progress: number) => void
 ): Promise<VideoGenerationResponse> {
 
-  // API INTEGRATION NOTES:
-  //
-  // Current options for video generation APIs:
-  //
-  // 1. Google Veo 2 (Recommended - when API available)
-  //    - Same ecosystem as Gemini
-  //    - High quality results
-  //    - Status: API not yet publicly available
-  //
-  // 2. Runway Gen-3 Alpha
-  //    - REST API available
-  //    - High quality, good motion
-  //    - Requires separate API key
-  //
-  // 3. Pika Labs API
-  //    - Good for stylized content
-  //    - API access available
-  //
-  // 4. Stable Video Diffusion (via Replicate)
-  //    - Open source option
-  //    - Self-hostable
-  //
-  // 5. Kling AI
-  //    - Good quality
-  //    - API available in some regions
+  try {
+    // Build generation config
+    const generateConfig: any = {
+      aspectRatio: request.config.aspectRatio,
+      numberOfVideos: request.config.sampleCount || 1,
+    };
 
-  // Placeholder implementation
-  throw new Error('Video generation API not yet configured');
+    // Add optional parameters
+    if (request.config.resolution) {
+      generateConfig.resolution = request.config.resolution;
+    }
+    if (request.config.negativePrompt) {
+      generateConfig.negativePrompt = request.config.negativePrompt;
+    }
+    if (request.config.personGeneration) {
+      generateConfig.personGeneration = request.config.personGeneration;
+    }
+    if (request.config.seed) {
+      generateConfig.seed = request.config.seed;
+    }
+
+    // Add last frame for interpolation (Veo 3.1 only)
+    if (request.lastFrame && request.config.model.includes('veo-3.1')) {
+      generateConfig.lastFrame = {
+        imageBytes: request.lastFrame.imageBytes,
+        mimeType: request.lastFrame.mimeType,
+      };
+    }
+
+    // Add reference images for subject consistency
+    if (request.referenceImages && request.referenceImages.length > 0) {
+      generateConfig.referenceImages = request.referenceImages.map(img => ({
+        referenceType: 'REFERENCE_TYPE_SUBJECT',
+        referenceId: 1,
+        image: {
+          imageBytes: img.imageBytes,
+          mimeType: img.mimeType,
+        },
+      }));
+    }
+
+    // Start video generation (returns operation)
+    onProgress?.('Starting video generation...', 0);
+
+    let operation = await client.models.generateVideos({
+      model: request.config.model,
+      prompt: request.prompt,
+      // First frame image (for image-to-video)
+      ...(request.firstFrame && {
+        image: {
+          imageBytes: request.firstFrame.imageBytes,
+          mimeType: request.firstFrame.mimeType,
+        },
+      }),
+      config: generateConfig,
+    });
+
+    // Poll for completion (video generation takes 11 seconds to 6 minutes)
+    let pollCount = 0;
+    const maxPolls = 72;  // 6 minutes at 5-second intervals
+
+    while (!operation.done && pollCount < maxPolls) {
+      await sleep(5000);  // Poll every 5 seconds
+      pollCount++;
+
+      const progress = Math.min(95, (pollCount / maxPolls) * 100);
+      onProgress?.('Generating video...', progress);
+
+      operation = await client.operations.getVideosOperation({
+        operation: operation,
+      });
+    }
+
+    if (!operation.done) {
+      throw new Error('Video generation timed out');
+    }
+
+    // Check for errors
+    if (operation.error) {
+      throw new Error(operation.error.message || 'Video generation failed');
+    }
+
+    onProgress?.('Video ready!', 100);
+
+    // Extract video results
+    const videos = operation.response?.generatedVideos || [];
+
+    return {
+      success: true,
+      videos: videos.map((v: any) => ({
+        videoUri: v.video.uri,
+        mimeType: v.video.mimeType || 'video/mp4',
+        durationSeconds: request.config.duration,
+        width: request.config.resolution === '1080p' ? 1920 : 1280,
+        height: request.config.resolution === '1080p' ? 1080 : 720,
+      })),
+    };
+
+  } catch (error: any) {
+    return {
+      success: false,
+      videos: [],
+      error: error.message || 'Unknown error during video generation',
+    };
+  }
 }
 
-// Poll for generation status (video generation can take minutes)
-export async function pollGenerationStatus(
-  generationId: string,
-  apiKey: string
-): Promise<{ status: 'pending' | 'processing' | 'completed' | 'failed'; progress: number }> {
-  // Implementation depends on chosen API
+/**
+ * Download video from Veo URL to local storage
+ * IMPORTANT: Videos expire after 2 days!
+ */
+export async function downloadVideo(
+  videoUri: string,
+  savePath: string
+): Promise<{ success: boolean; localPath?: string; error?: string }> {
+  try {
+    const response = await fetch(videoUri);
+    if (!response.ok) {
+      throw new Error(`Failed to download: ${response.statusText}`);
+    }
+
+    const arrayBuffer = await response.arrayBuffer();
+
+    // Save to disk via Electron IPC
+    if (window.electron) {
+      const localPath = await window.electron.saveVideo(savePath, arrayBuffer);
+      return { success: true, localPath };
+    } else {
+      // Web fallback: return as data URI
+      const base64 = btoa(String.fromCharCode(...new Uint8Array(arrayBuffer)));
+      return { success: true, localPath: `data:video/mp4;base64,${base64}` };
+    }
+
+  } catch (error: any) {
+    return { success: false, error: error.message };
+  }
 }
 
-// Extract frame from video at specific time
+/**
+ * Extract a single frame from video at specified time
+ */
 export async function extractFrame(
   videoElement: HTMLVideoElement,
   timeSeconds: number
 ): Promise<string> {
-  return new Promise((resolve) => {
-    videoElement.currentTime = timeSeconds;
-    videoElement.onseeked = () => {
-      const canvas = document.createElement('canvas');
-      canvas.width = videoElement.videoWidth;
-      canvas.height = videoElement.videoHeight;
-      const ctx = canvas.getContext('2d')!;
-      ctx.drawImage(videoElement, 0, 0);
-      resolve(canvas.toDataURL('image/png'));
+  return new Promise((resolve, reject) => {
+    const seekHandler = () => {
+      try {
+        const canvas = document.createElement('canvas');
+        canvas.width = videoElement.videoWidth;
+        canvas.height = videoElement.videoHeight;
+        const ctx = canvas.getContext('2d')!;
+        ctx.drawImage(videoElement, 0, 0);
+        resolve(canvas.toDataURL('image/png'));
+      } catch (error) {
+        reject(error);
+      } finally {
+        videoElement.removeEventListener('seeked', seekHandler);
+      }
     };
+
+    videoElement.addEventListener('seeked', seekHandler);
+    videoElement.currentTime = timeSeconds;
   });
 }
+
+// Helper
+function sleep(ms: number): Promise<void> {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
 ```
+
+#### Veo API Features Summary
+
+| Feature | Veo 2 | Veo 3.1 | Veo 3.1 Fast |
+|---------|-------|---------|--------------|
+| Text-to-Video | ✅ | ✅ | ✅ |
+| Image-to-Video | ✅ | ✅ | ✅ |
+| First+Last Frame | ❌ | ✅ | ✅ |
+| Reference Images (Subject) | ✅ | ✅ | ✅ |
+| Style Images | ✅ | ❌ | ❌ |
+| Native Audio | ❌ | ✅ | ✅ |
+| 1080p Resolution | ❌ | ✅ | ✅ |
+| 9:16 Vertical | ❌ | ✅ | ✅ |
+
+#### Pricing (Approximate)
+
+| Model | Resolution | Cost |
+|-------|------------|------|
+| Veo 2 | 720p | ~$0.35/second |
+| Veo 3.1 | 720p | Contact Google |
+| Veo 3.1 | 1080p | Contact Google |
+| Veo 3.1 Fast | 720p/1080p | Lower than Veo 3.1 |
+
+*Note: Pricing is in paid preview. Check Google AI Studio for current rates.*
+
+#### Important Limitations
+
+1. **Video Retention**: Generated videos are stored on Google servers for **2 days only**. Download immediately after generation.
+
+2. **Latency**: Generation takes 11 seconds to 6 minutes depending on complexity and server load.
+
+3. **Safety Filters**: Videos may be blocked by safety filters. No charge if blocked.
+
+4. **SynthID Watermark**: All Veo videos are watermarked with SynthID (invisible, detectable).
+
+5. **Regional Restrictions**: Some `personGeneration` options limited in EU/UK/CH/MENA.
+
+6. **First+Last Frame**: Only available in Veo 3.1 models.
+
+7. **Style Images**: Only supported in Veo 2, not Veo 3.1.
+
+#### Integration with Existing Image Generation
+
+Since this app already uses `@google/genai` for Gemini image generation, the same API key and SDK can be used for Veo video generation. The workflow is:
+
+1. User composes prompt (same as image generation)
+2. User selects "Video" generation mode
+3. User configures video parameters (duration, aspect ratio, resolution)
+4. Optionally selects canvas images as:
+   - **First Frame**: Starting point for image-to-video
+   - **Last Frame**: Ending point for interpolation (Veo 3.1)
+   - **Reference Images**: For subject/style consistency
+5. Click Generate → Veo API call
+6. Poll for completion (show progress)
+7. Download video to local storage
+8. Generate thumbnail from first frame
+9. Add to canvas as CanvasVideo item
 
 ### 2.6 Video Thumbnail Generation
 
