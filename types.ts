@@ -264,3 +264,212 @@ export interface MixboardSession {
 
 // Type alias for ImageMeta (used throughout the codebase)
 export type ImageMeta = StoredImageMeta;
+
+// ============================================================================
+// 3D MODEL TYPES
+// ============================================================================
+
+/**
+ * Supported 3D model file types
+ */
+export type Model3DType = 'ifc' | 'glb' | 'gltf' | 'obj';
+
+/**
+ * 3D model canvas item representation.
+ * Tracks position, size, and 3D-specific metadata.
+ */
+export interface Canvas3DModel {
+  id: string;
+  type: '3d-model';
+  modelType: Model3DType;
+
+  // File references
+  modelPath?: string;           // Electron file path
+  modelDataUri?: string;        // Base64 for web (GLB/OBJ only, IFC too large)
+
+  // Canvas display
+  thumbnailUri?: string;        // Preview image for canvas
+  thumbnailPath?: string;       // Disk reference for thumbnail
+
+  // Position & size on canvas
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  originalWidth: number;
+  originalHeight: number;
+
+  // Metadata
+  fileName: string;
+  fileSize: number;
+  selected: boolean;
+
+  // 3D specific
+  defaultCameraPosition?: { x: number; y: number; z: number };
+  defaultCameraTarget?: { x: number; y: number; z: number };
+
+  // Model info
+  vertexCount?: number;
+  faceCount?: number;
+  boundingBox?: {
+    min: { x: number; y: number; z: number };
+    max: { x: number; y: number; z: number };
+  };
+}
+
+/**
+ * 3D model registry entry for storage
+ */
+export interface Model3DRegistryEntry {
+  id: string;
+  hash: string;              // SHA256 of model file
+  originalName: string;
+  modelType: Model3DType;
+  fileSize: number;
+  filePath: string;          // Path to stored model file
+  thumbnailPath: string;     // Path to preview thumbnail
+  boundingBox?: {
+    min: { x: number; y: number; z: number };
+    max: { x: number; y: number; z: number };
+  };
+  vertexCount?: number;
+  faceCount?: number;
+  createdAt: string;
+}
+
+// ============================================================================
+// VIDEO TYPES
+// ============================================================================
+
+/**
+ * Video configuration for generation
+ */
+export interface VideoConfig {
+  duration: number;            // seconds (e.g., 5, 10, 15)
+  aspectRatio: '16:9' | '9:16' | '1:1' | '4:3';
+  fps: 24 | 30 | 60;
+  quality: 'standard' | 'high';
+}
+
+/**
+ * Canvas video item representation.
+ * Tracks position, size, and video-specific metadata.
+ */
+export interface CanvasVideo {
+  id: string;
+  type: 'video';
+
+  // Video file references
+  videoPath?: string;          // Electron file path
+  videoDataUri?: string;       // Base64 (small videos only)
+  videoUrl?: string;           // URL for streaming
+
+  // Thumbnail for canvas display
+  thumbnailUri?: string;
+  thumbnailPath?: string;
+
+  // Canvas position & size
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  originalWidth: number;
+  originalHeight: number;
+
+  // Video metadata
+  duration: number;            // seconds
+  fps: number;
+  fileSize: number;
+  fileName: string;
+  mimeType: string;            // video/mp4, video/webm
+  selected: boolean;
+
+  // Generation info (if AI-generated)
+  generationId?: string;
+  prompt?: string;
+  videoConfig?: VideoConfig;
+}
+
+/**
+ * Video registry entry for storage
+ */
+export interface VideoRegistryEntry {
+  id: string;
+  hash: string;
+  originalName: string;
+  mimeType: string;           // video/mp4, video/webm
+  fileSize: number;
+  filePath: string;
+  thumbnailPath: string;
+  duration: number;
+  width: number;
+  height: number;
+  fps: number;
+  generationId?: string;
+  createdAt: string;
+}
+
+/**
+ * Video generation request
+ */
+export interface VideoGenerationRequest {
+  prompt: string;
+  referenceImages?: string[];    // Base64 images
+  config: VideoConfig;
+}
+
+/**
+ * Video generation response
+ */
+export interface VideoGenerationResponse {
+  success: boolean;
+  videoUrl?: string;             // URL to generated video
+  videoData?: string;            // Base64 video data
+  thumbnailUrl?: string;
+  duration: number;
+  width: number;
+  height: number;
+  error?: string;
+}
+
+// ============================================================================
+// UNIFIED CANVAS ITEM TYPE
+// ============================================================================
+
+/**
+ * Union type for all canvas items (images, text, boards, 3D models, videos)
+ */
+export type CanvasItem = CanvasImage | Canvas3DModel | CanvasVideo;
+
+/**
+ * Type guard for CanvasImage
+ */
+export function isCanvasImage(item: CanvasItem): item is CanvasImage {
+  return !item.type || item.type === 'image' || item.type === 'text' || item.type === 'board';
+}
+
+/**
+ * Type guard for Canvas3DModel
+ */
+export function isCanvas3DModel(item: CanvasItem): item is Canvas3DModel {
+  return item.type === '3d-model';
+}
+
+/**
+ * Type guard for CanvasVideo
+ */
+export function isCanvasVideo(item: CanvasItem): item is CanvasVideo {
+  return item.type === 'video';
+}
+
+// ============================================================================
+// EXTENDED GENERATION CONFIG FOR VIDEO
+// ============================================================================
+
+/**
+ * Extended generation config that supports both image and video generation
+ */
+export interface ExtendedGenerationConfig extends GenerationConfig {
+  generationType?: 'image' | 'video';
+  videoConfig?: VideoConfig;
+}
