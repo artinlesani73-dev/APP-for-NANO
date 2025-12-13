@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { Sparkles, Image as ImageIcon, Type, Trash2, ZoomIn, ZoomOut, Move, Download, Edit2, Check, X, LayoutTemplate, Bold, Italic, Save, Upload, Settings, Folder, Undo, Redo, ChevronDown, Copy, FileText, Square, Tag, Crosshair, BookImage } from 'lucide-react';
+import { Sparkles, Image as ImageIcon, Type, Trash2, ZoomIn, ZoomOut, Move, Download, Edit2, Check, X, LayoutTemplate, Bold, Italic, Save, Upload, Settings, Folder, Undo, Redo, ChevronDown, Copy, FileText, Square, Tag, Crosshair, BookImage, HelpCircle } from 'lucide-react';
 import { GeminiService } from '../services/geminiService';
 import { StorageServiceV2 } from '../services/storageV2';
 import { GenerationConfig, CanvasImage, MixboardSession, MixboardGeneration, StoredImageMeta } from '../types';
@@ -2252,6 +2252,50 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
                   <option value="gemini-2.5-flash-image">Flash (Free, Fast)</option>
                   <option value="gemini-3-pro-image-preview">Pro (Paid, Higher Quality)</option>
                 </select>
+              </div>
+
+              {/* Temperature */}
+              <div>
+                <div className="flex justify-between items-center mb-1.5">
+                  <label className="text-xs font-semibold text-zinc-700 dark:text-zinc-300 flex items-center gap-1">
+                    Temperature
+                    <div title="Controls randomness. Lower = more predictable, Higher = more creative." className="cursor-help opacity-50">
+                      <HelpCircle size={12} />
+                    </div>
+                  </label>
+                  <span className="text-xs text-zinc-600 dark:text-zinc-400 font-mono">{config.temperature.toFixed(2)}</span>
+                </div>
+                <input
+                  type="range"
+                  min="0"
+                  max="1"
+                  step="0.05"
+                  value={config.temperature}
+                  onChange={(e) => setConfig(prev => ({ ...prev, temperature: parseFloat(e.target.value) }))}
+                  className="w-full h-2 bg-zinc-200 dark:bg-zinc-700 rounded-lg appearance-none cursor-pointer accent-orange-500"
+                />
+              </div>
+
+              {/* Top P */}
+              <div>
+                <div className="flex justify-between items-center mb-1.5">
+                  <label className="text-xs font-semibold text-zinc-700 dark:text-zinc-300 flex items-center gap-1">
+                    Top P
+                    <div title="Controls diversity. Lower = more focused, Higher = more varied." className="cursor-help opacity-50">
+                      <HelpCircle size={12} />
+                    </div>
+                  </label>
+                  <span className="text-xs text-zinc-600 dark:text-zinc-400 font-mono">{config.top_p.toFixed(2)}</span>
+                </div>
+                <input
+                  type="range"
+                  min="0"
+                  max="1"
+                  step="0.05"
+                  value={config.top_p}
+                  onChange={(e) => setConfig(prev => ({ ...prev, top_p: parseFloat(e.target.value) }))}
+                  className="w-full h-2 bg-zinc-200 dark:bg-zinc-700 rounded-lg appearance-none cursor-pointer accent-orange-500"
+                />
               </div>
 
               {/* Aspect Ratio */}

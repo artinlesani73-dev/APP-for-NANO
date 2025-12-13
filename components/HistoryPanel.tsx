@@ -221,8 +221,11 @@ const VirtualGrid = React.memo(({
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const [visibleRange, setVisibleRange] = useState({ start: 0, end: 20 });
+  // Use ref for items.length to avoid recreating updateVisibleRange
+  const itemsLengthRef = useRef(items.length);
+  itemsLengthRef.current = items.length;
 
-  // Calculate visible items based on scroll position
+  // Calculate visible items based on scroll position - stable callback
   const updateVisibleRange = useCallback(() => {
     if (!containerRef.current) return;
 
@@ -242,16 +245,22 @@ const VirtualGrid = React.memo(({
     const endRow = Math.ceil((scrollTop + viewportHeight) / rowHeight);
 
     const start = Math.max(0, (startRow - overscan) * columns);
-    const end = Math.min(items.length, (endRow + overscan) * columns);
+    // Use ref to get current items length without causing callback recreation
+    const end = Math.min(itemsLengthRef.current, (endRow + overscan) * columns);
 
-    setVisibleRange({ start, end });
-  }, [items.length, itemHeight, overscan]);
+    setVisibleRange(prev => {
+      // Only update if values actually changed to prevent unnecessary re-renders
+      if (prev.start === start && prev.end === end) return prev;
+      return { start, end };
+    });
+  }, [itemHeight, overscan]); // Removed items.length dependency
 
-  // Update on scroll
+  // Update on scroll - stable effect
   useEffect(() => {
     const container = containerRef.current;
     if (!container) return;
 
+    // Initial calculation
     updateVisibleRange();
 
     let ticking = false;
@@ -279,6 +288,11 @@ const VirtualGrid = React.memo(({
     };
   }, [updateVisibleRange]);
 
+  // Update visible range when items length changes significantly
+  useEffect(() => {
+    updateVisibleRange();
+  }, [items.length, updateVisibleRange]);
+
   // Render only visible items
   const visibleItems = useMemo(() => {
     return items.slice(visibleRange.start, visibleRange.end);
@@ -290,13 +304,16 @@ const VirtualGrid = React.memo(({
       className="h-full overflow-y-auto p-4"
     >
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
-        {visibleItems.map((item, index) => {
-          const actualIndex = visibleRange.start + index;
+        {visibleItems.map((item) => {
           const isSelected = item.generation.generation_id === selectedGenerationId;
+          // Use stable key without index - prevents remounts during scroll
+          const stableKey = item.kind === 'image'
+            ? `${item.generation.generation_id}-${item.output.id}`
+            : `${item.generation.generation_id}-text`;
 
           return (
             <LazyImageCard
-              key={`${item.generation.generation_id}-${item.kind === 'image' ? item.output.id : 'text'}-${actualIndex}`}
+              key={stableKey}
               item={item}
               isSelected={isSelected}
               loadImage={loadImage}
