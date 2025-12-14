@@ -208,8 +208,8 @@ const VirtualGrid = React.memo(({
   loadImage,
   onSelectGeneration,
   onExportImage,
-  itemHeight = 320, // Approximate height of each card
-  overscan = 4 // Number of items to render outside viewport
+  itemHeight = 300, // Approximate height of each card (tuned down for lighter virtualization)
+  overscan = 2 // Number of items to render outside viewport
 }: {
   items: HistoryGalleryItem[];
   selectedGenerationId?: string;
@@ -220,7 +220,7 @@ const VirtualGrid = React.memo(({
   overscan?: number;
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
-  const [visibleRange, setVisibleRange] = useState({ start: 0, end: 20 });
+  const [layout, setLayout] = useState({ start: 0, end: 20, offset: 0, totalHeight: 0 });
   // Use ref for items.length to avoid recreating updateVisibleRange
   const itemsLengthRef = useRef(items.length);
   itemsLengthRef.current = items.length;
@@ -248,10 +248,14 @@ const VirtualGrid = React.memo(({
     // Use ref to get current items length without causing callback recreation
     const end = Math.min(itemsLengthRef.current, (endRow + overscan) * columns);
 
-    setVisibleRange(prev => {
+    const totalRows = Math.ceil(itemsLengthRef.current / columns);
+    const totalHeight = totalRows * rowHeight;
+    const offset = startRow * rowHeight;
+
+    setLayout(prev => {
       // Only update if values actually changed to prevent unnecessary re-renders
-      if (prev.start === start && prev.end === end) return prev;
-      return { start, end };
+      if (prev.start === start && prev.end === end && prev.offset === offset && prev.totalHeight === totalHeight) return prev;
+      return { start, end, offset, totalHeight };
     });
   }, [itemHeight, overscan]); // Removed items.length dependency
 
@@ -295,33 +299,38 @@ const VirtualGrid = React.memo(({
 
   // Render only visible items
   const visibleItems = useMemo(() => {
-    return items.slice(visibleRange.start, visibleRange.end);
-  }, [items, visibleRange.start, visibleRange.end]);
+    return items.slice(layout.start, layout.end);
+  }, [items, layout.start, layout.end]);
 
   return (
     <div
       ref={containerRef}
       className="h-full overflow-y-auto p-4"
     >
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
-        {visibleItems.map((item) => {
-          const isSelected = item.generation.generation_id === selectedGenerationId;
-          // Use stable key without index - prevents remounts during scroll
-          const stableKey = item.kind === 'image'
-            ? `${item.generation.generation_id}-${item.output.id}`
-            : `${item.generation.generation_id}-text`;
+      <div className="relative" style={{ height: layout.totalHeight || undefined }}>
+        <div
+          className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3 absolute inset-x-0"
+          style={{ transform: `translateY(${layout.offset}px)` }}
+        >
+          {visibleItems.map((item) => {
+            const isSelected = item.generation.generation_id === selectedGenerationId;
+            // Use stable key without index - prevents remounts during scroll
+            const stableKey = item.kind === 'image'
+              ? `${item.generation.generation_id}-${item.output.id}`
+              : `${item.generation.generation_id}-text`;
 
-          return (
-            <LazyImageCard
-              key={stableKey}
-              item={item}
-              isSelected={isSelected}
-              loadImage={loadImage}
-              onSelectGeneration={onSelectGeneration}
-              onExportImage={onExportImage}
-            />
-          );
-        })}
+            return (
+              <LazyImageCard
+                key={stableKey}
+                item={item}
+                isSelected={isSelected}
+                loadImage={loadImage}
+                onSelectGeneration={onSelectGeneration}
+                onExportImage={onExportImage}
+              />
+            );
+          })}
+        </div>
       </div>
     </div>
   );
@@ -351,8 +360,8 @@ export const HistoryPanel: React.FC<HistoryPanelProps> = ({
     );
   }
 
-  // For small lists (< 50 items), use simple grid without virtualization
-  if (items.length < 50) {
+  // For small lists (< 100 items), use simple grid without virtualization
+  if (items.length < 100) {
     return (
       <div className="h-full overflow-y-auto p-4">
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
