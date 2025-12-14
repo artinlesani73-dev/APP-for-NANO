@@ -15,12 +15,14 @@
     "@google/genai": "^1.30.0",
     "electron-updater": "^6.3.9",
     "lucide-react": "^0.344.0",
+    "three": "^0.165.0",
     "react": "^18.2.0",
     "react-dom": "^18.2.0"
   },
   "devDependencies": {
     "@types/react": "^18.2.64",
     "@types/react-dom": "^18.2.21",
+    "@types/three": "^0.165.0",
     "@vitejs/plugin-react": "^4.2.1",
     "autoprefixer": "^10.4.18",
     "electron": "^28.2.0",

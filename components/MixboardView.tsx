@@ -1,11 +1,14 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { Sparkles, Image as ImageIcon, Type, Trash2, ZoomIn, ZoomOut, Move, Download, Edit2, Check, X, LayoutTemplate, Bold, Italic, Save, Upload, Settings, Folder, Undo, Redo, ChevronDown, Copy, FileText, Square, Tag, Crosshair, BookImage, HelpCircle } from 'lucide-react';
+import { Sparkles, Image as ImageIcon, Type, Trash2, ZoomIn, ZoomOut, Move, Download, Edit2, Check, X, LayoutTemplate, Bold, Italic, Save, Upload, Settings, Folder, Undo, Redo, ChevronDown, Copy, FileText, Square, Tag, Crosshair, BookImage, HelpCircle, Box } from 'lucide-react';
 import { StorageServiceV2 } from '../services/storageV2';
-import { GenerationConfig, CanvasImage, MixboardSession, MixboardGeneration, StoredImageMeta } from '../types';
+import { GenerationConfig, CanvasImage, Canvas3DModel, MixboardSession, MixboardGeneration, StoredImageMeta } from '../types';
 import { ImageEditModal } from './ImageEditModal';
 import { ProjectsPage } from './ProjectsPage';
 import { SettingsModal } from './SettingsModal';
 import { loadGeminiService } from '../services/lazyGeminiService';
+import { Model3DUploadPanel } from './Model3DUploadPanel';
+import { Model3DViewerModal } from './Model3DViewerModal';
+import { isSupported3DModelFile, load3DModelFile } from '../services/model3DLoaders';
 
 type CanvasEngine = {
   attach: (element: HTMLDivElement, options: { onZoom: (delta: number) => void }) => void;
@@ -114,6 +117,10 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
   const [editModalOpen, setEditModalOpen] = useState(false);
   const [editingImage, setEditingImage] = useState<CanvasImage | null>(null);
   const [isGeneratingThumbnails, setIsGeneratingThumbnails] = useState(false);
+  const [uploadedModels, setUploadedModels] = useState<Canvas3DModel[]>([]);
+  const [activeModel, setActiveModel] = useState<Canvas3DModel | null>(null);
+  const [isModelViewerOpen, setIsModelViewerOpen] = useState(false);
+  const [isImportingModel, setIsImportingModel] = useState(false);
 
   // Tag dropdown state
   const [tagDropdownImageId, setTagDropdownImageId] = useState<string | null>(null);
@@ -1115,6 +1122,28 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
     } finally {
       setTimeout(() => setIsGeneratingThumbnails(false), 1000);
       e.target.value = '';
+    }
+  };
+
+  const handle3DModelUpload = async (file: File) => {
+    if (!isSupported3DModelFile(file)) {
+      alert('Unsupported 3D model format. Please upload IFC, GLB/GLTF, or OBJ files.');
+      return;
+    }
+
+    setIsImportingModel(true);
+
+    try {
+      const { model } = await load3DModelFile(file);
+      setUploadedModels(prev => [...prev, model]);
+      setActiveModel(model);
+      setIsModelViewerOpen(true);
+      console.log(`[3D] Model uploaded: ${model.fileName} (${model.modelType})`);
+    } catch (error) {
+      console.error('Failed to load 3D model', error);
+      alert('Failed to load 3D model. Please try again.');
+    } finally {
+      setIsImportingModel(false);
     }
   };
 
@@ -2352,6 +2381,56 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
                   </>
                 )}
               </button>
+
+              <div className="border-t border-zinc-200 dark:border-zinc-800 pt-3 space-y-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2 text-sm font-bold text-zinc-900 dark:text-zinc-100">
+                    <Box size={16} className="text-blue-500" />
+                    3D Models
+                  </div>
+                  {isImportingModel && (
+                    <span className="text-[11px] text-blue-600 dark:text-blue-400">Importing...</span>
+                  )}
+                </div>
+
+                <Model3DUploadPanel
+                  onUpload={handle3DModelUpload}
+                  disabled={isImportingModel || isGenerating}
+                  description="Add IFC, GLB/GLTF, or OBJ models to preview in the viewer."
+                  title="Upload 3D Model"
+                />
+
+                <div className="space-y-2">
+                  {uploadedModels.length === 0 ? (
+                    <p className="text-xs text-zinc-500 dark:text-zinc-400 leading-relaxed">
+                      Uploaded models will appear here for quick preview. Supported formats include IFC, GLB/GLTF, and OBJ.
+                    </p>
+                  ) : (
+                    uploadedModels.map((model) => (
+                      <button
+                        key={model.id}
+                        onClick={() => {
+                          setActiveModel(model);
+                          setIsModelViewerOpen(true);
+                        }}
+                        className="w-full text-left p-2 rounded-lg border border-zinc-200 dark:border-zinc-800 hover:border-blue-400 dark:hover:border-blue-400 transition-colors bg-white dark:bg-zinc-900"
+                      >
+                        <div className="flex items-center justify-between">
+                          <div className="truncate">
+                            <p className="text-sm font-semibold text-zinc-900 dark:text-zinc-100 truncate">{model.fileName}</p>
+                            <p className="text-[11px] text-zinc-500 dark:text-zinc-400 uppercase">
+                              {model.modelType} • {(model.fileSize / 1024 / 1024).toFixed(1)} MB
+                            </p>
+                          </div>
+                          <div className="text-[11px] px-2 py-0.5 rounded-full bg-blue-50 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-800">
+                            Preview
+                          </div>
+                        </div>
+                      </button>
+                    ))
+                  )}
+                </div>
+              </div>
             </div>
           </div>
         </div>
@@ -2398,6 +2477,17 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
             setEditingImage(null);
           }}
           onSave={handleSaveEditedImage}
+        />
+
+        <Model3DViewerModal
+          isOpen={isModelViewerOpen && !!activeModel}
+          model={activeModel}
+          onClose={() => {
+            setIsModelViewerOpen(false);
+            setActiveModel(null);
+          }}
+          onCaptureScreenshot={() => console.log('[3D] Capture screenshot requested')}
+          onResetView={() => console.log('[3D] Reset view requested')}
         />
 
         {/* SettingsModal */}
