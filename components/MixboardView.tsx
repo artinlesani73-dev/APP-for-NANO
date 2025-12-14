@@ -1,11 +1,11 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { Sparkles, Image as ImageIcon, Type, Trash2, ZoomIn, ZoomOut, Move, Download, Edit2, Check, X, LayoutTemplate, Bold, Italic, Save, Upload, Settings, Folder, Undo, Redo, ChevronDown, Copy, FileText, Square, Tag, Crosshair, BookImage, HelpCircle } from 'lucide-react';
-import { GeminiService } from '../services/geminiService';
 import { StorageServiceV2 } from '../services/storageV2';
 import { GenerationConfig, CanvasImage, MixboardSession, MixboardGeneration, StoredImageMeta } from '../types';
 import { ImageEditModal } from './ImageEditModal';
 import { ProjectsPage } from './ProjectsPage';
 import { SettingsModal } from './SettingsModal';
+import { loadGeminiService } from '../services/lazyGeminiService';
 
 type CanvasEngine = {
   attach: (element: HTMLDivElement, options: { onZoom: (delta: number) => void }) => void;
@@ -138,6 +138,7 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
   const [historyFuture, setHistoryFuture] = useState<CanvasImage[][]>([]);
   const isUndoRedoAction = useRef(false);
   const lastPushedState = useRef<string | null>(null);
+  const geminiServiceRef = useRef<Awaited<ReturnType<typeof loadGeminiService>> | null>(null);
 
   const canvasRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -156,6 +157,13 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
       canvasX: 0,
       canvasY: 0
     });
+  }, []);
+
+  const getGeminiService = useCallback(async () => {
+    if (!geminiServiceRef.current) {
+      geminiServiceRef.current = await loadGeminiService();
+    }
+    return geminiServiceRef.current;
   }, []);
 
   // Start timer to mark as dirty 30 seconds after save
@@ -636,7 +644,8 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
         // IMAGE MODE: Generate image
         // Call API for image generation
         // Pass images separated by their tags: control, reference, and context (untagged)
-        const output = await GeminiService.generateImage(
+        const service = await getGeminiService();
+        const output = await service.generateImage(
           newGeneration.prompt,
           config,
           controlImageData.length > 0 ? controlImageData : undefined,
@@ -747,7 +756,8 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
       }
       } else {
         // TEXT MODE: Generate text
-        const output = await GeminiService.generateText(
+        const service = await getGeminiService();
+        const output = await service.generateText(
           newGeneration.prompt,
           config,
           150,  // Max 150 words

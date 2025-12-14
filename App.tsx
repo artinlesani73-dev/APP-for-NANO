@@ -3,9 +3,9 @@ import type { HistoryGalleryItem } from './components/HistoryPanel';
 import { LoginForm } from './components/LoginForm';
 import { UserProvider, useUser } from './components/UserContext';
 import { StorageServiceV2 } from './services/storageV2';
-import { GeminiService } from './services/geminiService';
 import { LoggerService } from './services/logger';
 import { PreferencesService, type UserHistory, type UserSettings } from './services/preferencesService';
+import { loadGeminiService } from './services/lazyGeminiService';
 import { MixboardSession } from './types';
 import { Database, Key } from 'lucide-react';
 import { ViewSidebar } from './components/ViewSidebar';
@@ -130,7 +130,17 @@ function AppContent() {
   }, [theme]);
 
   useEffect(() => {
-    GeminiService.checkApiKey().then(setApiKeyConnected);
+    let isMounted = true;
+
+    loadGeminiService()
+      .then((service) => service.checkApiKey())
+      .then((connected) => {
+        if (isMounted) setApiKeyConnected(connected);
+      });
+
+    return () => {
+      isMounted = false;
+    };
   }, []);
 
   useEffect(() => {
@@ -284,8 +294,9 @@ function AppContent() {
 
   const handleConnectApiKey = async () => {
       try {
-          await GeminiService.requestApiKey();
-          const isConnected = await GeminiService.checkApiKey();
+          const service = await loadGeminiService();
+          await service.requestApiKey();
+          const isConnected = await service.checkApiKey();
           setApiKeyConnected(isConnected);
           if (isConnected) {
             LoggerService.logAction('API key connected');
@@ -298,7 +309,8 @@ function AppContent() {
   };
 
   const handleApiKeyUpdate = async () => {
-      const isConnected = await GeminiService.checkApiKey();
+      const service = await loadGeminiService();
+      const isConnected = await service.checkApiKey();
       setApiKeyConnected(isConnected);
   };
 
