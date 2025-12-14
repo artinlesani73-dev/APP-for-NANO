@@ -25,6 +25,19 @@ export interface StoredImageMeta {
   thumbnailPath?: string;  // Path to thumbnail file for history/graph display
 }
 
+export interface StoredVideoMeta {
+  id: string;
+  filename: string;
+  original_name?: string;
+  hash?: string;
+  size_bytes?: number;
+  duration_seconds?: number;
+  width?: number;
+  height?: number;
+  mime_type?: 'video/mp4' | 'video/webm';
+  thumbnailPath?: string;
+}
+
 export interface UploadedImagePayload {
   data: string;
   original_name?: string;
@@ -99,6 +112,15 @@ export interface GenerationConfig {
   image_size: string;
   safety_filter: string;
   model: string;
+}
+
+export interface VideoGenerationConfig {
+  model: 'veo-3.1-generate-preview' | 'veo-3.1-fast-generate-preview' | 'veo-2.0-generate-exp';
+  duration: 4 | 6 | 8;
+  aspectRatio: '16:9' | '9:16';
+  resolution?: '720p' | '1080p';
+  negativePrompt?: string;
+  sampleCount?: 1 | 2 | 3 | 4;
 }
 
 export interface GraphNode {
@@ -209,7 +231,86 @@ export interface CanvasImage {
   originalHeight: number;          // Original image height / text box height
   generationId?: string;           // Parent generation ID (if generated)
   imageMetaId?: string;            // Link to StoredImageMeta for persistence
+  source?: 'upload' | 'generation' | '3d-screenshot';
+  sourceModelId?: string;
 }
+
+export interface Canvas3DModel {
+  id: string;
+  type: '3d-model';
+  modelType: 'ifc' | 'glb' | 'obj';
+
+  // File storage
+  modelPath?: string;
+  modelDataUri?: string;
+  fileName: string;
+  fileSize: number;
+
+  // Canvas display
+  thumbnailUri?: string;
+  thumbnailPath?: string;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  originalWidth: number;
+  originalHeight: number;
+  aspectRatio: number;
+  selected: boolean;
+
+  // 3D metadata
+  boundingBox?: {
+    min: { x: number; y: number; z: number };
+    max: { x: number; y: number; z: number };
+  };
+  vertexCount?: number;
+  faceCount?: number;
+
+  // Appearance settings
+  modelColor?: string;
+  useOriginalColors: boolean;
+
+  // Saved camera state
+  savedCameraPosition?: { x: number; y: number; z: number };
+  savedCameraTarget?: { x: number; y: number; z: number };
+}
+
+export interface CanvasVideo {
+  id: string;
+  type: 'video';
+
+  videoPath?: string;
+  videoDataUri?: string;
+  videoUrl?: string;
+
+  thumbnailUri?: string;
+  thumbnailPath?: string;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  originalWidth: number;
+  originalHeight: number;
+  aspectRatio: number;
+  selected: boolean;
+
+  duration: number;
+  fps: number;
+  fileSize: number;
+  mimeType: 'video/mp4' | 'video/webm';
+
+  generationId?: string;
+  prompt?: string;
+  inputImageIds?: string[];
+
+  tag?: 'control' | 'reference';
+}
+
+export type CanvasItem = CanvasImage | Canvas3DModel | CanvasVideo;
+
+export const isCanvasImage = (item: CanvasItem): item is CanvasImage => item.type === 'image' || !item.type;
+export const isCanvasVideo = (item: CanvasItem): item is CanvasVideo => item.type === 'video';
+export const isCanvas3DModel = (item: CanvasItem): item is Canvas3DModel => item.type === '3d-model';
 
 /**
  * Mixboard generation format with unified image inputs.
@@ -220,15 +321,19 @@ export interface MixboardGeneration {
   timestamp: string;
   status: 'pending' | 'completed' | 'failed';
 
+  type?: 'image' | 'video';
+
   // Inputs
   prompt: string;
   input_images: StoredImageMeta[];   // UNIFIED: No control/reference split
 
   // Parameters
   parameters: GenerationConfig;
+  videoConfig?: VideoGenerationConfig;
 
   // Outputs
   output_images: StoredImageMeta[];
+  output_videos?: StoredVideoMeta[];
   output_texts?: string[];
   generation_time_ms?: number;
   error_message?: string;
@@ -255,6 +360,7 @@ export interface MixboardSession {
   updated_at: string;
   generations: MixboardGeneration[];
   canvas_images: CanvasImage[];      // Current canvas state
+  canvas_items?: CanvasItem[];
   user?: {
     displayName: string;
     id: string;
