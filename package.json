@@ -13,10 +13,14 @@
   },
   "dependencies": {
     "@google/genai": "^1.30.0",
+    "@react-three/drei": "^9.88.0",
+    "@react-three/fiber": "^8.15.0",
     "electron-updater": "^6.3.9",
     "lucide-react": "^0.344.0",
     "react": "^18.2.0",
-    "react-dom": "^18.2.0"
+    "react-dom": "^18.2.0",
+    "three": "^0.160.0",
+    "web-ifc": "^0.0.51"
   },
   "devDependencies": {
     "@types/react": "^18.2.64",

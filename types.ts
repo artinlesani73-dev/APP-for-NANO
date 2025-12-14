@@ -189,7 +189,7 @@ export interface LogEntry {
  */
 export interface CanvasImage {
   id: string;                      // Unique canvas image ID
-  type?: 'image' | 'text' | 'board'; // Entity type (default: 'image')
+  type?: 'image' | 'text' | 'board' | '3d-model' | 'video'; // Entity type (default: 'image')
   dataUri?: string;                // Base64 image data (for images) - full resolution
   thumbnailUri?: string;           // Base64 thumbnail data (for canvas display) - loaded from disk
   thumbnailPath?: string;          // Path to thumbnail file on disk (for Electron storage)
@@ -209,6 +209,24 @@ export interface CanvasImage {
   originalHeight: number;          // Original image height / text box height
   generationId?: string;           // Parent generation ID (if generated)
   imageMetaId?: string;            // Link to StoredImageMeta for persistence
+
+  // 3D model fields
+  modelDataUri?: string;           // Base64 data for GLB/OBJ/IFC
+  modelFileName?: string;
+  modelFileSize?: number;
+  modelType?: 'ifc' | 'glb' | 'obj';
+  modelColor?: string;
+  useOriginalColors?: boolean;
+  savedCameraPosition?: { x: number; y: number; z: number };
+  savedCameraTarget?: { x: number; y: number; z: number };
+
+  // Video metadata
+  videoUri?: string;
+  videoDurationSeconds?: number;
+  videoWidth?: number;
+  videoHeight?: number;
+  source?: 'upload' | 'generation' | '3d-screenshot';
+  sourceModelId?: string;
 }
 
 /**
