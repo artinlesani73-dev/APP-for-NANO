@@ -3,7 +3,7 @@ import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader';
 import { DRACOLoader } from 'three/examples/jsm/loaders/DRACOLoader';
 import { OBJLoader } from 'three/examples/jsm/loaders/OBJLoader';
 import { MTLLoader } from 'three/examples/jsm/loaders/MTLLoader';
-import { IFCLoader } from 'web-ifc-three/IFCLoader';
+import { IFCLoader } from 'three/examples/jsm/loaders/IFCLoader.js';
 
 const createUrlFromDataUri = (dataUri: string): string => {
   const binary = atob(dataUri.split(',')[1]);
@@ -57,12 +57,10 @@ export const loadIFC = async (fileOrDataUri: File | string): Promise<THREE.Group
   const loader = new IFCLoader();
   await loader.ifcManager.setWasmPath('/wasm/');
 
-  if (fileOrDataUri instanceof File) {
-    const arrayBuffer = await fileOrDataUri.arrayBuffer();
-    return loader.parse(arrayBuffer);
-  }
+  const url = fileOrDataUri instanceof File
+    ? URL.createObjectURL(fileOrDataUri)
+    : createUrlFromDataUri(fileOrDataUri);
 
-  const url = createUrlFromDataUri(fileOrDataUri);
   const model = await loader.loadAsync(url);
   URL.revokeObjectURL(url);
   return model;

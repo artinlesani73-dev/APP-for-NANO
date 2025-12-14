@@ -258,7 +258,7 @@ import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader';
 import { DRACOLoader } from 'three/examples/jsm/loaders/DRACOLoader';
 import { OBJLoader } from 'three/examples/jsm/loaders/OBJLoader';
 import { MTLLoader } from 'three/examples/jsm/loaders/MTLLoader';
-import { IFCLoader } from 'web-ifc-three/IFCLoader';
+import { IFCLoader } from 'three/examples/jsm/loaders/IFCLoader.js';
 
 // GLB/GLTF Loader
 export async function loadGLTF(fileOrPath: File | string): Promise<THREE.Group> {
@@ -405,7 +405,6 @@ AppData/AREA49-Nano-Banana/storage/
     "three": "^0.160.0",
     "@react-three/fiber": "^8.15.0",
     "@react-three/drei": "^9.88.0",
-    "web-ifc-three": "^0.0.124",
     "web-ifc": "^0.0.51"
   }
 }
