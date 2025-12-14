@@ -1,11 +1,13 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { Sparkles, Image as ImageIcon, Type, Trash2, ZoomIn, ZoomOut, Move, Download, Edit2, Check, X, LayoutTemplate, Bold, Italic, Save, Upload, Settings, Folder, Undo, Redo, ChevronDown, Copy, FileText, Square, Tag, Crosshair, BookImage, HelpCircle } from 'lucide-react';
+import { Sparkles, Image as ImageIcon, Type, Trash2, ZoomIn, ZoomOut, Move, Download, Edit2, Check, X, LayoutTemplate, Bold, Italic, Save, Upload, Settings, Folder, Undo, Redo, ChevronDown, Copy, FileText, Square, Tag, Crosshair, BookImage, HelpCircle, Cube } from 'lucide-react';
 import { StorageServiceV2 } from '../services/storageV2';
 import { GenerationConfig, CanvasImage, MixboardSession, MixboardGeneration, StoredImageMeta } from '../types';
 import { ImageEditModal } from './ImageEditModal';
 import { ProjectsPage } from './ProjectsPage';
 import { SettingsModal } from './SettingsModal';
 import { loadGeminiService } from '../services/lazyGeminiService';
+import { Model3DViewerModal } from './Model3DViewerModal';
+import { generateModelThumbnail, loadModel } from '../utils/model3DLoaders';
 
 type CanvasEngine = {
   attach: (element: HTMLDivElement, options: { onZoom: (delta: number) => void }) => void;
@@ -102,6 +104,7 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
   const [showImageInput, setShowImageInput] = useState(true);  // Default to Image mode
   const [currentGeneration, setCurrentGeneration] = useState<MixboardGeneration | null>(null);
   const [editingTextId, setEditingTextId] = useState<string | null>(null);
+  const [activeModelForEdit, setActiveModelForEdit] = useState<CanvasImage | null>(null);
   const [contextMenu, setContextMenu] = useState({
     visible: false,
     x: 0,
@@ -142,6 +145,7 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
 
   const canvasRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const file3DInputRef = useRef<HTMLInputElement>(null);
   const canvasEngineRef = useRef<CanvasEngine | null>(persistentCanvasEngine);
   const rafRef = useRef<number | null>(null);
   const lastUpdateRef = useRef<number>(0);
@@ -1118,6 +1122,90 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
     }
   };
 
+  const readModelDataUri = useCallback(async (file: File) => {
+    const buffer = await file.arrayBuffer();
+    const bytes = new Uint8Array(buffer);
+    let binary = '';
+    for (let i = 0; i < bytes.byteLength; i += 1) {
+      binary += String.fromCharCode(bytes[i]);
+    }
+    const base64 = btoa(binary);
+    const ext = file.name.split('.').pop()?.toLowerCase();
+    const mime = ext === 'glb' || ext === 'gltf'
+      ? 'model/gltf-binary'
+      : ext === 'obj'
+        ? 'text/plain'
+        : 'application/octet-stream';
+    return `data:${mime};base64,${base64}`;
+  }, []);
+
+  const handleAdd3DModel = useCallback(async (file: File) => {
+    setIsGeneratingThumbnails(true);
+    try {
+      const modelDataUri = await readModelDataUri(file);
+      const { scene, type } = await loadModel(modelDataUri);
+      const thumbnailUri = await generateModelThumbnail(scene);
+      const center = getVisibleCanvasCenter();
+      const imageId = `3d-model-${Date.now()}`;
+
+      const newModel: CanvasImage = {
+        id: imageId,
+        type: '3d-model',
+        modelDataUri,
+        modelFileName: file.name,
+        modelFileSize: file.size,
+        modelType: type,
+        thumbnailUri,
+        dataUri: thumbnailUri,
+        x: center.x - 160,
+        y: center.y - 120,
+        width: 320,
+        height: 240,
+        originalWidth: 512,
+        originalHeight: 384,
+        selected: false,
+        useOriginalColors: true,
+        source: 'upload'
+      };
+
+      setCanvasImages(prev => [...prev.map(img => ({ ...img, selected: false })), newModel]);
+      setActiveModelForEdit(newModel);
+    } catch (err) {
+      console.error('Failed to add 3D model', err);
+      alert('Unable to load the 3D model. Please upload a valid GLB, OBJ, or IFC file.');
+    } finally {
+      setIsGeneratingThumbnails(false);
+    }
+  }, [getVisibleCanvasCenter, readModelDataUri]);
+
+  const handle3DFileUpload = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      await handleAdd3DModel(file);
+    }
+    e.target.value = '';
+  }, [handleAdd3DModel]);
+
+  const handle3DScreenshot = useCallback((model: CanvasImage, payload: { dataUri: string; thumbnailUri: string; width: number; height: number; }) => {
+    const center = getVisibleCanvasCenter();
+    const screenshot: CanvasImage = {
+      id: `3d-screenshot-${Date.now()}`,
+      type: 'image',
+      dataUri: payload.dataUri,
+      thumbnailUri: payload.thumbnailUri,
+      x: center.x - 150,
+      y: center.y - 150,
+      width: 300,
+      height: 300,
+      originalWidth: payload.width,
+      originalHeight: payload.height,
+      selected: false,
+      source: '3d-screenshot',
+      sourceModelId: model.id
+    };
+    setCanvasImages(prev => [...prev, screenshot]);
+  }, [getVisibleCanvasCenter]);
+
   // Handle drag and drop from outside
   const handleDrop = async (e: React.DragEvent) => {
     e.preventDefault();
@@ -1133,68 +1221,70 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
 
     try {
       const { generateThumbnail, saveThumbnail } = await import('../utils/imageUtils');
-
       for (const [index, file] of Array.from(files).entries()) {
-        if (!file.type.startsWith('image/')) continue;
+        const ext = file.name.split('.').pop()?.toLowerCase();
+        if (file.type.startsWith('image/')) {
+          const reader = new FileReader();
+          reader.onload = async (event) => {
+            const dataUri = event.target?.result as string;
+            const img = new Image();
+            img.onload = async () => {
+              const dropX = (e.clientX - canvasRect.left - panOffset.x) / zoom;
+              const dropY = (e.clientY - canvasRect.top - panOffset.y) / zoom;
 
-        const reader = new FileReader();
-        reader.onload = async (event) => {
-          const dataUri = event.target?.result as string;
-          const img = new Image();
-          img.onload = async () => {
-            const dropX = (e.clientX - canvasRect.left - panOffset.x) / zoom;
-            const dropY = (e.clientY - canvasRect.top - panOffset.y) / zoom;
+              try {
+                // Generate thumbnail for canvas display (256px for better performance)
+                const thumbnailUri = await generateThumbnail(dataUri, 384, 0.90);
+                const imageId = `img-${Date.now()}-${index}`;
 
-            try {
-              // Generate thumbnail for canvas display (256px for better performance)
-              const thumbnailUri = await generateThumbnail(dataUri, 384, 0.90);
-              const imageId = `img-${Date.now()}-${index}`;
+                // Save thumbnail to disk (Electron) or keep in memory (web)
+                const { thumbnailUri: savedThumbnailUri, thumbnailPath } = currentSession
+                  ? saveThumbnail(currentSession.session_id, imageId, thumbnailUri)
+                  : { thumbnailUri };
 
-              // Save thumbnail to disk (Electron) or keep in memory (web)
-              const { thumbnailUri: savedThumbnailUri, thumbnailPath } = currentSession
-                ? saveThumbnail(currentSession.session_id, imageId, thumbnailUri)
-                : { thumbnailUri };
+                const newImage: CanvasImage = {
+                  id: imageId,
+                  dataUri,
+                  thumbnailUri: savedThumbnailUri,
+                  thumbnailPath,
+                  x: dropX,
+                  y: dropY,
+                  width: 300,
+                  height: (300 * img.height) / img.width,
+                  selected: false,
+                  originalWidth: img.width,
+                  originalHeight: img.height
+                };
 
-              const newImage: CanvasImage = {
-                id: imageId,
-                dataUri,
-                thumbnailUri: savedThumbnailUri,
-                thumbnailPath,
-                x: dropX,
-                y: dropY,
-                width: 300,
-                height: (300 * img.height) / img.width,
-                selected: false,
-                originalWidth: img.width,
-                originalHeight: img.height
-              };
+                setCanvasImages(prev => [...prev, newImage]);
 
-              setCanvasImages(prev => [...prev, newImage]);
-              
 
-              console.log(`[Drop] Image added:`, newImage.id, `Thumbnail path: ${thumbnailPath || 'in-memory'}`);
-            } catch (error) {
-              console.error('Failed to generate thumbnail:', error);
-              // Still add the image without thumbnail as fallback
-              const newImage: CanvasImage = {
-                id: `img-${Date.now()}-${index}`,
-                dataUri,
-                x: dropX,
-                y: dropY,
-                width: 300,
-                height: (300 * img.height) / img.width,
-                selected: false,
-                originalWidth: img.width,
-                originalHeight: img.height
-              };
+                console.log(`[Drop] Image added:`, newImage.id, `Thumbnail path: ${thumbnailPath || 'in-memory'}`);
+              } catch (error) {
+                console.error('Failed to generate thumbnail:', error);
+                // Still add the image without thumbnail as fallback
+                const newImage: CanvasImage = {
+                  id: `img-${Date.now()}-${index}`,
+                  dataUri,
+                  x: dropX,
+                  y: dropY,
+                  width: 300,
+                  height: (300 * img.height) / img.width,
+                  selected: false,
+                  originalWidth: img.width,
+                  originalHeight: img.height
+                };
 
-              setCanvasImages(prev => [...prev, newImage]);
-              
-            }
+                setCanvasImages(prev => [...prev, newImage]);
+
+              }
+            };
+            img.src = dataUri;
           };
-          img.src = dataUri;
-        };
-        reader.readAsDataURL(file);
+          reader.readAsDataURL(file);
+        } else if (ext && ['glb', 'gltf', 'obj', 'ifc'].includes(ext)) {
+          await handleAdd3DModel(file);
+        }
       }
     } finally {
       setTimeout(() => setIsGeneratingThumbnails(false), 1000);
@@ -1550,6 +1640,13 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
           className="hidden"
           onChange={handleFileUpload}
         />
+        <input
+          type="file"
+          accept=".glb,.gltf,.obj,.ifc"
+          ref={file3DInputRef}
+          className="hidden"
+          onChange={handle3DFileUpload}
+        />
 
         {/* Top-Left Session Toolbar */}
         <div className="absolute top-4 left-4 z-40">
@@ -1728,6 +1825,13 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
             <Upload size={20} className="text-zinc-600 dark:text-zinc-400" />
           </button>
           <button
+            onClick={() => file3DInputRef.current?.click()}
+            className="p-2 hover:bg-zinc-50 dark:hover:bg-zinc-800 transition-colors"
+            title="Upload 3D Model"
+          >
+            <Cube size={20} className="text-zinc-600 dark:text-zinc-400" />
+          </button>
+          <button
             onClick={() => {
               const center = getVisibleCanvasCenter();
               addTextToCanvas('Double-click to edit text', center.x, center.y);
@@ -1816,6 +1920,10 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
                   if (image.type === 'text') {
                     handleTextDoubleClick(e, image);
                   }
+                  if (image.type === '3d-model') {
+                    e.stopPropagation();
+                    setActiveModelForEdit(image);
+                  }
                 }}
               >
                 {image.type === 'text' ? (
@@ -1850,6 +1958,21 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
                     className="w-full h-full border border-dashed border-zinc-300 dark:border-zinc-700 bg-white/90 dark:bg-zinc-900/80 pointer-events-none"
                     style={{ backgroundColor: image.backgroundColor || '#ffffff' }}
                   />
+                ) : image.type === '3d-model' ? (
+                  <div className="relative w-full h-full bg-zinc-950 text-white overflow-hidden pointer-events-none">
+                    <img
+                      src={image.thumbnailUri || image.dataUri}
+                      alt={image.modelFileName || '3D model preview'}
+                      className="w-full h-full object-contain opacity-90"
+                      draggable={false}
+                    />
+                    <div className="absolute top-2 left-2 px-2 py-1 rounded-md bg-orange-500 text-black text-xs font-bold flex items-center gap-1">
+                      <Cube size={12} /> 3D
+                    </div>
+                    <div className="absolute bottom-2 left-2 right-2 text-xs text-white/80 truncate">
+                      {image.modelFileName}
+                    </div>
+                  </div>
                 ) : (
                   <>
                     <img
@@ -2387,6 +2510,14 @@ export const MixboardView: React.FC<MixboardViewProps> = ({
             </p>
           </div>
           </div>
+        )}
+
+        {activeModelForEdit && (
+          <Model3DViewerModal
+            model={activeModelForEdit}
+            onClose={() => setActiveModelForEdit(null)}
+            onScreenshot={(payload) => handle3DScreenshot(activeModelForEdit, payload)}
+          />
         )}
 
         {/* ImageEditModal */}

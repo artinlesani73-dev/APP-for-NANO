@@ -21,7 +21,7 @@ Users can upload 3D model files (IFC, GLB, OBJ) which appear on the canvas as in
 ┌─────────────────────────────────────────────────────────────────┐
 │  1. UPLOAD                                                       │
 │     User uploads .ifc, .glb, or .obj file via drag-drop or      │
-│     file picker                                                  │
+│     file picker from the LEFT inline toolbar upload buttons     │
 │                              ↓                                   │
 │  2. CANVAS PREVIEW                                               │
 │     Model appears on canvas as a container with 3D preview       │
@@ -57,6 +57,10 @@ Users can upload 3D model files (IFC, GLB, OBJ) which appear on the canvas as in
 | **IFC** | `.ifc` | Industry Foundation Classes | Architectural/BIM models |
 
 ### 1.4 Implementation Components
+
+**UI Placement Constraints**
+- **Upload controls**: Left-side inline toolbar. This ensures upload entry points stay grouped with other canvas tooling and remain accessible even when panels are collapsed.
+- **Generation controls**: Right-side IDE panel. All prompt, seed, duration, and reference inputs for generation (images or videos) live in the IDE-style right panel to align with existing parameter editing patterns.
 
 #### A. Type Definitions
 
@@ -522,6 +526,8 @@ interface PersistedCanvas3DModel {
 ### 2.1 Core Concept
 
 Users can generate AI videos using the same workflow as image generation. Enter a prompt, optionally select reference images for style/content guidance, and generate a video that appears on the canvas. Videos have the same features as images: tagging, selection, use as reference for further generations.
+
+All video generation controls remain in the **right-side IDE panel** so prompts, reference selections, and duration/aspect inputs stay aligned with existing parameter editing conventions. Only upload-related buttons live in the left inline toolbar; generation features do not move into the canvas toolbar.
 
 ### 2.2 User Flow
 
