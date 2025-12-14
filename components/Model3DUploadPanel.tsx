@@ -1,5 +1,5 @@
 import React, { useRef, useState } from 'react';
-import { Cube, UploadCloud, Info } from 'lucide-react';
+import { Box, UploadCloud, Info } from 'lucide-react';
 
 interface Model3DUploadPanelProps {
   onUpload: (file: File) => void;
@@ -63,7 +63,7 @@ export const Model3DUploadPanel: React.FC<Model3DUploadPanelProps> = ({
   return (
     <div className="flex flex-col gap-3">
       <div className="flex items-center gap-2 text-zinc-800 dark:text-zinc-200">
-        <Cube size={18} className="text-blue-500" />
+        <Box size={18} className="text-blue-500" />
         <div className="flex flex-col">
           <span className="text-sm font-semibold">{title}</span>
           <span className="text-xs text-zinc-500 dark:text-zinc-400">Supports IFC, GLB/GLTF, OBJ</span>
